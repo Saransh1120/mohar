@@ -1,0 +1,21 @@
+{
+  "name": "@mohar/seed",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "seed": "node dist/index.js"
+  },
+  "dependencies": {
+    "@mohar/contracts": "workspace:*",
+    "@mohar/crypto-core": "workspace:*",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.7.0",
+    "@types/pg": "^8.11.10"
+  }
+}

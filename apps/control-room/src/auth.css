@@ -1,0 +1,245 @@
+/*
+ * Authentication screens, and the "who is signed in" block in the sidebar.
+ *
+ * Kept in its own file because it is the only part of the interface an
+ * unauthenticated visitor ever sees, and because it follows a different rule
+ * from the rest: one screen, one job. No navigation, no statistics, nothing to
+ * read while you type. The only decision available is which of the two forms
+ * you are filling in, and the page says which that is in its largest text.
+ *
+ * Same tokens as styles.css throughout — a sign-in page in a different palette
+ * from the app behind it reads as a different product, or as a phishing page.
+ */
+
+.auth-page {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 48px 20px;
+  background:
+    radial-gradient(1100px 520px at 50% -10%, #16202c 0%, transparent 70%),
+    var(--bg);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 32px 32px 26px;
+}
+
+.auth-brand {
+  margin-bottom: 26px;
+}
+
+.auth-mark {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  text-decoration: none;
+}
+.auth-mark:hover {
+  text-decoration: none;
+  color: var(--accent);
+}
+
+.auth-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--text-faint);
+  margin-top: 3px;
+}
+
+.auth-title {
+  margin: 0 0 8px;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.auth-sub {
+  margin: 0 0 22px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.auth-error {
+  margin-bottom: 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--critical);
+  border-left-width: 3px;
+  background: var(--critical-bg);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-form label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+
+.auth-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.auth-reveal {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.auth-reveal:hover {
+  color: var(--accent);
+}
+
+.auth-form input,
+.auth-form select {
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  padding: 9px 11px;
+  margin-bottom: 16px;
+  outline: none;
+}
+
+.auth-form input:focus,
+.auth-form select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+/* Sits directly under the field it describes, so it is read at the moment it
+ * matters rather than as small print above the button. */
+.auth-hint {
+  margin: -10px 0 16px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+.auth-hint.bad {
+  color: var(--critical);
+}
+
+.auth-submit {
+  margin-top: 4px;
+  padding: 11px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-dim);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.auth-submit:hover:not(:disabled) {
+  background: #223648;
+}
+.auth-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.auth-switch {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.auth-foot {
+  margin: 16px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+.auth-foot code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+/* Shown while the stored token is checked against the server. Deliberately
+ * plain: it is on screen for a few hundred milliseconds and must not flash
+ * anything that looks like a refusal. */
+.auth-checking {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-faint);
+  background: var(--bg);
+}
+
+.auth-checking-mark {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: auth-spin 0.7s linear infinite;
+}
+
+@keyframes auth-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Who is signed in ─────────────────────────────────────────────────────── */
+
+.who {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.who-name {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.who-role {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  text-transform: capitalize;
+  margin-top: 2px;
+}
+
+.who-out {
+  margin-top: 8px;
+  background: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+.who-out:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}

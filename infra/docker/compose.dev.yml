@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: mohar_migrator
+      POSTGRES_PASSWORD: dev_only_password
+      POSTGRES_DB: mohar
+    ports: ["5432:5432"]
+    volumes:
+      - mohar_pg:/var/lib/postgresql/data
+      # Migrations run on first boot. In production they are applied by the
+      # migrator role explicitly, never by the application role.
+      - ../migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mohar_migrator -d mohar"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mohar_pg:

@@ -1,0 +1,862 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mohar — Roadmap &amp; Flow Maps</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 18mm 14mm; }
+  :root{
+    --ink:#14181d; --ink2:#3d4650; --ink3:#6b7683;
+    --rule:#d5dae0; --accent:#1f4d70; --wash:#f4f6f8; --code:#f7f8fa;
+  }
+  *{box-sizing:border-box}
+  body{
+    font-family:"Charter","Georgia","Times New Roman",serif;
+    color:var(--ink); font-size:10pt; line-height:1.5; margin:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  h1,h2,h3,h4{font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;line-height:1.25}
+  h1{font-size:25pt;margin:0 0 6pt;letter-spacing:-.5pt}
+  h2{font-size:14.5pt;margin:24pt 0 9pt;padding-bottom:5pt;
+     border-bottom:1.5pt solid var(--accent);color:var(--accent);page-break-after:avoid}
+  h3{font-size:11pt;margin:15pt 0 5pt;page-break-after:avoid}
+  h4{font-size:9.5pt;margin:11pt 0 4pt;color:var(--ink2);page-break-after:avoid}
+  p{margin:0 0 7pt}
+  ul,ol{margin:0 0 7pt;padding-left:17pt}
+  li{margin:0 0 3pt}
+  code,pre,.mono{font-family:"Cascadia Mono","Consolas","DejaVu Sans Mono",monospace}
+  code{font-size:8.5pt;background:var(--code);padding:1px 3px;border-radius:2px}
+  pre{background:var(--code);border:.5pt solid var(--rule);border-left:2.5pt solid var(--accent);
+      padding:7pt 9pt;font-size:7.6pt;line-height:1.4;white-space:pre;
+      overflow:hidden;margin:0 0 9pt;page-break-inside:avoid}
+  pre.wrap{white-space:pre-wrap;word-wrap:break-word}
+  pre code{background:none;padding:0;font-size:inherit}
+  table{border-collapse:collapse;width:100%;font-size:8.5pt;margin:0 0 9pt;page-break-inside:avoid}
+  th,td{border:.5pt solid var(--rule);padding:3.5pt 5pt;text-align:left;vertical-align:top}
+  th{background:var(--wash);font-family:"Segoe UI",Arial,sans-serif;font-weight:600;font-size:8pt}
+  .note{background:var(--wash);border-left:2.5pt solid var(--accent);
+        padding:7pt 9pt;margin:0 0 9pt;font-size:9pt;page-break-inside:avoid}
+  .note b{font-family:"Segoe UI",Arial,sans-serif}
+  .warn{background:#fdf6ee;border-left-color:#a8793f}
+  .kill{background:#fdf1f0;border-left-color:#b0524b}
+  .ok{background:#f1f7f2;border-left-color:#4a7a52}
+  .lede{font-size:10.5pt;color:var(--ink2)}
+  .cover{height:243mm;display:flex;flex-direction:column;justify-content:center;page-break-after:always}
+  .cover .rule{height:3pt;background:var(--accent);width:60mm;margin:0 0 14pt}
+  .cover .sub{font-size:12.5pt;color:var(--ink2);margin:0 0 24pt;font-family:"Segoe UI",Arial,sans-serif}
+  .cover dl{font-size:9.5pt;margin:0}
+  .cover dt{font-family:"Segoe UI",Arial,sans-serif;font-size:7.5pt;text-transform:uppercase;
+    letter-spacing:.6pt;color:var(--ink3);margin:9pt 0 1pt}
+  .cover dd{margin:0}
+  .part{page-break-before:always}
+  .tag{display:inline-block;font-family:"Segoe UI",Arial,sans-serif;font-size:7pt;
+    letter-spacing:.5pt;text-transform:uppercase;color:#fff;padding:1.5pt 5pt;
+    border-radius:2pt;vertical-align:middle;margin-left:6pt;font-weight:600;background:var(--accent)}
+  .tag.done{background:#4a7a52} .tag.part{background:#7a6a3a} .tag.todo{background:#8a4a4a}
+  .tag.new{background:#1f4d70}
+  .kv{font-size:8.5pt}
+  .kv td:first-child{width:30%;font-family:"Segoe UI",Arial,sans-serif;font-weight:600}
+  .foot{margin-top:18pt;padding-top:7pt;border-top:.5pt solid var(--rule);
+    font-size:8pt;color:var(--ink3)}
+  .legend{font-size:8pt;color:var(--ink3);margin:-4pt 0 9pt}
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div class="rule"></div>
+  <h1>Mohar</h1>
+  <p class="sub">Roadmap, flow maps, seal-mismatch theory,<br>key division S1–S4, and the hardware layer</p>
+  <p class="lede" style="max-width:132mm">
+    A study companion to the main guide. This document answers four questions:
+    what order the system gets built in, how a package actually flows from sealing
+    to destruction, what a seal mismatch really tells you, and how the content key
+    is split four ways so that no single person — including us — can open a paper
+    early.
+  </p>
+  <p class="lede" style="max-width:132mm">
+    Part F adds the hardware layer: the ESP32 room monitor, the electronic seal
+    lock, and the new witness station carrying a camera and a fingerprint sensor.
+  </p>
+  <dl>
+    <dt>Companion to</dt><dd>Mohar — Study Guide (basics to advanced)</dd>
+    <dt>Covers</dt><dd>Roadmap · end-to-end flow · seal mismatch · Shamir S1–S4 · ESP32 hardware</dd>
+    <dt>Status marks</dt><dd>BUILT = running code · PARTIAL = some of it exists · PLANNED = designed, not written</dd>
+  </dl>
+</section>
+
+<!-- ═══════════ A ═══════════ -->
+<section class="part">
+<h2>A &nbsp;The basis — what the whole project rests on</h2>
+
+<p class="lede">
+Before any roadmap makes sense, four ideas have to be fixed. Everything else in
+Mohar is a consequence of these.
+</p>
+
+<h3>A.1 &nbsp;The four load-bearing ideas</h3>
+<table>
+<tr><th>#</th><th>Idea</th><th>Consequence throughout the system</th></tr>
+<tr><td>1</td><td><b>The failure is evidentiary, not detective.</b> Leaks get detected; cases collapse.</td><td>We optimise for evidence that survives cross-examination, not for alarm speed. This is why we store "412 m" and not "outside_geofence".</td></tr>
+<tr><td>2</td><td><b>Absence must be as loud as presence.</b> A missing record is a finding.</td><td>State is derived by replaying events, so a hole in the record produces a visible gap rather than a plausible timeline. Heartbeats make silence detectable in hardware too.</td></tr>
+<tr><td>3</td><td><b>Controls must fail closed.</b> Broken infrastructure must deny, never grant.</td><td>Keys expire by arithmetic with no cron job. A dead beacon means no S2. A dead room monitor raises an event rather than going quiet.</td></tr>
+<tr><td>4</td><td><b>No single point of trust — including us.</b></td><td>The content key is split 3-of-4 across three organisations plus physics. Append-only is enforced by database grants, not our own code.</td></tr>
+</table>
+
+<h3>A.2 &nbsp;The layer diagram</h3>
+<pre>  ┌──────────────────────────────────────────────────────────────────────┐
+  │  L5   PEOPLE      district officer · courier · custodian ·           │
+  │                   superintendent · independent observer              │
+  ├──────────────────────────────────────────────────────────────────────┤
+  │  L4   HARDWARE    room monitor (ESP32)  ·  seal lock (ESP32-C6)  ·   │
+  │                   witness station (ESP32-S3 + camera + fingerprint)  │
+  ├──────────────────────────────────────────────────────────────────────┤
+  │  L3   CLIENTS     field-app · centre-client · control-room ·         │
+  │                   verify-portal                                      │
+  ├──────────────────────────────────────────────────────────────────────┤
+  │  L2   DECISION    access engine (15 checks, deny by default)         │
+  │                   custody projection · activity ledger               │
+  ├──────────────────────────────────────────────────────────────────────┤
+  │  L1   RECORD      append-only hash-chained ledger                    │
+  │                   Ed25519 signatures over RFC 8785 canonical JSON    │
+  ├──────────────────────────────────────────────────────────────────────┤
+  │  L0   PROOF       RFC 6962 Merkle anchors → RFC 3161 timestamp       │
+  └──────────────────────────────────────────────────────────────────────┘
+
+  Rule: information only ever flows DOWN into L1. Nothing above L1 can
+  edit what L1 already holds — not the clients, not the services, not us.</pre>
+
+<h3>A.3 &nbsp;Where cryptography stops</h3>
+<div class="note kill">
+At the printer tray. Past that point it is paper, a room, and people with phones.
+Everything after that is physical control and attribution, which is exactly what
+the hardware layer in Part F is for — and even that is <b>tamper-evident, not
+tamper-proof</b>. Say this before a judge says it to you.
+</div>
+</section>
+
+<!-- ═══════════ B ═══════════ -->
+<section class="part">
+<h2>B &nbsp;The roadmap</h2>
+
+<p class="legend">
+<span class="tag done">BUILT</span> running code &nbsp;
+<span class="tag part">PARTIAL</span> partly exists &nbsp;
+<span class="tag todo">PLANNED</span> designed, not written
+</p>
+
+<h3>Phase 0 — Foundation <span class="tag done">BUILT</span></h3>
+<table class="kv">
+<tr><td>Ledger core</td><td>Append-only event table, hash chain <code>SHA256(prevHash ‖ bodyHash)</code>, genesis = 32 zero bytes</td></tr>
+<tr><td>Canonical JSON</td><td>RFC 8785 JCS via <code>canonicalize</code> in <code>packages/crypto-core</code></td></tr>
+<tr><td>Signatures</td><td>Ed25519 over <code>bodyHash</code>; device enrolment and revocation</td></tr>
+<tr><td>Append-only enforcement</td><td>Postgres grants — <code>mohar_app</code> holds SELECT + INSERT only</td></tr>
+<tr><td>Custody projection</td><td><code>domain/custody.ts</code> — state replayed from events, 7 anomaly detectors</td></tr>
+<tr><td>Access engine</td><td><code>domain/policy.ts</code> — 15 checks, deny by default, never short-circuits</td></tr>
+<tr><td>Custody keys</td><td>6-hour epochs, Crockford base32, SHA-256 stored, expiry by arithmetic</td></tr>
+<tr><td>Control room</td><td>Overview · Workflow timeline · Packages · Activity · Keys · Devices · Integrity</td></tr>
+<tr><td>Shamir primitive</td><td><code>packages/crypto-core/src/shamir.ts</code> — 3-of-4 with per-share commitments</td></tr>
+</table>
+
+<h3>Phase 1 — Verification surface <span class="tag part">PARTIAL</span></h3>
+<table class="kv">
+<tr><td>Merkle anchors</td><td><b>Built.</b> Daily RFC 6962 tree, root stored with first/last seq and tree size</td></tr>
+<tr><td>Chain verification API</td><td><b>Built.</b> <code>/verify/chain</code> recomputes and reports breaks</td></tr>
+<tr><td>RFC 3161 timestamping</td><td><b>Missing.</b> The <code>notarised</code> flag is never set true</td></tr>
+<tr><td>verify-portal</td><td><b>Stub.</b> Third-party inclusion-proof checking not exposed yet</td></tr>
+</table>
+<div class="note warn">
+This is the highest-value gap to close for credibility. Without external
+timestamping, the anchor proves nothing against an attacker who owns the
+database — it is a fixed point that only exists <em>inside</em> the thing it is
+supposed to check.
+</div>
+
+<h3>Phase 2 — Crypto completion <span class="tag todo">PLANNED</span></h3>
+<ul>
+  <li>Wire the existing Shamir primitive into the live unlock path (Part E).</li>
+  <li><code>tlock</code> encryption of S2 to a future drand beacon round.</li>
+  <li>WebAuthn platform authenticators behind S3 and S4.</li>
+  <li>XChaCha20-Poly1305 bundle encryption under content key <code>K</code>.</li>
+</ul>
+
+<h3>Phase 3 — Room monitor <span class="tag todo">PLANNED</span></h3>
+<p>Existing spec, <code>firmware/room-monitor</code>. Door reed switch, mmWave presence, dual ToF footfall, light, DS3231 RTC, microSD buffer, 30-second heartbeat, per-device HMAC.</p>
+
+<h3>Phase 4 — Witness station <span class="tag new">NEW</span></h3>
+<p>ESP32-S3 with camera and fingerprint sensor, scoped to the unlock ceremony only. Full design in Part F. This is the phase that adds biometric attribution and visual evidence at the single highest-value moment in the whole chain.</p>
+
+<h3>Phase 5 — Seal lock <span class="tag todo">PLANNED</span></h3>
+<p>ESP32-C6, <code>firmware/seal-lock</code>. Latch control, continuous tamper loop, monotonic replay counter, pinned authority public key, tamper events written to flash before any radio transmission.</p>
+
+<h3>Phase 6 — Hardening <span class="tag todo">PLANNED</span></h3>
+<ul>
+  <li>Authentication and authorisation at the <code>gateway</code> service — currently a stub, and the ledger API is unauthenticated.</li>
+  <li>Rate limiting on <code>/access/request</code>.</li>
+  <li>Device attestation actually verified rather than merely enrolled.</li>
+  <li><b>Git history.</b> The repository has zero commits; every revert so far has been a hand reconstruction.</li>
+</ul>
+
+<h3>Phase 7 — Pilot</h3>
+<p>One district, one examination, mock drill first. Publish the fallback-invocation count. "Fallback used at 3 of 4,750 centres" is credible; hiding the path is not.</p>
+
+<h3>What to actually finish before the presentation</h3>
+<div class="note ok">
+<b>Do not start Phase 5 or 6.</b> For a hackathon the winning move is depth over
+breadth: Phase 0 is genuinely strong, Phase 4 gives you something physical on the
+table, and closing the Phase 1 timestamping gap converts your biggest honest
+weakness into a strength. Everything else is a slide, not a sprint.
+</div>
+</section>
+
+<!-- ═══════════ C ═══════════ -->
+<section class="part">
+<h2>C &nbsp;Flow map — a package from sealing to destruction</h2>
+
+<h3>C.1 &nbsp;The eight stages as a pipeline</h3>
+<pre>  S1        S2          S3         S4          S5        S6       S7       S8
+ seal → dispatch → transit → custodian → centre → unlock → print → destroy
+  │        │          │          │          │        │        │        │
+  DO       DO       courier   custodian    supt     supt     supt     supt
+  │        │          │          │          │        │        │        │
+  └────────┴──────────┴──────────┴──────────┴────────┴────────┴────────┘
+   every hop: custody key presented → 15 checks → signed event → chain
+
+ DO = district officer   supt = superintendent
+
+ NOTE: these stage numbers S1..S8 are the CUSTODY stages.
+ They are NOT the same as the key shares S1..S4 in Part E.
+ Different things, same letter. Do not mix them up in the demo.</pre>
+
+<h3>C.2 &nbsp;What happens at every single hop</h3>
+<pre>   ┌─ actor arrives at a hop ────────────────────────────────────────┐
+   │                                                                 │
+   │  1. control room ISSUES a custody key for (package, stage)      │
+   │       key = MHR-&lt;STAGE&gt;-XXXX-XXXX-XXXX   (128 bits, base32)     │
+   │       stored as SHA-256 only; shown once; unique per epoch      │
+   │                                                                 │
+   │  2. actor PRESENTS key on an enrolled device                    │
+   │       + device id  + person id  + GPS + accuracy                │
+   │       + seal serial read off the physical seal                  │
+   │       + device clock                                            │
+   │                                                                 │
+   │  3. ACCESS ENGINE runs all 15 checks — never short-circuits     │
+   │       key_presented · key_valid · key_in_window ·               │
+   │       key_stage_match · device_enrolled · device_binding ·      │
+   │       roster_membership · role_permitted · geofence ·           │
+   │       geo_accuracy · custody_window · clock_skew ·              │
+   │       seal_serial · package_state · exam_active                 │
+   │                                                                 │
+   │  4. ATTEMPT IS WRITTEN  ← before the caller is told anything    │
+   │       into led.access_attempt (SELECT + INSERT grants only)     │
+   │                                                                 │
+   │  5. outcome returned:  granted  |  denied + evidence per check  │
+   │                                                                 │
+   │  6. if granted, actor's device SIGNS the custody event          │
+   │       bodyHash = SHA256(JCS(body))                              │
+   │       sig      = Ed25519(devicePrivKey, bodyHash)               │
+   │                                                                 │
+   │  7. LEDGER APPENDS                                              │
+   │       hash = SHA256(prevHash ‖ bodyHash)                        │
+   │                                                                 │
+   │  8. PROJECTION re-derives package state from all events         │
+   │       → new state, new holder, anomalies recomputed             │
+   └─────────────────────────────────────────────────────────────────┘</pre>
+
+<h3>C.3 &nbsp;Offline path</h3>
+<pre>  strongroom, no signal
+        │
+        ├── device signs event LOCALLY (private key never leaves device)
+        ├── event queued with a client-generated UUID
+        ├── room monitor writes to microSD BEFORE any radio attempt
+        │
+        └── signal returns ──▶ upload ──▶ ledger sees UUID
+                                              │
+                                    already present? ──▶ return existing
+                                    new?            ──▶ append
+                              (idempotent — retry is always safe)</pre>
+
+<h3>C.4 &nbsp;The unlock ceremony (S6) in detail</h3>
+<pre>  T-0   drand beacon publishes round for startAt
+          └──▶ S2 becomes recoverable — and not one second earlier
+
+  T+1   superintendent authenticates      → releases S3
+  T+2   independent observer authenticates → releases S4
+          (two-person rule; two DISTINCT humans, two distinct credentials)
+
+  T+3   S1 unwrapped from authority passphrase (Argon2id)
+
+  T+4   any 3 of {S1,S2,S3,S4} combine IN MEMORY → content key K
+          each share checked against its commitment FIRST
+          → a bad share is NAMED, not silently absorbed
+
+  T+5   bundle decrypted (XChaCha20-Poly1305), rendered to spooler
+          plaintext NEVER touches disk
+
+  T+6   printer meters exactly N copies, each watermarked → traceable
+
+  T+7   K zeroised in memory
+
+  T+8   KEY_DESTROYED signed and queued
+          └──▶ if this never arrives, the projection raises
+               key_not_destroyed and the act stays OPEN</pre>
+
+<h3>C.5 &nbsp;Data flow into the ledger</h3>
+<pre>   people ──┐
+  devices ──┤
+     ESP32 ──┼──▶ signed / HMAC'd records ──▶ LEDGER (append-only)
+   sensors ──┤                                     │
+   cameras ──┘                                     ├──▶ projection ──▶ packages
+                                                   ├──▶ activity ledger
+                                                   ├──▶ chain verification
+                                                   └──▶ daily Merkle anchor
+                                                            │
+                                                            └──▶ RFC 3161  [gap]</pre>
+</section>
+
+<!-- ═══════════ D ═══════════ -->
+<section class="part">
+<h2>D &nbsp;Theory of the seal mismatch</h2>
+
+<p class="lede">
+The seal serial is the cheapest and strongest physical signal in the entire
+system. Understand precisely what it does and does not prove.
+</p>
+
+<h3>D.1 &nbsp;What a seal actually is</h3>
+<p>
+A tamper-evident seal is a one-time closure carrying a unique printed serial.
+Its security property is <b>not</b> that it cannot be broken — it can, trivially.
+It is that it <b>cannot be broken and restored to its original state</b>. To open
+a sealed bundle you must destroy the seal, and to conceal that you must fit a new
+seal, which necessarily carries a <em>different</em> serial.
+</p>
+<div class="note">
+<b>The whole theory in one line.</b> The attacker's problem is not opening the
+bundle. It is that reclosing it forces them to either present a serial that does
+not match the registry, or forge a seal bearing a serial they must first have
+learned. The seal converts a silent physical act into a recorded contradiction.
+</div>
+
+<h3>D.2 &nbsp;Registration and re-reading</h3>
+<pre>  S1 seal     ── serial MH-4471-A is REGISTERED against the package
+                 (written into a signed ledger event; now immutable)
+
+  S2..S8      ── at EVERY subsequent hop the actor reads the physical
+                 serial and submits it with the access request
+
+                 engine compares  read  vs  registered
+                       │
+                       ├── equal      → seal_serial PASSES
+                       ├── different  → seal_serial_mismatch
+                       └── absent     → seal_serial_not_read</pre>
+
+<h3>D.3 &nbsp;Why "not read" is its own failure, not a pass</h3>
+<div class="note kill">
+This is the subtle part, and it is worth a full sentence in your demo. If a
+missing serial were treated as "nothing to compare, therefore no problem", then
+<b>the cheapest attack on the entire system would be to simply not look at the
+seal.</b> Silence would become the safest move for a guilty actor. So
+<code>seal_serial_not_read</code> is a distinct denial reason. Not looking is
+itself a finding.
+</div>
+<p>
+Generalise it: everywhere in Mohar, a missing observation is treated as a
+negative observation, never as a neutral one. The custody gap works the same way,
+and so does the ESP32 heartbeat — unplugging the device does not produce silence,
+it produces an event.
+</p>
+
+<h3>D.4 &nbsp;Two layers of detection, and why both</h3>
+<table>
+<tr><th></th><th>Access engine — <code>policy.ts</code></th><th>Projection — <code>custody.ts</code></th></tr>
+<tr><td>When</td><td>Real time, during the request</td><td>Retrospective, replaying all events</td></tr>
+<tr><td>Code</td><td><code>seal_serial</code> check → <code>seal_serial_mismatch</code></td><td><code>seal_serial_changed</code> anomaly</td></tr>
+<tr><td>Effect</td><td><b>Blocks</b> the access</td><td><b>Flags</b> the package for investigation</td></tr>
+<tr><td>Sees</td><td>Only this one attempt</td><td>The entire history, including hops that never produced an attempt</td></tr>
+</table>
+<p>
+The engine cannot catch a substitution that happens between two hops where nobody
+requested access. The projection can, because it compares every recorded reading
+against the registration across the whole life of the package. One is a gate; the
+other is an auditor. You need both.
+</p>
+
+<h3>D.5 &nbsp;What a mismatch actually means — the inference chain</h3>
+<pre>  observed:  registered MH-4471-A, read MH-4471-B
+       │
+       ├─ the physical seal now on this bundle is not the one applied at S1
+       │
+       ├─ therefore the original seal was removed
+       │
+       ├─ therefore the bundle was open at some point between S1 and now
+       │
+       └─ therefore its contents were exposed to whoever was holding it,
+          and the holder at that time is known from the custody chain</pre>
+<p>
+Notice the final step. The mismatch alone says a seal changed. It is the
+<b>combination</b> with the custody chain that names a suspect and a window. This
+is why the two mechanisms are worth more together than the sum of their parts,
+and it is the single best thing to demonstrate on <code>JPR-003</code>.
+</p>
+
+<h3>D.6 &nbsp;The honest ambiguity</h3>
+<div class="note warn">
+A mismatch has innocent explanations. A serial mistyped under pressure at 05:40.
+A damaged seal legitimately replaced with a documented reseal. A courier reading
+the wrong seal on a multi-bundle consignment.
+<br><br>
+Mohar <b>does not decide which</b>. It records both serials verbatim —
+<code>"registered MH-4471-A, read MH-4471-B"</code> — marks the act as requiring
+a decision, and stops. A system that concluded "TAMPERING DETECTED" from this
+evidence would be wrong often enough to be ignored within a month. This is
+exactly the reasoning behind removing severity labels.
+</div>
+
+<h3>D.7 &nbsp;With the electronic seal lock — the four-way truth table</h3>
+<p>
+Once the Phase-5 seal lock exists, there are two independent seal signals: the
+human-read printed serial, and the device's continuous tamper loop. Combining
+them is far more informative than either alone.
+</p>
+<table>
+<tr><th>Printed serial</th><th>Tamper loop</th><th>Interpretation</th></tr>
+<tr><td>Matches</td><td>Intact</td><td>Clean. Both witnesses agree nothing was opened.</td></tr>
+<tr><td>Matches</td><td><b>Broken</b></td><td><b>The most alarming cell.</b> The bundle was opened electronically and reclosed under a seal bearing the <em>original</em> serial — which means the serial was known in advance and a matching seal was fabricated. This is premeditation, not opportunism.</td></tr>
+<tr><td><b>Differs</b></td><td>Intact</td><td>Either a transcription error, or the printed seal was swapped without disturbing the electronic latch. Check the reading against the person and the hour before concluding.</td></tr>
+<tr><td><b>Differs</b></td><td><b>Broken</b></td><td>Overt interference. Both witnesses agree the bundle was opened. Treat the package as compromised.</td></tr>
+</table>
+<p>
+The reason to build the electronic lock is precisely row two: it is the only
+configuration that catches a well-prepared attacker, and no purely printed seal
+can distinguish it from a clean run.
+</p>
+</section>
+
+<!-- ═══════════ E ═══════════ -->
+<section class="part">
+<h2>E &nbsp;Key division — S1, S2, S3, S4</h2>
+
+<div class="note">
+<b>Naming warning.</b> The custody <em>stages</em> in Part C are also numbered
+S1–S8. The key <em>shares</em> here are S1–S4 and are a completely different
+thing. In your presentation, say "share S2" and "stage 2" explicitly. Judges
+notice this collision.
+</div>
+
+<h3>E.1 &nbsp;Why split the key at all</h3>
+<p>
+The bundle is encrypted with XChaCha20-Poly1305 under a content key <code>K</code>.
+If <code>K</code> exists in one place, that place is a single point of catastrophic
+failure: whoever holds it can open every paper, early, silently, alone. Splitting
+<code>K</code> converts a secret one party holds into a decision several parties
+must jointly make.
+</p>
+
+<h3>E.2 &nbsp;Shamir's Secret Sharing — the mechanism</h3>
+<p>
+Split <code>K</code> into <code>n = 4</code> shares with threshold
+<code>t = 3</code>. Any 3 reconstruct <code>K</code>; any 2 reveal
+<b>nothing whatsoever</b>.
+</p>
+<pre>  Build a random polynomial of degree t-1 = 2 whose constant term is the secret:
+
+        f(x) = K + a₁x + a₂x²        (a₁, a₂ random, over GF(2⁸))
+
+  Hand out points on the curve, never the curve itself:
+
+        S1 = f(1)    S2 = f(2)    S3 = f(3)    S4 = f(4)
+
+  3 points determine a unique parabola  ──▶  evaluate f(0) = K
+  2 points fit INFINITELY many parabolas ──▶  every possible K remains
+                                              equally likely</pre>
+<div class="note ok">
+<b>Why this is stronger than a password split.</b> Two shares do not "make
+brute force harder" — they are <b>information-theoretically</b> useless. An
+adversary with two shares and unlimited computing power for a billion years
+learns exactly nothing about <code>K</code>. This is not a hardness assumption;
+it is a mathematical fact, and it does not degrade with quantum computers.
+</div>
+<p>
+Implemented in <code>packages/crypto-core/src/shamir.ts</code> on the
+<code>shamir-secret-sharing</code> library (Privy) — GF(2⁸), zero dependencies,
+independently audited by Cure53 and Zellic.
+</p>
+
+<h3>E.3 &nbsp;The four holders</h3>
+<table>
+<tr><th>Share</th><th>Held by</th><th>Protected under</th><th>Independence</th></tr>
+<tr><td><b>S1</b></td><td>Exam authority</td><td>Passphrase-wrapped with Argon2id, stored on our server</td><td>Organisation 1</td></tr>
+<tr><td><b>S2</b></td><td><b>Nobody, yet</b></td><td><code>tlock</code> to a future public drand beacon round at <code>startAt</code></td><td>Physics, not an organisation</td></tr>
+<tr><td><b>S3</b></td><td>Centre superintendent</td><td>WebAuthn platform authenticator — Windows Hello or Android biometric</td><td>Organisation 2</td></tr>
+<tr><td><b>S4</b></td><td>Independent observer</td><td>WebAuthn platform authenticator on their own phone</td><td>Organisation 3</td></tr>
+</table>
+<p>
+The holder order is fixed in code (<code>SHARE_HOLDERS</code>) because share
+index is meaningful in the audit trail — index 3 always means the
+superintendent, so a bad share can be attributed to a named party.
+</p>
+
+<h3>E.4 &nbsp;S2 is the keystone</h3>
+<p>
+<code>tlock</code> (Gailly, Melissaris, Romailler, IACR ePrint 2023/189) encrypts
+to a <em>future round</em> of drand's threshold BLS beacon. The decryption key for
+that round <b>does not exist anywhere in the world</b> until drand's distributed
+operators publish it.
+</p>
+<pre class="wrap">  const round = roundAt(chainInfo, startAt);   // genesis + period * n
+  const ct    = await tlock.encrypt(shareS2, chainInfo, round);
+  // always verify chainInfo against the pinned DRAND_CHAIN_HASH first</pre>
+<div class="note">
+<b>Why this is qualitatively different from every other control in the system.</b>
+Every other check is a policy decision that some code makes and some code could be
+made to skip. S2 is not a policy — it is an unforgeable fact about the state of
+the world. You cannot bribe it, misconfigure it, or patch around it. There is no
+"admin override" for the passage of time.
+</div>
+
+<h3>E.5 &nbsp;Collusion analysis — the actual security claim</h3>
+<pre>  To open a paper EARLY you need 3 shares.
+  Before the beacon publishes, S2 is unobtainable by anyone, anywhere.
+  So the only early-open set is  { S1, S3, S4 }  — ALL THREE remaining.
+
+     S1  exam authority        ─┐
+     S3  centre superintendent ─┼──▶ three separate organisations must
+     S4  independent observer  ─┘    collude simultaneously, leaving a
+                                     trail in three separate places
+
+  After the beacon publishes, S2 is free, so any 2 of {S1,S3,S4} suffice —
+  which is the intended operating mode: superintendent + observer, the
+  two-person rule, with the authority share as the recovery path.</pre>
+<p>
+Note how the threshold does double duty. Before <code>startAt</code> it is a
+strong anti-collusion barrier. After <code>startAt</code> it becomes a
+availability guarantee: any one holder can be ill, unreachable, or have lost
+their phone, and the exam still runs.
+</p>
+
+<h3>E.6 &nbsp;Commitments — naming the bad share</h3>
+<p>
+Raw Shamir has a nasty failure mode worth understanding, because it is the reason
+our implementation is not just a library call.
+</p>
+<div class="note warn">
+Lagrange interpolation over three points always produces <em>a</em> secret. If one
+share is corrupt or malicious, you get a <b>wrong key with no error at all</b> —
+decryption simply fails later, with no indication of <em>which</em> holder
+supplied bad material. In an exam hall at 08:55 that is an unrecoverable
+situation with three people accusing each other.
+</div>
+<pre>  every share carries   commitment = sha256(share)
+
+  on reconstruction:
+    1. check EACH share against its own commitment first
+         → mismatch names the holder:
+           "share commitment mismatch from: superintendent"
+    2. reject duplicate indices
+         → "share index 3 (superintendent) supplied more than once"
+    3. only then interpolate
+    4. verify the recovered secret against a commitment to K itself</pre>
+<p>
+The result is that a failed unlock produces an attributable, actionable message
+rather than a mystery.
+</p>
+
+<h3>E.7 &nbsp;The offline fallback — the weakest link, stated plainly</h3>
+<p>
+Beacons need network. Many centres have neither reliable connectivity nor power.
+The fallback: two control-room operators each authenticate and release a
+replacement for S2, delivered by an operator reading a short code over a phone
+call.
+</p>
+<p>Every one of these is required:</p>
+<ul>
+  <li>Two <b>distinct</b> control-room operators authorise.</li>
+  <li>Exam authority and independent observer are alerted <b>synchronously</b>.</li>
+  <li>Rate-limited per exam; exceeding it escalates to a named human.</li>
+  <li><code>FALLBACK_INVOKED</code> is written to the ledger <b>before</b> the share is released.</li>
+  <li>Every invocation reviewed post-exam and the aggregate count <b>published</b>.</li>
+</ul>
+<div class="note kill">
+This path re-introduces exactly the central-operator risk that S2 exists to
+remove. It is the weakest link in the design. Measure it and publish it — hiding
+it is what would actually destroy credibility.
+</div>
+
+<h3>E.8 &nbsp;What is lost without an HSM</h3>
+<p>
+With a FIPS 140-2 Level 3 HSM, S1 could never be extracted even under full server
+compromise. Without one, S1 is a passphrase-wrapped blob on our infrastructure: an
+attacker who fully owns our servers <em>and</em> obtains one more share can open a
+package early. The threshold split still means we are not a single point of
+failure — but do not claim HSM-grade custody. If a customer requires it, S1 moves
+to their HSM with no change to the rest of the design.
+</p>
+</section>
+
+<!-- ═══════════ F ═══════════ -->
+<section class="part">
+<h2>F &nbsp;The hardware layer — ESP32, camera, fingerprint</h2>
+
+<h3>F.1 &nbsp;Three devices, three jobs</h3>
+<table>
+<tr><th>Device</th><th>MCU</th><th>Job</th><th>Phase</th></tr>
+<tr><td><b>Room monitor</b></td><td>ESP32-C3 / WROOM-32</td><td>Who was in the strongroom, and when. Continuous, non-imaging.</td><td>3</td></tr>
+<tr><td><b>Witness station</b></td><td>ESP32-S3 + PSRAM</td><td>Who opened the bundle. Event-scoped, biometric + visual.</td><td>4 <span class="tag new">NEW</span></td></tr>
+<tr><td><b>Seal lock</b></td><td>ESP32-C6</td><td>Whether the bundle was physically opened. Continuous tamper loop.</td><td>5</td></tr>
+</table>
+
+<h3>F.2 &nbsp;The privacy decision you must make consciously</h3>
+<div class="note kill">
+<b>Your own spec currently forbids this.</b> <code>docs/06-hardware-spec.md</code>
+chose the HLK-LD2410C mmWave sensor specifically because it detects a person
+without imaging them — the note reads <em>"no imaging, so no DPDP exposure"</em>
+and <em>"no camera anywhere in the design."</em> Adding a webcam reverses a
+deliberate choice. If you present both documents without addressing this, you
+will be asked about it.
+</div>
+<p>The defensible resolution is <b>scope</b>, and it is worth stating as a rule:</p>
+<table>
+<tr><th></th><th>Continuous room surveillance</th><th>Event-scoped witness capture <b>← do this</b></th></tr>
+<tr><td>Captures</td><td>Everyone entering the room, all day</td><td>Two named officials performing one duty</td></tr>
+<tr><td>Volume</td><td>Hours of video per centre per day</td><td>A handful of frames per exam</td></tr>
+<tr><td>Legal footprint</td><td>Large. Notice, consent, retention policy, DPO obligations at scale</td><td>Small. Two consenting officials, narrow purpose, short retention</td></tr>
+<tr><td>Defensibility</td><td>Hard. "Why are you filming a school corridor?"</td><td>Easy. "The two people who opened the sealed papers are photographed at the moment they open them."</td></tr>
+</table>
+<p>
+So: <b>the camera fires only on the unlock ceremony</b>, triggered by the
+biometric assertions, and never streams. The room monitor keeps its non-imaging
+sensors and gains no camera. Under India's DPDP Act 2023, biometric and facial
+data are personal data — purpose limitation and data minimisation are your
+friends here, and event-scoping gives you both for free.
+</p>
+
+<h3>F.3 &nbsp;Witness station — bill of materials</h3>
+<table>
+<tr><th>Component</th><th>Part</th><th>Approx cost</th><th>Purpose</th></tr>
+<tr><td>MCU</td><td>ESP32-S3-WROOM-1, 8 MB PSRAM</td><td>Rs 600</td><td>Camera interface, PSRAM for frame buffers, Wi-Fi + BLE</td></tr>
+<tr><td>Camera</td><td>OV2640 (2 MP) or OV5640 (5 MP)</td><td>Rs 350</td><td>Still capture at the unlock moment. Not video.</td></tr>
+<tr><td>Fingerprint</td><td>R307 / AS608 optical, UART</td><td>Rs 800</td><td>On-module matching; templates never leave the module</td></tr>
+<tr><td>Time</td><td>DS3231 RTC</td><td>Rs 100</td><td>Trustworthy timestamps offline</td></tr>
+<tr><td>Buffer</td><td>microSD module</td><td>Rs 100</td><td>Write before transmit</td></tr>
+<tr><td>Indicator</td><td>SSD1306 OLED + buzzer</td><td>Rs 200</td><td>Two-person state must be visible in the room</td></tr>
+</table>
+<p>Target BOM under Rs 2,200. Higher than the room monitor, but one per centre and only used on exam day.</p>
+<div class="note warn">
+<b>Sensor choice, honestly.</b> Optical fingerprint modules (R307, AS608) are
+cheap and adequate, but they are <b>spoofable</b> with a lifted print and wood
+glue or gelatin. A capacitive module (FPC1020 class) resists this considerably
+better for roughly double the cost. If a judge asks about presentation attacks,
+the correct answer is "optical in the prototype, capacitive in deployment, and
+the camera frame is the cross-check" — not "our fingerprint sensor cannot be
+fooled."
+</div>
+
+<h3>F.4 &nbsp;Why the fingerprint template never leaves the module</h3>
+<pre>  finger ──▶ [ R307 module ]
+                  │  enrols and matches ENTIRELY on-module
+                  │  stores template in its own flash
+                  │
+                  └──▶ returns only:  matched? + template slot id + score
+                            │
+             ESP32 ──▶ HMAC( slot_id ‖ counter ‖ rtc_time ) ──▶ ledger
+
+  The ledger stores:   "template slot 3 matched, score 187, at 08:52:14"
+  The ledger NEVER stores:   the fingerprint image, or the template</pre>
+<div class="note ok">
+This is both a privacy property and a security one. A database breach cannot
+leak biometrics that were never in the database, and it is the difference between
+"we record that the superintendent authenticated" and "we hold a national
+fingerprint collection." <b>Do not touch Aadhaar.</b> Enrol locally, per centre,
+per exam cycle — Aadhaar-linked biometrics carry statutory restrictions you do
+not want anywhere near a hackathon prototype.
+</div>
+
+<h3>F.5 &nbsp;How the camera frame becomes evidence</h3>
+<pre>  1. trigger: a biometric assertion succeeds  (never a timer, never motion)
+  2. capture: single JPEG frame, ~100 KB
+  3. hash:    imgHash = SHA256(jpeg bytes)
+  4. ledger:  the EVENT carries imgHash — the image itself does NOT
+  5. store:   JPEG written to microSD, uploaded when bandwidth allows
+  6. verify:  later, anyone can hash the stored image and compare to the
+              hash that was committed to the chain at 08:52:14
+
+  ▸ the chain proves the image is the one captured at that moment
+  ▸ the chain does not become a photo archive
+  ▸ losing the image later does not break the chain</pre>
+<p>
+This is the same pattern as the custody key: commit the hash, hold the artefact
+elsewhere. It keeps the ledger small, keeps images out of a system designed for
+signed facts, and still makes substitution detectable.
+</p>
+
+<h3>F.6 &nbsp;New checks the hardware adds to the engine</h3>
+<p>The 15 software checks stay exactly as they are. Hardware adds six more, applied only at stage 6 (<code>unlock</code>):</p>
+<table>
+<tr><th>#</th><th>Check</th><th>What it establishes</th></tr>
+<tr><td>16</td><td><code>biometric_primary</code></td><td>A fingerprint matched the superintendent's enrolled template</td></tr>
+<tr><td>17</td><td><code>biometric_secondary</code></td><td>A <b>different</b> template matched — the observer, not the same finger twice</td></tr>
+<tr><td>18</td><td><code>two_person_copresence</code></td><td>Both assertions fell inside a short window (e.g. 120 s), so the two people were there together</td></tr>
+<tr><td>19</td><td><code>occupancy_corroborated</code></td><td>The room monitor's independent headcount is consistent with two people</td></tr>
+<tr><td>20</td><td><code>seal_lock_intact</code></td><td>The tamper loop was unbroken up to this authorised open</td></tr>
+<tr><td>21</td><td><code>witness_capture</code></td><td>A frame was captured and its hash committed to the chain</td></tr>
+</table>
+<div class="note">
+Every one of these follows the existing rules: <b>always evaluated</b>, never
+short-circuited, and each records <em>evidence</em> rather than a verdict —
+<code>"slot 3 matched, score 187"</code>, <code>"assertions 41 s apart"</code>,
+<code>"monitor reports at least 2 present"</code>.
+</div>
+
+<h3>F.7 &nbsp;Firmware rules — same for all three devices</h3>
+<ul>
+  <li><b>Heartbeat every 30 seconds.</b> Absence of a heartbeat is itself a ledger event. Unplugging the device is not a way to go dark; it is a way to raise an alarm.</li>
+  <li><b>Write to SD before transmitting.</b> Cutting power or jamming Wi-Fi must not erase the record.</li>
+  <li><b>RTC-stamped monotonic sequence numbers</b>, so gaps are visible rather than silent.</li>
+  <li><b>HMAC every record</b> with a per-device key provisioned at flash time.</li>
+  <li><b>BLE drain fallback</b> where the school has no usable Wi-Fi — the field app empties the buffer on its next visit.</li>
+</ul>
+
+<h3>F.8 &nbsp;Honest limits of the hardware</h3>
+<div class="note kill">
+<b>ESP32 flash is readable.</b> An attacker with physical access and patience can
+extract the per-device HMAC key and forge records. These devices are
+<b>tamper-evident, not tamper-proof</b>. Their real value is the heartbeat gap and
+the anomaly log, not cryptographic assurance.
+<br><br>
+<b>Optical fingerprint sensors are spoofable</b> with a lifted print.
+<br><br>
+<b>And the point that matters most:</b> at Hazaribagh the principal was
+<em>authorised</em> to be in that room. Biometrics and occupancy sensing are
+detective controls against <em>unauthorised</em> entry, and close to useless
+against <em>authorised</em> betrayal. Build them; do not let them be the story.
+The story is the ledger.
+</div>
+</section>
+
+<!-- ═══════════ G ═══════════ -->
+<section class="part">
+<h2>G &nbsp;Combined flow map — hardware and software together</h2>
+
+<h3>G.1 &nbsp;The unlock ceremony, end to end</h3>
+<pre>  ┌─ STRONGROOM ────────────────────────────────────────────────────────┐
+  │  room monitor: door closed · 0 present · lights off · ♥ every 30 s  │
+  │  seal lock:    tamper loop intact · counter 41 · ♥ every 30 s       │
+  └──────────────────────────────┬──────────────────────────────────────┘
+                                 │  T-0  drand beacon publishes
+                                 │       └─ share S2 recoverable
+                                 ▼
+  ┌─ WITNESS STATION ───────────────────────────────────────────────────┐
+  │  superintendent → finger → slot 3 matched, score 187                │
+  │                          → camera frame #1, SHA256 committed        │
+  │                          → releases share S3                        │
+  │                                                                     │
+  │  observer       → finger → slot 7 matched, score 203   (41 s later) │
+  │                          → camera frame #2, SHA256 committed        │
+  │                          → releases share S4                        │
+  │                                                                     │
+  │  OLED: "2 of 2 present — proceeding"                                │
+  └──────────────────────────────┬──────────────────────────────────────┘
+                                 ▼
+  ┌─ ACCESS ENGINE ─────────────────────────────────────────────────────┐
+  │  15 software checks   +   6 hardware checks  =  21, all evaluated   │
+  │  attempt written to led.access_attempt BEFORE any response          │
+  └──────────────────────────────┬──────────────────────────────────────┘
+                                 │  granted
+                                 ▼
+  ┌─ KEY RECONSTRUCTION ────────────────────────────────────────────────┐
+  │  commitments verified per share  →  a bad share is NAMED            │
+  │  S2 + S3 + S4  ──Lagrange──▶  K        (in memory only)             │
+  │  decrypt bundle (XChaCha20-Poly1305) → spooler, never to disk       │
+  │  print exactly N copies, each watermarked                           │
+  │  zeroise K                                                          │
+  └──────────────────────────────┬──────────────────────────────────────┘
+                                 ▼
+  ┌─ LEDGER ────────────────────────────────────────────────────────────┐
+  │  UNLOCK_GRANTED · PRINT_METERED · KEY_DESTROYED                     │
+  │  each: Ed25519 over JCS body  →  hash = SHA256(prev ‖ body)         │
+  │  → projection recomputes → daily Merkle anchor → RFC 3161  [gap]    │
+  └─────────────────────────────────────────────────────────────────────┘</pre>
+
+<h3>G.2 &nbsp;What each layer contributes to one question</h3>
+<p>Take the question an investigator actually asks: <em>"Who opened package JPR-002, when, and was anyone else present?"</em></p>
+<table>
+<tr><th>Layer</th><th>Its answer</th><th>Could it be faked alone?</th></tr>
+<tr><td>Ledger</td><td>Device D signed an unlock event at 08:52:14, chained at entry #190</td><td>Not without breaking every later hash</td></tr>
+<tr><td>Custody keys</td><td>A key valid only for that stage and that 6-hour epoch was presented</td><td>Not after the epoch passes</td></tr>
+<tr><td>Fingerprint</td><td>Templates 3 and 7 matched, 41 s apart</td><td>Yes — optical sensors are spoofable</td></tr>
+<tr><td>Camera</td><td>Two frames, hashes committed to the chain at that instant</td><td>Only by substituting a face, not a hash</td></tr>
+<tr><td>Room monitor</td><td>Door opened 08:50, at least 2 present, lights on</td><td>Yes — flash is readable</td></tr>
+<tr><td>Seal lock</td><td>Tamper loop broke at 08:52:30, counter 41 → 42</td><td>Yes — with physical access</td></tr>
+</table>
+<div class="note ok">
+<b>This is the real argument for the hardware.</b> Individually, every physical
+sensor is defeatable. Together they are six independent witnesses that must all
+be corrupted <em>consistently</em> — and the ledger, which is the one layer that
+cannot be quietly rewritten, records what each of them said at the time. An
+attacker does not need to beat one control; they need to beat all six without
+contradiction, in a room, in minutes.
+</div>
+</section>
+
+<!-- ═══════════ H ═══════════ -->
+<section class="part">
+<h2>H &nbsp;Hardware build roadmap</h2>
+
+<h3>H.1 &nbsp;Sprint order for the witness station</h3>
+<table>
+<tr><th>Step</th><th>Deliverable</th><th>Proves</th></tr>
+<tr><td>1</td><td>ESP32-S3 blinks, Wi-Fi joins, RTC reads correct time</td><td>Toolchain works</td></tr>
+<tr><td>2</td><td>R307 enrols a finger and matches it, printing slot + score over serial</td><td>Biometric path works standalone</td></tr>
+<tr><td>3</td><td>OV2640 captures one JPEG to PSRAM and writes it to microSD</td><td>Camera path works standalone</td></tr>
+<tr><td>4</td><td>SHA-256 of the JPEG computed on-device and printed</td><td>Commitment is real, not asserted</td></tr>
+<tr><td>5</td><td>HMAC'd record POSTed to the ledger; appears in the control room</td><td><b>End-to-end. This is the demo.</b></td></tr>
+<tr><td>6</td><td>Two-person window logic + OLED state + buzzer</td><td>The ceremony, not just the sensors</td></tr>
+<tr><td>7</td><td>Write-to-SD-before-transmit, and heartbeat gap raises an event</td><td>Fails closed</td></tr>
+</table>
+<div class="note ok">
+<b>Stop at step 5 if time is short.</b> A fingerprint on a breadboard producing a
+signed row in a live control room is worth more in a demo than a polished
+enclosure with nothing behind it. Steps 6 and 7 are what make it real; step 5 is
+what makes it <em>believable</em>.
+</div>
+
+<h3>H.2 &nbsp;Integration risks, ranked</h3>
+<table>
+<tr><th>Risk</th><th>Mitigation</th></tr>
+<tr><td>ESP32-S3 camera + Wi-Fi + PSRAM contention causes brownouts and reboots</td><td>Capture first, transmit second, never concurrently. Use a supply rated well above 500 mA.</td></tr>
+<tr><td>Optical fingerprint fails on dry, worn, or work-hardened fingers — common in exactly this workforce</td><td>Enrol three fingers per person. Keep the WebAuthn path as the primary; biometrics <b>corroborate</b>, they do not replace.</td></tr>
+<tr><td>Camera frames are large; rural upload is slow</td><td>Only the hash is on the critical path. The image uploads whenever it can, or is drained over BLE later.</td></tr>
+<tr><td>Clock drift makes the two-person window unreliable</td><td>DS3231 is the on-device authority; the ledger records device time and server time separately and never corrects one with the other.</td></tr>
+<tr><td>Demo hardware fails on stage</td><td>Seed a completed ceremony beforehand and have the control-room record open in a second tab. Never let a loose jumper wire cost you the presentation.</td></tr>
+</table>
+
+<h3>H.3 &nbsp;What to say about the hardware in three sentences</h3>
+<div class="note">
+<b>What it adds.</b> "The ledger proves what was recorded. The hardware proves a
+specific human body was physically present at the moment the sealed bundle was
+opened — and commits a photograph of that moment to the same tamper-evident
+chain."
+<br><br>
+<b>Why it is scoped.</b> "The camera fires only on the unlock ceremony, never
+continuously. We photograph two officials performing one duty, not a school
+corridor. The fingerprint template never leaves the sensor module — we store a
+match result, not a biometric."
+<br><br>
+<b>What it does not do.</b> "Every one of these sensors is individually
+defeatable, and we say so in our own spec. Their value is that six independent
+witnesses must be corrupted consistently, and the one layer that cannot be
+quietly rewritten is the ledger recording what each of them said."
+</div>
+
+<div class="foot">
+Mohar — roadmap, flow maps, seal-mismatch theory, key division S1–S4, and the
+hardware layer. Companion to the main study guide. Software described here is
+implemented except where marked PLANNED or noted as a gap; all hardware in Parts
+F–H is design, not built. Source:
+<code>docs/learn/mohar-roadmap-and-flows.html</code>.
+</div>
+</section>
+
+</body>
+</html>

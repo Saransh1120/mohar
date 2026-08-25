@@ -1,0 +1,848 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mohar Mechanisms</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600;700&display=swap">
+<style>
+  :root{
+    --bg:#FFFFFF; --surf:#FAF8F7; --surf2:#F1EDEC;
+    --ink:#1A1413; --ink2:#4A403E; --ink3:#7A6E6B;
+    --rule:#DCD4D2; --rule2:#BCB1AE;
+    --acc:#8C2318; --accbg:#F7ECEA;
+    --ok:#1D5C48; --okbg:#E8F1EE;
+    --warn:#6E5310; --warnbg:#F7F1E2;
+    --mono:"IBM Plex Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif;
+    font-size:10.5pt;line-height:1.58;-webkit-font-smoothing:antialiased}
+  .page{max-width:44em;margin:0 auto;padding:2.5rem 1.5rem 4rem}
+
+  h1{font-family:"IBM Plex Serif",Georgia,serif;font-weight:600;
+    font-size:2.4rem;line-height:1.08;letter-spacing:-.02em;margin:0 0 .5rem}
+  .sub{font-size:1.1rem;color:var(--ink2);margin:0 0 1rem}
+  .kick{font:600 .7rem/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;
+    color:var(--acc);margin:0 0 1.1rem}
+
+  h2{font-family:"IBM Plex Serif",Georgia,serif;font-weight:600;
+    font-size:1.35rem;line-height:1.2;margin:2rem 0 .2rem;
+    padding-top:1rem;border-top:2px solid var(--rule2)}
+  h2 .n{color:var(--acc);font-family:var(--mono);font-size:.95rem;margin-right:.5rem}
+  h3{font-family:"IBM Plex Serif",Georgia,serif;font-weight:600;
+    font-size:1.02rem;margin:1.2rem 0 .35rem}
+
+  p{margin:0 0 .65rem}
+  ul,ol{margin:0 0 .8rem;padding-left:1.2rem}
+  li{margin-bottom:.3rem}
+  li::marker{color:var(--ink3)}
+  code{font-family:var(--mono);font-size:.87em;background:var(--surf2);
+    padding:.08em .34em;border-radius:2px}
+
+  pre{margin:0 0 .9rem;padding:.7rem .85rem;background:var(--surf);
+    border:1px solid var(--rule);border-left:3px solid var(--acc);border-radius:2px;
+    font-family:var(--mono);font-size:.82rem;line-height:1.6;overflow-x:auto}
+  pre code{background:none;padding:0}
+
+  table{width:100%;border-collapse:collapse;font-size:.88rem;margin:0 0 .9rem}
+  th,td{text-align:left;padding:.35rem .55rem;border-bottom:1px solid var(--rule);vertical-align:top}
+  thead th{font:600 .64rem/1.2 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+    color:var(--ink3);background:var(--surf2)}
+  tbody tr:last-child td{border-bottom:0}
+  td.t{font-family:var(--mono);font-size:.86em;white-space:nowrap}
+
+  .oneline{margin:0 0 .8rem;padding:.6rem .85rem;background:var(--surf);
+    border:1px solid var(--rule);border-radius:3px;
+    font-family:"IBM Plex Serif",Georgia,serif;font-size:1.02rem;line-height:1.45}
+  .oneline b{display:block;font:600 .62rem/1 var(--mono);letter-spacing:.09em;
+    text-transform:uppercase;color:var(--ink3);margin-bottom:.35rem;font-family:var(--mono)}
+
+  .box{margin:0 0 .85rem;padding:.6rem .8rem;border-left:3px solid var(--acc);
+    background:var(--accbg);border-radius:0 3px 3px 0}
+  .box :last-child{margin-bottom:0}
+  .box .t2{display:block;font:600 .62rem/1 var(--mono);letter-spacing:.09em;
+    text-transform:uppercase;color:var(--acc);margin-bottom:.35rem}
+  .box.warn{border-left-color:var(--warn);background:var(--warnbg)}
+  .box.warn .t2{color:var(--warn)}
+  .box.ok{border-left-color:var(--ok);background:var(--okbg)}
+  .box.ok .t2{color:var(--ok)}
+
+  .foot{margin-top:2.5rem;padding-top:.9rem;border-top:1px solid var(--rule);
+    font-size:.82rem;color:var(--ink3)}
+
+  @page{size:A4;margin:14mm 13mm}
+  h2{page-break-after:avoid;break-after:avoid}
+  h3{page-break-after:avoid;break-after:avoid}
+  p,li,tr,pre,.box,.oneline{page-break-inside:avoid;break-inside:avoid}
+  @media print{ .page{max-width:none;padding:0} }
+</style>
+</head>
+<body>
+<div class="page">
+
+<p class="kick">Mohar &middot; how each part actually works</p>
+<h1>Mechanisms</h1>
+<p class="sub">
+  Sixteen features. For each: the idea in one line, the mechanism underneath, and
+  the words to use for it.
+</p>
+
+<div class="box">
+  <span class="t2">How to read this</span>
+  <p>
+    Every section has the same three parts. <b>In one line</b> is what you say
+    first. <b>How it works</b> is the mechanism. <b>Terms</b> is the vocabulary —
+    use these words and the answer sounds like you built it, because you did.
+  </p>
+</div>
+
+<!-- 1 -->
+<h2><span class="n">01</span>Signing a record</h2>
+
+<div class="oneline"><b>In one line</b>
+  Each device has a private key. When it records something, it signs it, and
+  anyone can later prove which device said it.
+</div>
+
+<h3>How it works</h3>
+<p>
+  We use <b>Ed25519</b>, a public-key signature scheme on the Edwards25519 curve.
+  Each device holds a 32-byte <b>private key</b> (the seed); its 32-byte
+  <b>public key</b> is registered in the device table at enrolment. Signing
+  produces a 64-byte signature over the message bytes.
+</p>
+<p>
+  Ed25519 rather than ECDSA for one specific reason: it is
+  <b>deterministic</b>. ECDSA needs a fresh random nonce per signature, and a
+  weak random number generator leaks the private key. A cheap microcontroller
+  signing offline is exactly where that goes wrong. Ed25519 derives its nonce
+  from the message and the key, so there is no nonce to get wrong.
+</p>
+<p>
+  We sign the canonical message bytes directly, not a hash we computed
+  ourselves. Ed25519 hashes internally; signing our own hash would let a caller
+  substitute any 32 bytes for a real message.
+</p>
+
+<h3>Terms</h3>
+<table>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="t">Ed25519</td><td>Signature scheme, Edwards curve, 128-bit security level</td></tr>
+    <tr><td class="t">seed / private key</td><td>32 bytes held only by the device</td></tr>
+    <tr><td class="t">public key</td><td>32 bytes, registered at enrolment, safe to publish</td></tr>
+    <tr><td class="t">deterministic signature</td><td>No per-signature randomness needed</td></tr>
+    <tr><td class="t">nonce reuse</td><td>The ECDSA failure mode Ed25519 avoids entirely</td></tr>
+  </tbody>
+</table>
+
+<!-- 2 -->
+<h2><span class="n">02</span>Canonicalisation</h2>
+
+<div class="oneline"><b>In one line</b>
+  Two computers must agree byte-for-byte on what was signed, or every signature
+  fails.
+</div>
+
+<h3>How it works</h3>
+<p>
+  A signature covers bytes, not meaning. The same record written twice can come
+  out with its fields in a different order — after a database round trip, a
+  queue, or a clone — and the signature no longer verifies over the new bytes.
+</p>
+<p>
+  So we use <b>RFC 8785</b>, the <b>JSON Canonicalization Scheme</b> (JCS). It
+  fixes two things: object keys are sorted by UTF-16 code unit, and number
+  formatting is pinned to ECMAScript <code>Number::toString</code>. The bytes
+  become a function of the value alone.
+</p>
+<p>Two rules fall out, and both are load-bearing:</p>
+<ul>
+  <li>
+    <b>Optional fields are omitted, never null.</b> <code>{"a":null}</code> and
+    <code>{}</code> are different byte strings. The signing helper throws on any
+    null before it signs.
+  </li>
+  <li>
+    <b>Timestamps carry exactly three fractional digits and end in Z.</b>
+    <code>04:30:00Z</code> and <code>04:30:00.000Z</code> are the same instant and
+    different bytes.
+  </li>
+</ul>
+
+<div class="box warn">
+  <span class="t2">Where this cost real work</span>
+  <p>
+    The ESP32 has no JCS library. The firmware emits records already in canonical
+    form — keys pre-sorted, integers only, no nulls, no <code>geo</code> field —
+    and signs those exact bytes. A runtime guard aborts any record whose keys go
+    out of order, because the alternative is a device that looks healthy and whose
+    every record is rejected in the field.
+  </p>
+</div>
+
+<h3>Terms</h3>
+<table>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="t">canonicalisation</td><td>One value, exactly one byte representation</td></tr>
+    <tr><td class="t">RFC 8785 / JCS</td><td>The standard that defines it for JSON</td></tr>
+    <tr><td class="t">lexicographic key order</td><td>Sorted by UTF-16 code unit</td></tr>
+    <tr><td class="t">absent vs null</td><td>Different bytes; we always omit</td></tr>
+  </tbody>
+</table>
+
+<!-- 3 -->
+<h2><span class="n">03</span>The hash chain</h2>
+
+<div class="oneline"><b>In one line</b>
+  Each record carries a fingerprint of the record before it, so changing an old
+  one breaks every one after it.
+</div>
+
+<h3>How it works</h3>
+<p>Two hashes, because they answer two different questions.</p>
+<pre><code>bodyHash  = SHA256( JCS(body) )
+chainHash = SHA256( prevChainHash ‖ bodyHash )</code></pre>
+<p>
+  <code>‖</code> is byte concatenation. The first record uses a <b>genesis
+  hash</b> of 32 zero bytes as its predecessor.
+</p>
+<p>
+  The device signs only <code>bodyHash</code>'s input. It cannot sign
+  <code>chainHash</code>, because it does not know what came before — the chain
+  is global and the device may have been offline for hours. The ledger binds the
+  record to its position when it accepts it.
+</p>
+<p>Verification then proves two independent things:</p>
+<ul>
+  <li><b>Authorship</b> — the signature verifies over the body, so that device really said it</li>
+  <li><b>Order and completeness</b> — recomputing the chain proves nothing was reordered, inserted or removed</li>
+</ul>
+
+<h3>Concurrency</h3>
+<p>
+  The chain has exactly one tail. Two writers reading the same
+  <code>prevHash</code> would fork it, so appends take a transaction-scoped
+  <b>advisory lock</b> in the database and serialise. The lock releases on commit
+  or rollback.
+</p>
+
+<h3>Terms</h3>
+<table>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="t">SHA-256</td><td>Cryptographic hash, 256-bit output, collision-resistant</td></tr>
+    <tr><td class="t">bodyHash</td><td>Hash of the record's own canonical content</td></tr>
+    <tr><td class="t">chainHash</td><td>Hash binding this record to its predecessor</td></tr>
+    <tr><td class="t">genesis hash</td><td>32 zero bytes, the chain's starting point</td></tr>
+    <tr><td class="t">advisory lock</td><td>Serialises appends so the chain never forks</td></tr>
+    <tr><td class="t">tamper-evident</td><td>Change is detectable — not the same as prevented</td></tr>
+  </tbody>
+</table>
+
+<!-- 4 -->
+<h2><span class="n">04</span>Append-only storage</h2>
+
+<div class="oneline"><b>In one line</b>
+  The database does not grant our application permission to update or delete a
+  record. It is not a promise in code; it is a privilege that does not exist.
+</div>
+
+<h3>How it works</h3>
+<p>
+  Migrations run as a <b>migrator role</b> that owns the schema. The application
+  connects as a separate role which is granted only <code>SELECT</code> and
+  <code>INSERT</code> on the event table — no <code>UPDATE</code>, no
+  <code>DELETE</code>.
+</p>
+<p>
+  On boot the service queries the catalogue for its own privileges. If it finds a
+  connection holding <code>UPDATE</code> or <code>DELETE</code> on the event
+  table, or a superuser connection, it <b>refuses to start</b>. The guarantee is
+  checked at runtime rather than assumed.
+</p>
+
+<div class="box ok">
+  <span class="t2">Why this framing matters</span>
+  <p>
+    Application code can be changed by whoever deploys it. A database grant
+    cannot be changed by the application itself. Putting the guarantee at the
+    privilege layer means the strongest claim in the system does not depend on
+    the weakest layer.
+  </p>
+</div>
+
+<h3>Terms</h3>
+<table>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="t">append-only</td><td>Records are added, never modified or removed</td></tr>
+    <tr><td class="t">least privilege</td><td>A role holds only the rights it needs</td></tr>
+    <tr><td class="t">migrator role</td><td>Owns the schema; the app role does not</td></tr>
+    <tr><td class="t">fail-closed startup</td><td>Refuse to run rather than run unsafely</td></tr>
+  </tbody>
+</table>
+
+<!-- 5 -->
+<h2><span class="n">05</span>Merkle anchors</h2>
+
+<div class="oneline"><b>In one line</b>
+  Each day's records are summarised into one hash, so any single record can be
+  proved to belong to that day without showing the rest.
+</div>
+
+<h3>How it works</h3>
+<p>
+  A <b>Merkle tree</b> is a binary tree of hashes. Leaves are the records; each
+  internal node is the hash of its two children; the top is the <b>Merkle
+  root</b>. One root summarises the whole day.
+</p>
+<p>
+  To prove one record is in that day you supply an <b>inclusion proof</b> — the
+  sibling hashes along the path from that leaf to the root, about
+  <code>log₂(n)</code> hashes. The verifier recomputes upward and compares to the
+  published root. A thousand records need roughly ten hashes to prove one.
+</p>
+<p>
+  Leaf hashes and internal hashes use <b>different domain prefixes</b>. Without
+  that separation an attacker could present an internal node as if it were a
+  leaf — a <b>second-preimage attack</b> on the tree.
+</p>
+
+<div class="box warn">
+  <span class="t2">Partly built</span>
+  <p>
+    The root is computed and stored. <b>RFC 3161</b> timestamping — having an
+    external timestamp authority countersign the root, so the date cannot be
+    backdated even by us — is not implemented. The Integrity page says so.
+  </p>
+</div>
+
+<h3>Terms</h3>
+<table>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="t">Merkle tree</td><td>Hash tree summarising many items into one root</td></tr>
+    <tr><td class="t">Merkle root</td><td>The single hash at the top</td></tr>
+    <tr><td class="t">inclusion proof</td><td>Sibling hashes proving one leaf belongs</td></tr>
+    <tr><td class="t">domain separation</td><td>Different prefixes for leaf and internal hashes</td></tr>
+    <tr><td class="t">RFC 3161</td><td>Trusted timestamping standard <i>(not implemented)</i></td></tr>
+  </tbody>
+</table>
+
+<!-- 6 -->
+<h2><span class="n">06</span>Splitting the key</h2>
+
+<div class="oneline"><b>In one line</b>
+  The content key is split into four pieces; any three rebuild it, and fewer than
+  three are useless.
+</div>
+
+<h3>How it works</h3>
+<p>
+  <b>Shamir's Secret Sharing</b> over the finite field <b>GF(2⁸)</b>. To split a
+  secret with threshold <code>k=3</code>, you build a random polynomial of degree
+  <code>k−1 = 2</code> whose constant term is the secret, then evaluate it at four
+  distinct points. Those four values are the shares.
+</p>
+<p>
+  Any three points determine a degree-2 polynomial uniquely — that is
+  <b>Lagrange interpolation</b> — so three shares recover the constant term. Two
+  points determine nothing: every possible secret remains equally likely. This is
+  <b>information-theoretic security</b>, not computational. It does not depend on
+  any problem being hard.
+</p>
+
+<h3>The sharp edge</h3>
+<p>
+  Shamir does not verify reconstruction. Feed it three shares where one is
+  corrupted and it returns a <em>wrong secret with no error</em>. Here that means
+  an AEAD decryption failure minutes before an exam, with no indication of which
+  holder supplied bad material.
+</p>
+<p>
+  So every share carries a <b>commitment</b> — a hash recorded when the package
+  was sealed — and reconstruction is verified against a commitment to the secret
+  itself. A bad share can be named.
+</p>
+
+<h3>Terms</h3>
+<table>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="t">Shamir Secret Sharing</td><td>Threshold splitting of a secret</td></tr>
+    <tr><td class="t">threshold (k-of-n)</td><td>3-of-4 here</td></tr>
+    <tr><td class="t">GF(2⁸)</td><td>The finite field the arithmetic runs in</td></tr>
+    <tr><td class="t">Lagrange interpolation</td><td>Recovering the polynomial from k points</td></tr>
+    <tr><td class="t">information-theoretic</td><td>Secure regardless of computing power</td></tr>
+    <tr><td class="t">share commitment</td><td>Hash that lets a bad share be identified</td></tr>
+  </tbody>
+</table>
+
+<!-- 7 -->
+<h2><span class="n">07</span>The time lock</h2>
+
+<div class="oneline"><b>In one line</b>
+  One share of the key does not exist until the exam time. It cannot be leaked,
+  stolen or demanded, because there is nothing yet to take.
+</div>
+
+<h3>How it works</h3>
+<p>
+  <b>drand</b> is a distributed randomness beacon. Its <b>quicknet</b> chain
+  emits a signed value every 3 seconds, each identified by a <b>round number</b>.
+  Round numbers are pure arithmetic on the clock — round 1 was emitted at a known
+  genesis time, so any future round maps to a known instant.
+</p>
+<p>
+  <b>Timelock encryption</b> uses the beacon's public key to encrypt toward a
+  future round. The ciphertext can only be opened once that round's signature is
+  published — which happens on schedule and cannot be hurried. The scheme is
+  built on <b>BLS signatures</b> and pairing-based identity encryption; the round
+  number plays the role of the identity.
+</p>
+<p>
+  We pin the chain hash, public key, period and genesis time in the code. A
+  beacon that reports different constants is either a different chain or a
+  hostile response, and we want a loud failure rather than a silently retargeted
+  lock.
+</p>
+
+<div class="box ok">
+  <span class="t2">Why this is the one genuinely preventive piece</span>
+  <p>
+    Every other control is detective — it records what happened. This one makes
+    early release impossible rather than merely detectable, and it does so with
+    mathematics rather than policy.
+  </p>
+</div>
+
+<h3>Terms</h3>
+<table>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="t">drand</td><td>Distributed randomness beacon network</td></tr>
+    <tr><td class="t">quicknet</td><td>The chain we target, 3-second period</td></tr>
+    <tr><td class="t">round</td><td>One beacon output; maps to an exact instant</td></tr>
+    <tr><td class="t">timelock encryption</td><td>Encrypt toward a future round</td></tr>
+    <tr><td class="t">BLS signature</td><td>Pairing-based scheme the beacon uses</td></tr>
+    <tr><td class="t">pinned constants</td><td>Chain hash and genesis fixed in code</td></tr>
+  </tbody>
+</table>
+
+<!-- 8 -->
+<h2><span class="n">08</span>Custody keys</h2>
+
+<div class="oneline"><b>In one line</b>
+  A credential for one stage of one package, valid for one six-hour epoch, stored
+  only as a hash.
+</div>
+
+<h3>How it works</h3>
+<p>
+  An <b>epoch</b> is a six-hour slice of the clock. Validity is arithmetic on the
+  timestamp, not a scheduled job — so if rotation never runs, keys stop working
+  rather than keeping working. <b>Fail-closed</b>, not fail-open.
+</p>
+<p>
+  When a key is issued the plaintext appears once, in that response, and nowhere
+  else. Only its <b>SHA-256</b> and a short <b>fingerprint</b> are stored.
+  Verification hashes what was presented and compares. A database dump yields no
+  usable key.
+</p>
+<p>
+  Keys are <b>stage-scoped</b>: a key for the transit stage does not open the
+  unlock stage. And the engine matches against every key ever issued for that
+  package, not just the current one — so a stale credential
+  (<code>key_expired</code>) is distinguishable from one we never issued
+  (<code>key_unknown</code>). Those call for very different responses.
+</p>
+
+<h3>Terms</h3>
+<table>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="t">epoch</td><td>Six-hour validity window</td></tr>
+    <tr><td class="t">stage-scoped</td><td>Bound to one custody stage</td></tr>
+    <tr><td class="t">fingerprint</td><td>Short prefix of the key hash, safe to display</td></tr>
+    <tr><td class="t">fail-closed</td><td>Failure denies rather than permits</td></tr>
+    <tr><td class="t">key rotation</td><td>Issuing the new epoch's keys</td></tr>
+  </tbody>
+</table>
+
+<!-- 9 -->
+<h2><span class="n">09</span>The access engine</h2>
+
+<div class="oneline"><b>In one line</b>
+  Twenty-one checks, all evaluated, none skipped, and the attempt is written
+  before the answer is returned.
+</div>
+
+<h3>How it works</h3>
+<p>
+  <b>Deny by default.</b> A request starts refused; every check must positively
+  pass. There is no path that returns granted without having evaluated all of
+  them.
+</p>
+<p>
+  <b>No short-circuiting.</b> We never stop at the first failure. An attempt that
+  trips four checks is a different event from one that trips a clock skew, and
+  there is no second chance to observe an attempt that already happened.
+</p>
+<p>
+  <b>Evidence, not verdicts.</b> Each check records what was observed —
+  &ldquo;312 m from the centre, geofence is 150 m&rdquo; — not the word
+  &ldquo;failed&rdquo;. A verdict without its inputs cannot be re-examined years
+  later.
+</p>
+<p>
+  <b>Write-before-answer.</b> The attempt is inserted inside the same transaction
+  that produces the decision, before the response is sent. There is no ordering
+  in which a caller learns the outcome without the attempt being on record.
+</p>
+
+<h3>Two design decisions worth naming</h3>
+<p>
+  <b>A denial is HTTP 200.</b> A refusal is a successful evaluation that produced
+  &ldquo;no&rdquo;. A client treating it as a transport error would retry it as
+  though the request had failed to arrive.
+</p>
+<p>
+  <b>Fixed devices are located by binding.</b> The geofence proves the requester
+  is at the centre. A phone must produce a position fix. A station bolted to the
+  wall and bound to its centre at enrolment is located by that binding — demanding
+  a fix from a device with no GNSS could only be satisfied by inventing a number.
+</p>
+
+<h3>Terms</h3>
+<table>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="t">deny by default</td><td>Refused unless every check passes</td></tr>
+    <tr><td class="t">short-circuit</td><td>Stopping at the first failure — which we do not do</td></tr>
+    <tr><td class="t">deny reason</td><td>A closed set of codes, so refusals aggregate</td></tr>
+    <tr><td class="t">geofence</td><td>Distance from centre against a radius</td></tr>
+    <tr><td class="t">haversine</td><td>Great-circle distance formula used for it</td></tr>
+    <tr><td class="t">clock skew</td><td>Device time minus server time; recorded, never corrected</td></tr>
+  </tbody>
+</table>
+
+<!-- 10 -->
+<h2><span class="n">10</span>Fingerprint matching</h2>
+
+<div class="oneline"><b>In one line</b>
+  The reader matches on its own chip and returns a slot number and a score. No
+  biometric ever leaves it.
+</div>
+
+<h3>How it works</h3>
+<p>
+  The R307 module contains its own processor and flash. Enrolment captures two
+  impressions, extracts a <b>feature template</b> (minutiae — ridge endings and
+  bifurcations) from each, merges them into a model, and stores that model in a
+  numbered <b>slot</b> on the module.
+</p>
+<p>
+  Matching captures an impression, extracts features, and searches the stored
+  templates. It returns the matching slot id and a <b>confidence score</b>
+  (roughly 0&ndash;255). That is the entire output. The microcontroller never
+  sees an image or a template.
+</p>
+<p>
+  So the ledger records <code>"slot 3 matched, score 187"</code>. A breach of the
+  database cannot leak a biometric that was never in it. Under India's
+  <b>DPDP Act 2023</b> biometric data is personal data, and the cleanest
+  compliance position is not to hold it.
+</p>
+
+<h3>Who slot 3 is</h3>
+<p>
+  Kept in a separate register — <b>reference data</b>, not chain data. A mapping
+  recorded against the wrong person must be correctable; a signed record must
+  not. Retired mappings are kept, because an assertion signed last month refers
+  to whoever held the slot then. Resolution is therefore
+  <b>as-at-the-time</b>, not as-at-now.
+</p>
+
+<div class="box warn">
+  <span class="t2">Honest limit</span>
+  <p>
+    An optical sensor is vulnerable to a <b>presentation attack</b> — a lifted
+    print in gelatin or wood glue. A capacitive sensor resists this considerably
+    better. This establishes that a body was present, not which body.
+  </p>
+</div>
+
+<h3>Terms</h3>
+<table>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="t">on-module matching</td><td>Comparison happens inside the sensor</td></tr>
+    <tr><td class="t">minutiae</td><td>Ridge endings and bifurcations used as features</td></tr>
+    <tr><td class="t">template</td><td>The stored feature set — never transmitted</td></tr>
+    <tr><td class="t">slot</td><td>Numbered storage position on the module</td></tr>
+    <tr><td class="t">confidence score</td><td>Match strength, recorded as evidence</td></tr>
+    <tr><td class="t">presentation attack</td><td>Fooling the sensor with a fake finger</td></tr>
+    <tr><td class="t">data minimisation</td><td>Hold the least data that does the job</td></tr>
+  </tbody>
+</table>
+
+<!-- 11 -->
+<h2><span class="n">11</span>The two-person rule</h2>
+
+<div class="oneline"><b>In one line</b>
+  Two different enrolled templates, inside a short window, or the ceremony is
+  refused.
+</div>
+
+<h3>How it works</h3>
+<p>
+  The station runs a small <b>state machine</b>. The first accepted match opens a
+  <b>session</b> with a generated identifier and starts a
+  <b>co-presence window</b> of 120 seconds. The second match must fall inside it
+  and must be a <em>different</em> slot.
+</p>
+<p>Three outcomes, and all three are recorded:</p>
+<table>
+  <thead><tr><th>Outcome</th><th>Cause</th></tr></thead>
+  <tbody>
+    <tr><td class="t">two_person_confirmed</td><td>Two distinct slots inside the window</td></tr>
+    <tr><td class="t">same_finger_twice</td><td>The same slot presented again</td></tr>
+    <tr><td class="t">window_expired</td><td>The second official never arrived</td></tr>
+  </tbody>
+</table>
+<p>
+  One person tapping twice is not two people — the same principle the ledger
+  enforces when it refuses a co-signature from the signing device itself.
+</p>
+<p>
+  A two-second <b>cooldown</b> follows each accepted match. The reader will read
+  the same thumb again if it shifts and settles, and that second read would land
+  as a second assertion. A genuine second official cannot present inside two
+  seconds, so nothing legitimate is suppressed.
+</p>
+
+<div class="box warn">
+  <span class="t2">The limit worth stating</span>
+  <p>
+    The rule checks two distinct <em>templates</em>, not two distinct
+    <em>people</em>. If one person enrols two of their own fingers under two
+    names, it passes. That is an enrolment-process failure, and the two
+    photographs are the control against it.
+  </p>
+</div>
+
+<!-- 12 -->
+<h2><span class="n">12</span>Photographic commitment</h2>
+
+<div class="oneline"><b>In one line</b>
+  We commit the hash of the photograph to the chain, and keep the photograph
+  somewhere else.
+</div>
+
+<h3>How it works</h3>
+<p>
+  On a successful match, one frame is captured and encoded as JPEG. We compute
+  <code>SHA-256</code> over the <em>encoded bytes</em> — not the canvas pixels,
+  because the JPEG is the artefact that will later be re-hashed. That digest goes
+  into the record; the image does not.
+</p>
+<p>This is a <b>commitment scheme</b>, and it gives three properties:</p>
+<ul>
+  <li>The chain proves the image is the one captured at that instant</li>
+  <li>The chain does not become a photo archive</li>
+  <li>Losing the image later does not break the chain — one commitment simply becomes uncheckable</li>
+</ul>
+<p>
+  The record also carries <code>assertionEventId</code>, binding the frame to one
+  specific fingerprint assertion rather than merely to the session. So
+  &ldquo;which official is this a photograph of&rdquo; has an answer that does not
+  rely on timestamp ordering.
+</p>
+
+<h3>Event scoping</h3>
+<p>
+  The camera fires only on a biometric assertion — never on a timer, never on
+  motion, never on request. That is <b>purpose limitation</b> made structural
+  rather than promised: a handful of frames per exam of two officials performing
+  one duty, not hours of a corridor.
+</p>
+
+<h3>Terms</h3>
+<table>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="t">commitment</td><td>Publish a hash now, reveal the artefact later</td></tr>
+    <tr><td class="t">binding</td><td>The committer cannot later swap the artefact</td></tr>
+    <tr><td class="t">event-scoped capture</td><td>Recording triggered by one event, not continuous</td></tr>
+    <tr><td class="t">purpose limitation</td><td>DPDP principle: collect only for a stated purpose</td></tr>
+  </tbody>
+</table>
+
+<!-- 13 -->
+<h2><span class="n">13</span>Heartbeat and silence</h2>
+
+<div class="oneline"><b>In one line</b>
+  Every device reports in every thirty seconds. The absence of a heartbeat is
+  itself a recorded event.
+</div>
+
+<h3>How it works</h3>
+<p>
+  Each heartbeat carries a <b>monotonic sequence number</b> held in the chip's
+  non-volatile storage, so it survives a reboot. Gaps are visible: if the ledger
+  holds 41 then 44, two records existed and did not arrive — a different fact
+  from two records never having been made.
+</p>
+<p>
+  A separate <b>watchdog service</b> derives silence. If a monitor misses three
+  consecutive heartbeats it signs a <code>MONITOR_SILENT</code> event. One per
+  outage, not one per poll: a control room drowning in repeats stops reading
+  them.
+</p>
+
+<div class="box ok">
+  <span class="t2">Why a device cannot report its own silence</span>
+  <p>
+    <code>MONITOR_SILENT</code> is a <b>service-only kind</b> — the ledger refuses
+    it from a field device. A device that could declare itself silent could also
+    decline to. The asymmetry is the whole point: unplugging the device is not a
+    way to go dark, it is a way to raise an alarm.
+  </p>
+</div>
+
+<!-- 14 -->
+<h2><span class="n">14</span>Device identity</h2>
+
+<div class="oneline"><b>In one line</b>
+  Every device is enrolled with its public key. Revoking one invalidates nothing
+  it already signed.
+</div>
+
+<h3>How it works</h3>
+<p>
+  Provisioning generates a keypair <em>on the machine doing the provisioning</em>
+  and registers only the public half. The private key never crosses the network.
+  The ledger refuses a duplicate public key: one key enrolled as two devices
+  would let a single board sign as both parties to a two-person act.
+</p>
+<p>
+  Revocation sets a timestamp. It stops future records being accepted; it does
+  not retroactively invalidate past ones, because those were validly signed at
+  the time. Rewriting the past is exactly what the system exists to prevent.
+</p>
+
+<div class="box warn">
+  <span class="t2">The gap, stated on the page itself</span>
+  <p>
+    <b>Attestation</b> is accepted but not verified. There is no Android Keystore
+    root-of-trust check, so enrolment trusts whoever can reach the endpoint. The
+    Devices page calls this a real gap rather than a simplification, and it is why
+    the service must stay behind a gateway that has not been built.
+  </p>
+</div>
+
+<h3>Terms</h3>
+<table>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="t">enrolment</td><td>Registering a device's public key</td></tr>
+    <tr><td class="t">attestation</td><td>Hardware proof the key lives in secure storage</td></tr>
+    <tr><td class="t">root of trust</td><td>The anchor an attestation chains to</td></tr>
+    <tr><td class="t">revocation</td><td>Stops future use, not past validity</td></tr>
+    <tr><td class="t">TPM</td><td>Secure element on a PC; the intended home for its key</td></tr>
+  </tbody>
+</table>
+
+<!-- 15 -->
+<h2><span class="n">15</span>Time on the device</h2>
+
+<div class="oneline"><b>In one line</b>
+  The device keeps its own clock and never corrects it from the network. Drift is
+  a finding, not a defect to hide.
+</div>
+
+<h3>How it works</h3>
+<p>
+  A <b>DS3231</b> real-time clock is temperature-compensated and battery-backed,
+  so it keeps time with no power and no network. Timestamps are RFC 3339 UTC with
+  exactly three fractional digits — the format the signed body requires.
+</p>
+<p>
+  The ledger records the device's time and its own arrival time separately, and
+  computes <code>clock_skew_ms</code>. It never reconciles the two. A device that
+  quietly rewrote its clock to match a server would destroy the evidence that the
+  two ever disagreed.
+</p>
+<p>
+  If the RTC reports it lost power, the device raises that condition into the
+  ledger at boot rather than carrying on with a wrong clock silently.
+</p>
+
+<!-- 16 -->
+<h2><span class="n">16</span>Durability on the device</h2>
+
+<div class="oneline"><b>In one line</b>
+  A record is durable before any radio is touched. Cutting power delays a record;
+  it does not erase one.
+</div>
+
+<h3>How it works</h3>
+<p>
+  The firmware builds and signs the record, writes it to a <b>spool</b>, and only
+  then attempts to transmit. With a card fitted the spool is an append-only file
+  per day with a cursor marking the first unacknowledged record — nothing is ever
+  deleted, so the card holds the device's own copy of everything it said.
+</p>
+<p>The transport honours three status codes, and each means something different:</p>
+<table>
+  <thead><tr><th>Code</th><th>Meaning</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td class="t">201</td><td>Appended</td><td>Drop from the spool</td></tr>
+    <tr><td class="t">200</td><td>Duplicate</td><td>Drop — this is what makes retry safe</td></tr>
+    <tr><td class="t">422</td><td>Rejected</td><td>Drop and raise; retrying forever wedges the queue</td></tr>
+  </tbody>
+</table>
+<p>
+  Idempotency comes from a client-generated event id. A device replaying its
+  queue after a flaky sync gets <code>200 duplicate</code> rather than creating a
+  second copy.
+</p>
+
+<div class="box warn">
+  <span class="t2">Our build is degraded, and says so</span>
+  <p>
+    No card is fitted, so the spool is a RAM ring of forty records. It does not
+    survive a power cut, and a long outage overruns it — dropping the
+    <em>oldest</em> record and counting the loss. The device announces
+    <code>spool_absent</code> into the ledger on every boot, because a device
+    running degraded must be distinguishable in the record from one running
+    properly.
+  </p>
+</div>
+
+<h3>Terms</h3>
+<table>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="t">write-before-transmit</td><td>Durable locally before any network attempt</td></tr>
+    <tr><td class="t">spool</td><td>The local queue of pending records</td></tr>
+    <tr><td class="t">idempotency key</td><td>Client-generated id making retries safe</td></tr>
+    <tr><td class="t">store-and-forward</td><td>Buffer offline, drain when reachable</td></tr>
+  </tbody>
+</table>
+
+<p class="foot">
+  Mohar — mechanisms. Sixteen features, each with its idea, its mechanism and its
+  vocabulary. Where something is not implemented it is marked, and where a
+  mechanism has a known weakness the weakness is stated next to it.
+</p>
+
+</div>
+</body>
+</html>

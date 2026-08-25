@@ -1,0 +1,917 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mohar, End to End</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600;700&display=swap">
+
+<style>
+  :root {
+    --ground:      #F4F2F1;
+    --surface:     #FFFFFF;
+    --surface-2:   #EDE9E7;
+    --ink:         #241C1B;
+    --ink-soft:    #5F5250;
+    --ink-faint:   #8A7C79;
+    --rule:        #DCD4D2;
+    --rule-strong: #C2B7B4;
+    --accent:      #8C2318;
+    --accent-ink:  #8C2318;
+    --accent-wash: #F3E4E1;
+    --signal:      #1D5C48;
+    --signal-wash: #E1EDE8;
+    --warn:        #7C5E10;
+    --warn-wash:   #F2EBD8;
+
+    --measure: 68ch;
+    --step--1: clamp(.78rem, .76rem + .1vw, .85rem);
+    --step-0:  clamp(1rem, .97rem + .16vw, 1.08rem);
+    --step-1:  clamp(1.2rem, 1.14rem + .3vw, 1.35rem);
+    --step-2:  clamp(1.45rem, 1.32rem + .6vw, 1.8rem);
+    --step-3:  clamp(2rem, 1.7rem + 1.5vw, 2.9rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #151110;
+      --surface:     #1D1817;
+      --surface-2:   #262020;
+      --ink:         #EFE9E7;
+      --ink-soft:    #B0A29F;
+      --ink-faint:   #7E716E;
+      --rule:        #342C2B;
+      --rule-strong: #4A403E;
+      --accent:      #E5705A;
+      --accent-ink:  #F09480;
+      --accent-wash: #2E1D1A;
+      --signal:      #58BC9B;
+      --signal-wash: #16302A;
+      --warn:        #CCA83A;
+      --warn-wash:   #302819;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #151110;
+    --surface:     #1D1817;
+    --surface-2:   #262020;
+    --ink:         #EFE9E7;
+    --ink-soft:    #B0A29F;
+    --ink-faint:   #7E716E;
+    --rule:        #342C2B;
+    --rule-strong: #4A403E;
+    --accent:      #E5705A;
+    --accent-ink:  #F09480;
+    --accent-wash: #2E1D1A;
+    --signal:      #58BC9B;
+    --signal-wash: #16302A;
+    --warn:        #CCA83A;
+    --warn-wash:   #302819;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: var(--step-0);
+    line-height: 1.66;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 1140px;
+    margin: 0 auto;
+    padding: 0 clamp(1.1rem, 4vw, 3rem) 6rem;
+  }
+  @media (min-width: 1000px) {
+    .shell { grid-template-columns: 13rem minmax(0, 1fr); gap: 0 4rem; }
+    .masthead, .flow, .colophon { grid-column: 2; }
+    .rail { grid-column: 1; grid-row: 1 / span 2; }
+  }
+
+  .rail { padding-top: 3.4rem; }
+  .rail-inner { position: sticky; top: 2rem; }
+  .rail h2 {
+    font: 600 var(--step--1)/1.2 "IBM Plex Mono", ui-monospace, monospace;
+    letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-faint); margin: 0 0 1rem;
+  }
+  .rail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .1rem; }
+  .rail a {
+    display: grid; grid-template-columns: 1.4rem 1fr; gap: .4rem;
+    padding: .3rem 0; color: var(--ink-soft); text-decoration: none;
+    font-size: var(--step--1); line-height: 1.35;
+  }
+  .rail a .mark { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; color: var(--ink-faint); }
+  .rail a:hover, .rail a:hover .mark { color: var(--accent-ink); }
+  .rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  @media (max-width: 999px) {
+    .rail { padding-top: 2rem; }
+    .rail-inner { position: static; }
+    .rail ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: .1rem 1.2rem; }
+  }
+
+  .masthead { padding: 3.4rem 0 1rem; }
+  .eyebrow {
+    font: 600 var(--step--1)/1 "IBM Plex Mono", ui-monospace, monospace;
+    letter-spacing: .16em; text-transform: uppercase;
+    color: var(--accent-ink); margin: 0 0 1.1rem;
+  }
+  h1 {
+    font-family: "IBM Plex Serif", ui-serif, Georgia, serif;
+    font-weight: 600; font-size: var(--step-3); line-height: 1.06;
+    letter-spacing: -.02em; text-wrap: balance; margin: 0 0 1rem;
+  }
+  .standfirst {
+    max-width: var(--measure); font-size: var(--step-1); line-height: 1.5;
+    color: var(--ink-soft); margin: 0 0 2rem;
+  }
+
+  .flow { display: flex; flex-direction: column; gap: 3.4rem; padding-top: 3rem; }
+  section { scroll-margin-top: 1.5rem; }
+
+  .part-head {
+    display: flex; align-items: baseline; gap: .85rem;
+    padding-bottom: .7rem; margin-bottom: 1.5rem;
+    border-bottom: 2px solid var(--rule-strong);
+  }
+  .part-head .num {
+    font: 600 var(--step-1)/1 "IBM Plex Mono", ui-monospace, monospace;
+    color: var(--accent-ink);
+  }
+  .part-head h2 {
+    font-family: "IBM Plex Serif", ui-serif, Georgia, serif;
+    font-weight: 600; font-size: var(--step-2); line-height: 1.15;
+    letter-spacing: -.015em; text-wrap: balance; margin: 0;
+  }
+
+  h3 {
+    font-family: "IBM Plex Serif", ui-serif, Georgia, serif;
+    font-weight: 600; font-size: var(--step-1); line-height: 1.25;
+    text-wrap: balance; margin: 2.1rem 0 .7rem;
+  }
+  section > h3:first-of-type { margin-top: 0; }
+
+  p, ul, ol { max-width: var(--measure); }
+  p { margin: 0 0 1rem; }
+  ul, ol { margin: 0 0 1rem; padding-left: 1.2rem; }
+  li { margin-bottom: .5rem; }
+  li::marker { color: var(--ink-faint); }
+  strong { font-weight: 600; }
+
+  code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .88em;
+    background: var(--surface-2); padding: .1em .38em; border-radius: 2px;
+  }
+  pre {
+    margin: 0 0 1.3rem; padding: .95rem 1.1rem;
+    background: var(--surface); border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent); border-radius: 2px;
+    overflow-x: auto; font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: var(--step--1); line-height: 1.6; color: var(--ink);
+  }
+  pre code { background: none; padding: 0; }
+
+  .scroller { overflow-x: auto; margin: 0 0 1.4rem; border: 1px solid var(--rule); border-radius: 3px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: var(--step--1); }
+  th, td { text-align: left; padding: .62rem .85rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th {
+    font: 600 .72rem/1.2 "IBM Plex Mono", ui-monospace, monospace;
+    letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-faint); background: var(--surface-2); white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; color: var(--ink-faint); }
+  td.mono, th.mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  .note {
+    max-width: var(--measure); margin: 0 0 1.3rem; padding: .95rem 1.1rem;
+    border-radius: 2px; border-left: 3px solid var(--accent); background: var(--accent-wash);
+  }
+  .note :last-child { margin-bottom: 0; }
+  .note .label {
+    display: block; font: 600 .72rem/1 "IBM Plex Mono", ui-monospace, monospace;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--accent-ink); margin-bottom: .5rem;
+  }
+  .note.limit { border-left-color: var(--warn); background: var(--warn-wash); }
+  .note.limit .label { color: var(--warn); }
+  .note.good { border-left-color: var(--signal); background: var(--signal-wash); }
+  .note.good .label { color: var(--signal); }
+
+  .lede {
+    max-width: var(--measure); font-family: "IBM Plex Serif", ui-serif, Georgia, serif;
+    font-size: var(--step-1); line-height: 1.5; color: var(--ink); margin: 0 0 1.4rem;
+  }
+
+  .close {
+    max-width: var(--measure); margin-top: 1.6rem; padding-top: 1.4rem;
+    border-top: 2px solid var(--rule-strong);
+    font-family: "IBM Plex Serif", ui-serif, Georgia, serif;
+    font-size: var(--step-1); line-height: 1.45;
+  }
+
+  .colophon {
+    margin-top: 4rem; padding-top: 1.2rem; border-top: 1px solid var(--rule);
+    font-size: var(--step--1); color: var(--ink-faint); max-width: var(--measure);
+  }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+
+<style>
+  @page { size: A4; margin: 16mm 14mm; }
+  @media print {
+    :root {
+      --ground: #FFFFFF; --surface: #FFFFFF; --surface-2: #F4F2F1;
+      --ink: #1A1413; --ink-soft: #4A403E; --ink-faint: #7A6E6B;
+      --rule: #D8D0CE; --rule-strong: #B8ADAA;
+      --accent: #8C2318; --accent-ink: #8C2318; --accent-wash: #F7ECEA;
+      --signal: #1D5C48; --signal-wash: #EAF2EF;
+      --warn: #6E5310; --warn-wash: #F7F1E2;
+    }
+    body { background: #fff; font-size: 10.5pt; line-height: 1.5; }
+    .shell { display: block; max-width: none; padding: 0; }
+    .rail { display: none; }
+    .masthead { padding: 0 0 1rem; }
+    .flow { gap: 0; padding-top: 1rem; }
+    /* Each numbered part starts a page, so the printed copy has the same shape
+       as the contents list. */
+    section { break-before: page; break-inside: auto; }
+    section:first-of-type { break-before: auto; }
+    .part-head, h3 { break-after: avoid; }
+    p, li, tr, pre, .note { break-inside: avoid; }
+    .scroller { overflow: visible; }
+    a { color: var(--accent-ink); text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <nav class="rail" aria-label="Sections">
+    <div class="rail-inner">
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#s1"><span class="mark">1</span><span>The problem</span></a></li>
+        <li><a href="#s2"><span class="mark">2</span><span>The one idea</span></a></li>
+        <li><a href="#s3"><span class="mark">3</span><span>The chain</span></a></li>
+        <li><a href="#s4"><span class="mark">4</span><span>What gets recorded</span></a></li>
+        <li><a href="#s5"><span class="mark">5</span><span>The key, split</span></a></li>
+        <li><a href="#s6"><span class="mark">6</span><span>The access engine</span></a></li>
+        <li><a href="#s7"><span class="mark">7</span><span>The hardware</span></a></li>
+        <li><a href="#s8"><span class="mark">8</span><span>The ceremony</span></a></li>
+        <li><a href="#s9"><span class="mark">9</span><span>Honest limits</span></a></li>
+        <li><a href="#s10"><span class="mark">10</span><span>Running it</span></a></li>
+      </ol>
+    </div>
+  </nav>
+
+  <header class="masthead">
+    <p class="eyebrow">Mohar · study guide</p>
+    <h1>Custody you cannot quietly rewrite</h1>
+    <p class="standfirst">
+      What the system is, why each piece is shaped the way it is, and what it
+      refuses to claim. Written against the code as it actually stands, hardware
+      and software together.
+    </p>
+  </header>
+
+  <main class="flow">
+
+    <!-- 1 ─────────────────────────────────────────────── -->
+    <section id="s1">
+      <div class="part-head"><span class="num">1</span><h2>The problem is custody, not cryptography</h2></div>
+
+      <p class="lede">
+        Question papers do not usually leak because someone broke the encryption.
+        They leak because somebody who was allowed to hold them handed them to
+        somebody else, and no record exists that could say when.
+      </p>
+
+      <p>
+        At Hazaribagh the principal was <em>authorised</em> to be in the strong
+        room. There was no lock to pick and no cipher to break. What was missing
+        was an account of who had the package, when, and what they did with it —
+        and by the time anyone asked, the only available answer was a register
+        that could be written up afterwards to say whatever was convenient.
+      </p>
+
+      <p>
+        That reframes what a system like this is for. Encrypting the paper is
+        easy and largely beside the point: the people who leak it are the people
+        holding the key. What is hard is producing a record of custody that
+        cannot be edited after the fact by anybody, including the people running
+        the system.
+      </p>
+
+      <div class="note">
+        <span class="label">The design question</span>
+        <p>
+          Not "how do we stop a leak", which nothing can promise. It is: when a
+          leak happens, can we say with evidence who held the package at every
+          moment, and can that evidence survive the people who would most like
+          to change it?
+        </p>
+      </div>
+    </section>
+
+    <!-- 2 ─────────────────────────────────────────────── -->
+    <section id="s2">
+      <div class="part-head"><span class="num">2</span><h2>One idea, applied everywhere</h2></div>
+
+      <p class="lede">
+        Everything is an append-only sequence of signed facts. State is not
+        stored; it is derived by replaying the sequence.
+      </p>
+
+      <p>
+        The consequence people miss is what it does to <em>absence</em>. If the
+        current state were a row in a table, deleting an inconvenient step would
+        leave a plausible-looking table. When the state is a replay of events,
+        removing a step leaves a hole — the chain no longer recomputes — and the
+        hole is itself the finding.
+      </p>
+
+      <p>Three rules follow, and they explain most of the code:</p>
+
+      <ul>
+        <li>
+          <strong>The ledger never refuses to record something that happened.</strong>
+          It rejects only what it cannot <em>authenticate</em>: an unknown device,
+          a bad signature, a malformed body. It does not reject events that
+          violate policy — an out-of-order handoff, an unlock outside its window.
+          Refusing to record a violation does not prevent it; it only removes the
+          evidence, recreating the exact invisible gap the system exists to
+          eliminate.
+        </li>
+        <li>
+          <strong>Record evidence, not verdicts.</strong> "187" and "41 seconds
+          apart" and "312 m from the centre" can be re-examined years later.
+          "Passed" cannot.
+        </li>
+        <li>
+          <strong>A check nobody ran must never look like a check that passed.</strong>
+          Unevaluated checks say so, in those words.
+        </li>
+      </ul>
+
+      <div class="note good">
+        <span class="label">Why append-only is enforced by the database</span>
+        <p>
+          The application role has no <code>UPDATE</code> or <code>DELETE</code>
+          grant on the event table. The service refuses to boot if it detects a
+          connection that holds one. The guarantee is a database privilege, not a
+          promise made by application code — code can be changed by whoever
+          deploys it.
+        </p>
+      </div>
+    </section>
+
+    <!-- 3 ─────────────────────────────────────────────── -->
+    <section id="s3">
+      <div class="part-head"><span class="num">3</span><h2>How the chain actually works</h2></div>
+
+      <p>Two hashes, because they answer two different questions.</p>
+
+      <pre><code>bodyHash  = SHA256( JCS(body) )                 ← what the device signs
+chainHash = SHA256( prevChainHash ‖ bodyHash )  ← what fixes it in sequence</code></pre>
+
+      <p>
+        A device cannot know <code>prevChainHash</code> when it signs: the chain
+        is global and the device may have been offline for hours. So the
+        signature covers only the body, and the ledger binds that body to a
+        position when it accepts it.
+      </p>
+
+      <p>Anyone can then verify two independent things:</p>
+      <ul>
+        <li>that the authoring device really produced this content — Ed25519 over the body;</li>
+        <li>that the ledger has not reordered, inserted or removed anything since — recompute the chain.</li>
+      </ul>
+
+      <h3>Why RFC 8785, and why it bites</h3>
+
+      <p>
+        Signing <code>JSON.stringify</code> output would be a bug waiting for a
+        deployment. Stringify preserves <em>insertion</em> order, so a body that
+        round-trips through Postgres <code>jsonb</code>, a queue, or a client-side
+        clone can come back with its keys reordered — same object, different
+        bytes, and every signature over it silently stops verifying. RFC 8785
+        (JCS) sorts keys and pins number formatting, so the bytes are a function
+        of the value alone.
+      </p>
+
+      <p>Two rules fall out of that, and both are load-bearing:</p>
+      <ul>
+        <li>
+          <strong>Optional fields are omitted, never null.</strong>
+          <code>{"a":null}</code> and <code>{}</code> are different byte strings.
+          A client that helpfully fills blanks with null produces a body nobody
+          can verify. The signing helper throws on any null before it signs.
+        </li>
+        <li>
+          <strong>Timestamps are pinned to millisecond precision, always Z.</strong>
+          <code>04:30:00Z</code> and <code>04:30:00.000Z</code> are the same
+          instant and different bytes, and only one of them is the one that was
+          signed.
+        </li>
+      </ul>
+
+      <div class="note limit">
+        <span class="label">Where this cost us</span>
+        <p>
+          The ESP32 has no JCS library, so the firmware emits bodies already in
+          canonical form — keys in sorted order, integers only, no nulls, no
+          <code>geo</code> — and signs those exact bytes. A runtime guard aborts
+          the build of any body whose keys go out of order, because the
+          alternative is a device that looks healthy and whose every record is
+          rejected in the field with no console attached.
+        </p>
+      </div>
+
+      <h3>Merkle anchors</h3>
+      <p>
+        Each day's events are hashed into a Merkle tree and the root is
+        published. Anyone holding one event can be given a short inclusion proof
+        against that day's root without being given the rest of the day. The root
+        is the transparency surface: it is public and unauthenticated on purpose.
+      </p>
+    </section>
+
+    <!-- 4 ─────────────────────────────────────────────── -->
+    <section id="s4">
+      <div class="part-head"><span class="num">4</span><h2>What gets recorded</h2></div>
+
+      <p>
+        Twenty-one event kinds, each with its own typed payload. The discriminated
+        union means <code>body.payload</code> narrows from <code>body.kind</code>
+        with no casts anywhere in the services.
+      </p>
+
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Group</th><th>Kinds</th></tr></thead>
+          <tbody>
+            <tr><td>Package lifecycle</td><td class="mono">PACKAGE_SEALED · SEAL_APPLIED · HANDOFF · SCAN_OBSERVED</td></tr>
+            <tr><td>Access decisions</td><td class="mono">ACCESS_REQUESTED · ACCESS_GRANTED · ACCESS_DENIED · OVERRIDE_USED · SEAL_MISMATCH</td></tr>
+            <tr><td>Room telemetry</td><td class="mono">MONITOR_HEARTBEAT · MONITOR_SILENT · ROOM_ENTRY</td></tr>
+            <tr><td>Witness station</td><td class="mono">WITNESS_ASSERTED · WITNESS_CEREMONY · WITNESS_FRAME</td></tr>
+            <tr><td>Key custody</td><td class="mono">SHARE_RELEASED · FALLBACK_INVOKED</td></tr>
+            <tr><td>Printing</td><td class="mono">PRINT_STARTED · PRINT_COMPLETED · KEY_DESTROYED</td></tr>
+            <tr><td>Catch-all</td><td class="mono">EXCEPTION_RAISED</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Two kinds of asymmetry worth noticing</h3>
+
+      <p>
+        <strong>Service-only kinds.</strong> A field device may not emit
+        <code>ACCESS_GRANTED</code>, <code>MONITOR_SILENT</code>, or
+        <code>SHARE_RELEASED</code>. A device that could declare itself silent
+        could also decline to; a device that could grant its own access would not
+        be asking.
+      </p>
+
+      <p>
+        <strong>Co-signed kinds.</strong> <code>HANDOFF</code>,
+        <code>OVERRIDE_USED</code> and <code>FALLBACK_INVOKED</code> require a
+        second signature from a <em>different</em> enrolled device. Two signatures
+        from one device is one person tapping twice, and the whole point of a
+        two-person rule is that it is two people.
+      </p>
+
+      <h3>Flags, not refusals</h3>
+      <p>
+        An accepted event can carry advisory flags — clock skew, a missing
+        position fix, a body backdated beyond the offline window. None of them is
+        grounds to refuse the record. They are observations attached to a fact
+        that happened.
+      </p>
+    </section>
+
+    <!-- 5 ─────────────────────────────────────────────── -->
+    <section id="s5">
+      <div class="part-head"><span class="num">5</span><h2>The key, split four ways</h2></div>
+
+      <p>
+        The content key is split with Shamir into four shares, any three of which
+        reconstruct it.
+      </p>
+
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Share</th><th>Held by</th><th>Released when</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">S1</td><td>the authority</td><td>Passphrase-wrapped on our infrastructure</td></tr>
+            <tr><td class="mono">S2</td><td>a drand time lock</td><td>Automatically, once the beacon round publishes</td></tr>
+            <tr><td class="mono">S3</td><td>the superintendent</td><td>On their authentication at the ceremony</td></tr>
+            <tr><td class="mono">S4</td><td>the observer</td><td>On theirs</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Three of four means no single holder can open a package and no single
+        holder can prevent one. The time lock is what makes "not before T" a
+        property of physics rather than of our access control: before the drand
+        round publishes, S2 does not exist to be leaked, subpoenaed or coerced
+        out of anybody.
+      </p>
+
+      <div class="note limit">
+        <span class="label">A sharp edge, blunted deliberately</span>
+        <p>
+          The Shamir library does not verify reconstruction. Feed it three shares
+          where one is corrupted and it returns a wrong secret with no error — in
+          this setting, an AEAD failure minutes before an exam with no indication
+          of <em>which</em> holder supplied bad material. So every share carries a
+          commitment and reconstruction is verified against a commitment to the
+          secret. A bad share can be named.
+        </p>
+      </div>
+
+      <div class="note limit">
+        <span class="label">And one we did not blunt</span>
+        <p>
+          Without an HSM, S1 is a passphrase-wrapped blob on our infrastructure.
+          An attacker who fully owns our servers <em>and</em> obtains one more
+          share can open a package early. The threshold split means we are not a
+          single point of failure — but this is not HSM-grade custody, and it
+          should not be described as such.
+        </p>
+      </div>
+
+      <h3>Custody keys are a different thing</h3>
+      <p>
+        Distinct from the content key: a stage-scoped credential valid for one
+        six-hour epoch. Only its SHA-256 is stored, so a database dump does not
+        yield working keys, and losing one means rotating rather than recovering.
+        That is the intended cost of a credential that cannot be reconstructed
+        from a database.
+      </p>
+    </section>
+
+    <!-- 6 ─────────────────────────────────────────────── -->
+    <section id="s6">
+      <div class="part-head"><span class="num">6</span><h2>The access engine</h2></div>
+
+      <p class="lede">
+        Deny by default. Twenty-one checks, all of them evaluated, none
+        short-circuited.
+      </p>
+
+      <p>
+        Never stopping at the first failure costs a few comparisons and buys a
+        complete record. An attempt that trips four checks is a materially
+        different event from one that trips a clock skew, and there is no second
+        chance to observe an attempt that already happened.
+      </p>
+
+      <div class="scroller">
+        <table>
+          <thead><tr><th class="num">#</th><th>Check</th><th>Establishes</th></tr></thead>
+          <tbody>
+            <tr><td class="num">1–4</td><td class="mono">key_presented · key_valid · key_in_window · key_stage_match</td><td>A custody key for this stage and this epoch was presented</td></tr>
+            <tr><td class="num">5–6</td><td class="mono">device_enrolled · device_binding</td><td>The device is enrolled, unrevoked, and belongs to this centre</td></tr>
+            <tr><td class="num">7–8</td><td class="mono">roster_membership · role_permitted</td><td>The named person is on this centre's roster in a permitted role</td></tr>
+            <tr><td class="num">9–10</td><td class="mono">geofence · geo_accuracy</td><td>The device is at the centre</td></tr>
+            <tr><td class="num">11–12</td><td class="mono">custody_window · clock_skew</td><td>This is a moment the package may be handled</td></tr>
+            <tr><td class="num">13</td><td class="mono">seal_serial</td><td>The serial read matches the one registered</td></tr>
+            <tr><td class="num">14–15</td><td class="mono">package_state · exam_active</td><td>The package can be opened and the exam is not suspended</td></tr>
+            <tr><td class="num">16–17</td><td class="mono">biometric_primary · biometric_secondary</td><td>Two different enrolled templates matched</td></tr>
+            <tr><td class="num">18</td><td class="mono">two_person_copresence</td><td>Both assertions fell inside a short window</td></tr>
+            <tr><td class="num">19</td><td class="mono">occupancy_corroborated</td><td>The room monitor's independent count agrees</td></tr>
+            <tr><td class="num">20</td><td class="mono">seal_lock_intact</td><td><em>Not evaluated — the seal lock is not built</em></td></tr>
+            <tr><td class="num">21</td><td class="mono">witness_capture</td><td>A photograph was committed by hash at the time</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Three decisions inside the engine worth knowing</h3>
+
+      <p>
+        <strong>A denial is HTTP 200.</strong> A refusal is a successful
+        evaluation that produced "no". A client treating it as a transport error
+        would retry it as though the request had failed to arrive.
+      </p>
+
+      <p>
+        <strong>The attempt is written before the answer is returned.</strong>
+        There is no ordering in which a caller learns the outcome without the
+        attempt being on record. A client that crashes on receipt of a denial has
+        still left evidence.
+      </p>
+
+      <p>
+        <strong>Hardware checks bind only where hardware exists.</strong> A centre
+        that has never produced a witness event does not have a station, and
+        refusing its unlock for the absence of evidence no device was installed to
+        produce would be a denial about our procurement rather than about the
+        exam. The checks are recorded either way; they contribute deny reasons
+        only once a centre has demonstrably been fitted.
+      </p>
+
+      <h3>Fixed devices are located by their binding</h3>
+      <p>
+        The geofence exists to prove the requesting device is at the centre. For
+        a phone that means a position fix. For hardware bolted to the wall it does
+        not: a station is placed at accreditation and bound to its centre at
+        enrolment, and that binding is a stronger statement about where it is than
+        a radio fix. Demanding a fix from a device with no GNSS could only ever be
+        satisfied by inventing a number. So a bound station passes on the binding,
+        and the evidence says so in those words — while a phone still has to
+        produce a fix.
+      </p>
+    </section>
+
+    <!-- 7 ─────────────────────────────────────────────── -->
+    <section id="s7">
+      <div class="part-head"><span class="num">7</span><h2>The hardware</h2></div>
+
+      <p>Three devices were designed. Two exist.</p>
+
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Device</th><th>Job</th><th>State</th></tr></thead>
+          <tbody>
+            <tr><td>Room monitor</td><td>Who was in the strong room, continuously, without imaging anyone</td><td>Firmware written; sensors not obtained</td></tr>
+            <tr><td>Witness node</td><td>Who opened the bundle, at the moment of opening</td><td><strong>Built and running</strong></td></tr>
+            <tr><td>Seal lock</td><td>Whether the bundle was physically opened</td><td>Not built — check 20 says so on every unlock</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Ed25519, not HMAC</h3>
+      <p>
+        The hardware spec said to HMAC each record. Nothing in the software has
+        ever accepted an HMAC: the only entrance to the chain verifies an Ed25519
+        signature over the canonical body. An HMAC ingest would have needed a
+        second, monitor-shaped entrance with its own verification path — and a
+        second entrance to an append-only chain is exactly what you do not want.
+        The firmware signs with Ed25519, so an ESP32 is authenticated by the same
+        code that authenticates a field phone.
+      </p>
+
+      <h3>Two firmware rules that carry most of the value</h3>
+      <ul>
+        <li>
+          <strong>A heartbeat every 30 seconds.</strong> The absence of one is
+          itself a ledger event. Unplugging the device is not a way to go dark; it
+          is a way to raise an alarm. <code>MONITOR_SILENT</code> is service-only,
+          so a watchdog derives it — the device cannot report its own silence.
+        </li>
+        <li>
+          <strong>Write to storage before transmitting.</strong> Cutting the power
+          or jamming the Wi-Fi delays the record; it does not erase it.
+        </li>
+      </ul>
+
+      <div class="note limit">
+        <span class="label">Where the built device falls short, and says so</span>
+        <p>
+          No card is fitted, so records buffer in RAM and do not survive a power
+          cut. No camera is on the board, so every assertion it signs carries a
+          zero frame hash. Both conditions are announced in the ledger on every
+          boot rather than silently absorbed — a device running degraded must be
+          distinguishable in the record from one running properly.
+        </p>
+      </div>
+
+      <h3>The fingerprint never leaves the module</h3>
+      <p>
+        The reader enrols and matches entirely on its own flash and returns two
+        things: a slot id and a score. The ledger records
+        <code>"slot 3 matched, score 187"</code>. It has never held a fingerprint
+        image or a template, so a breach of this database cannot leak a biometric
+        that was never in it.
+      </p>
+      <p>
+        Who slot 3 <em>is</em> lives in a separate register — reference data, not
+        chain data. That separation is deliberate: a mapping recorded against the
+        wrong person has to be correctable, and correcting a signed fact is the
+        one thing the chain must never allow. Retired mappings are kept, because
+        an assertion signed last month refers to whoever held the slot then.
+      </p>
+    </section>
+
+    <!-- 8 ─────────────────────────────────────────────── -->
+    <section id="s8">
+      <div class="part-head"><span class="num">8</span><h2>The unlock ceremony, end to end</h2></div>
+
+      <pre><code>superintendent → finger → slot 3, score 187
+                        → camera frame, SHA-256 committed
+observer       → finger → slot 12, score 203, 41 s later
+                        → second frame committed
+                        ↓
+              two_person_confirmed
+                        ↓
+        21 checks, all evaluated, attempt written first
+                        ↓
+        S2 + S3 + S4 ──Lagrange──▶ K (in memory only)
+        decrypt → spooler, never to disk
+        print exactly N copies, each watermarked
+        zeroise K</code></pre>
+
+      <h3>The privacy decision, made consciously</h3>
+      <p>
+        The original spec chose a non-imaging presence sensor precisely so there
+        would be no camera anywhere. Adding one reverses a deliberate choice, and
+        the resolution is <strong>scope</strong>, enforced in code rather than
+        promised in a document: the camera fires only when a fingerprint match
+        succeeds. Never on a timer, never on motion, never on a request from the
+        network.
+      </p>
+      <p>
+        The result is a handful of frames per exam of two officials performing one
+        duty, not hours of a school corridor. Under the DPDP Act that is the
+        difference between a narrow, defensible purpose and a surveillance system.
+      </p>
+
+      <h3>The image never enters the ledger</h3>
+      <p>
+        Only <code>SHA256(jpeg)</code> is committed. Same pattern as the custody
+        key: commit the hash, hold the artefact elsewhere. The chain proves the
+        image is the one captured at that moment; the chain does not become a
+        photo archive; and losing the image later does not break the chain — it
+        only means that one commitment can no longer be checked.
+      </p>
+
+      <h3>Three ways the ceremony does not complete</h3>
+      <p>Each is recorded rather than discarded.</p>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>What happened</th><th>Recorded as</th></tr></thead>
+          <tbody>
+            <tr><td>The same finger presented twice</td><td class="mono">same_finger_twice</td></tr>
+            <tr><td>The second official never arrived</td><td class="mono">window_expired</td></tr>
+            <tr><td>A finger matched nothing enrolled</td><td class="mono">biometric_no_match</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        One person tapping twice is not two people — the same principle the ledger
+        enforces when it refuses a co-signature from the signing device itself.
+      </p>
+
+      <h3>What each layer contributes to one question</h3>
+      <p>
+        "Who opened package JPR-002, when, and was anyone else present?"
+      </p>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Layer</th><th>Its answer</th><th>Fakeable alone?</th></tr></thead>
+          <tbody>
+            <tr><td>Ledger</td><td>Device D signed an unlock at 08:52:14, chained at entry #190</td><td>Not without breaking every later hash</td></tr>
+            <tr><td>Custody key</td><td>A key valid only for that stage and epoch was presented</td><td>Not after the epoch passes</td></tr>
+            <tr><td>Fingerprint</td><td>Templates 3 and 12 matched, 41 s apart</td><td>Yes — optical readers are spoofable</td></tr>
+            <tr><td>Camera</td><td>Two frames, hashes committed at that instant</td><td>Only by substituting a face, not a hash</td></tr>
+            <tr><td>Room monitor</td><td>Door opened 08:50, at least 2 present</td><td>Yes — flash is readable</td></tr>
+            <tr><td>Seal lock</td><td><em>not built</em></td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        This is the real argument for the hardware. Individually every physical
+        sensor is defeatable. Together they are independent witnesses that must
+        all be corrupted <em>consistently</em> — and the one layer that cannot be
+        quietly rewritten records what each of them said at the time.
+      </p>
+    </section>
+
+    <!-- 9 ─────────────────────────────────────────────── -->
+    <section id="s9">
+      <div class="part-head"><span class="num">9</span><h2>Honest limits</h2></div>
+
+      <p class="lede">
+        Say these before you are asked. Someone who finds one you did not mention
+        will assume there are others you are hiding.
+      </p>
+
+      <div class="note limit">
+        <span class="label">Optical readers are spoofable</span>
+        <p>
+          A lifted print and gelatin will defeat one. These records establish that
+          a body was present, not that the right body was. Optical in the
+          prototype, capacitive in deployment, and the camera frame is the
+          cross-check.
+        </p>
+      </div>
+
+      <div class="note limit">
+        <span class="label">ESP32 flash is readable</span>
+        <p>
+          Physical access yields the per-device signing key. These devices are
+          tamper-<em>evident</em>, not tamper-proof. Their value is the heartbeat
+          gap and the anomaly log, not cryptographic assurance.
+        </p>
+      </div>
+
+      <div class="note limit">
+        <span class="label">The two-person rule is enforced on templates</span>
+        <p>
+          The system checks that two <em>different</em> templates matched. If one
+          person enrols two fingers under two names, the rule is defeated. That is
+          an enrolment-process failure rather than a system bug — supervised
+          enrolment and the camera frame are the controls — but it is a real gap
+          and worth stating.
+        </p>
+      </div>
+
+      <div class="note limit">
+        <span class="label">Attestation does not exist yet</span>
+        <p>
+          Device enrolment accepts an attestation blob and does not verify it. The
+          browser's signing key sits in local storage, not a TPM. Both are
+          recorded as known gaps, and both mean enrolment trusts whoever can reach
+          the endpoint — which is why it must stay behind a gateway that has not
+          been built.
+        </p>
+      </div>
+
+      <div class="note limit">
+        <span class="label">Digital delivery does not scale to NEET</span>
+        <p>
+          Local printing is what collapses the exposure window, so its physical
+          limits bound the whole approach. Roughly 5,000 sides per centre per
+          hour is the ceiling. A large NEET-style centre needs fifteen printers to
+          make the window. The scheduler refuses to place a centre in digital mode
+          that cannot physically finish, and that refusal is a feature.
+        </p>
+      </div>
+
+      <p class="close">
+        And the one that matters most: at Hazaribagh the principal was
+        <em>authorised</em> to be in that room. Biometrics and occupancy sensing
+        are detective controls against unauthorised entry and close to useless
+        against authorised betrayal. Build them; do not let them be the story.
+        The story is the ledger.
+      </p>
+    </section>
+
+    <!-- 10 ────────────────────────────────────────────── -->
+    <section id="s10">
+      <div class="part-head"><span class="num">10</span><h2>Running it</h2></div>
+
+      <p>Postgres is the only external service. No Docker, no cloud account, no paid dependency.</p>
+
+      <pre><code>DATABASE_URL=postgres://mohar_app:…@localhost:5432/mohar \
+  pnpm --filter @mohar/ledger start      # port 8081
+
+pnpm --filter @mohar/control-room dev    # port 5173
+
+tools\monitor-watchdog\run.cmd           # derives MONITOR_SILENT</code></pre>
+
+      <p>
+        Migrations run as a separate migrator role, never as the app role. The app
+        role deliberately lacks the privileges to alter the ledger, and that
+        absence <em>is</em> the append-only guarantee.
+      </p>
+
+      <h3>Two things that will catch you</h3>
+      <ul>
+        <li>
+          <strong>Restart the ledger after changing contracts.</strong> It
+          validates against its compiled schema, so a running instance rejects new
+          event kinds with <code>schema_invalid</code> until restarted.
+        </li>
+        <li>
+          <strong>Open the control room on <code>localhost</code>.</strong>
+          Browsers grant camera access on localhost or HTTPS only, and an HTTPS
+          page cannot call the station over plain HTTP.
+        </li>
+      </ul>
+
+      <h3>Reading a refusal</h3>
+      <p>
+        The refusals are almost always correct. The seeded data cannot be granted
+        and that is deliberate: every seeded custody window has closed, and
+        several centres were seeded specifically to demonstrate refusal. An engine
+        that granted them would be an engine that had stopped checking.
+      </p>
+    </section>
+
+  </main>
+
+  <footer class="colophon">
+    Mohar — study guide, written against the code as it stands. Companion to the
+    hardware build guide in <code>docs/12</code> and the roadmap in
+    <code>docs/learn</code>. Software described here is implemented except where
+    marked otherwise; the seal lock and the gateway are named as not built
+    wherever they appear.
+  </footer>
+
+</div>
+
+</body>
+</html>

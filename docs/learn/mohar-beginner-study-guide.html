@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mohar — Beginner Study Guide</title>
+<style>
+  @page { size: A4; margin: 9mm 9mm 10mm 9mm; }
+  :root{ --ink:#15191e; --ink2:#454e59; --ink3:#727c8a; --rule:#d3d8de;
+         --ac:#17496b; --wash:#f3f6f8; --code:#f6f8fa; }
+  *{box-sizing:border-box}
+  body{font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;color:var(--ink);
+       font-size:8.2pt;line-height:1.33;margin:0;
+       -webkit-print-color-adjust:exact;print-color-adjust:exact}
+  h1{font-size:20pt;margin:0 0 2pt;letter-spacing:-.4pt}
+  h2{font-size:10.6pt;margin:9pt 0 4pt;padding:3pt 0 3pt 7pt;color:#fff;
+     background:var(--ac);border-radius:2pt;page-break-after:avoid}
+  h3{font-size:9pt;margin:6.5pt 0 2.5pt;color:var(--ac);page-break-after:avoid}
+  h4{font-size:8.9pt;margin:6pt 0 2pt;color:var(--ink2);page-break-after:avoid}
+  p{margin:0 0 3.4pt}
+  ul,ol{margin:0 0 4.5pt;padding-left:14pt}
+  li{margin:0 0 1.8pt}
+  code,pre,.m{font-family:"Cascadia Mono",Consolas,monospace}
+  code{font-size:7.8pt;background:var(--code);padding:0 2px;border-radius:2px}
+  pre{background:var(--code);border-left:2pt solid var(--ac);padding:4pt 6pt;
+      font-size:7pt;line-height:1.28;white-space:pre;margin:0 0 4pt;
+      page-break-inside:avoid;overflow:hidden}
+  table{border-collapse:collapse;width:100%;font-size:7.4pt;margin:0 0 4pt;
+        page-break-inside:avoid}
+  th,td{border:.5pt solid var(--rule);padding:2pt 3.4pt;text-align:left;vertical-align:top}
+  th{background:var(--wash);font-weight:600;font-size:7.5pt}
+  .box{background:var(--wash);border-left:2pt solid var(--ac);padding:4pt 6pt;
+       margin:0 0 4pt;page-break-inside:avoid;font-size:7.9pt}
+  .warn{background:#fdf5ea;border-left-color:#a8793f}
+  .no{background:#fdf0ef;border-left-color:#b0524b}
+  .ok{background:#f0f6f1;border-left-color:#487a50}
+  .two{display:flex;gap:7pt}
+  .two>*{flex:1}
+  .lead{font-size:9.4pt;color:var(--ink2)}
+  .tt{border-bottom:2pt solid var(--ac);padding-bottom:5pt;margin-bottom:8pt}
+  .tt .s{font-size:9.5pt;color:var(--ink2);margin-top:2pt}
+  .feat{border:.5pt solid var(--rule);border-radius:3pt;padding:5pt 7pt;margin:0 0 4.5pt;
+        page-break-inside:avoid}
+  .feat h3{margin-top:0}
+  .feat .lbl{font-weight:600;color:var(--ac);font-size:8pt}
+  .viva{background:#eef4f8;padding:3pt 6pt;border-radius:2pt;margin-top:3pt;font-size:8.2pt}
+  .q{font-weight:600;margin:4pt 0 1pt}
+  .a{margin:0 0 4pt;padding-left:9pt;border-left:1.5pt solid var(--rule);color:var(--ink2)}
+  .pg{page-break-before:always}
+  .fin{margin-top:8pt;padding-top:4pt;border-top:.5pt solid var(--rule);
+       font-size:7.4pt;color:var(--ink3)}
+</style>
+</head>
+<body>
+
+<div class="tt">
+  <h1>Mohar — Beginner Study Guide</h1>
+  <div class="s">Everything you need to explain this project in a viva, hackathon, demo, or interview.
+  Every fact below was read from the actual code in this repository.</div>
+</div>
+
+<h2>1 · What is this project?</h2>
+
+<h3>In the simplest words</h3>
+<p>
+Mohar is a computer system that keeps a <b>permanent, unchangeable record</b> of who
+handled an examination question paper, when, and where. Every time a sealed bundle of
+papers changes hands, the person doing it records that act on a phone or computer, and
+the system saves it in a way that <b>nobody can secretly edit later</b> — not even the
+people who run the system.
+</p>
+
+<h3>What problem does it solve?</h3>
+<div class="box">
+Normally <b>proving who leaked an exam paper</b> is difficult because <b>the record of who
+held the papers is kept in handwritten registers, phone photos, and people's memory — which
+does not stand up in court</b>.<br>
+This project helps by <b>making every handover digitally signed and permanently chained, so
+the record can be checked by anyone and cannot be quietly changed</b>.
+</div>
+<p>
+From <code>docs/00-overview.md</code>: between 2015 and 2026 roughly <b>148</b> exam-fraud
+incidents were documented across <b>21</b> Indian states, producing <b>one</b> conviction.
+About <b>70%</b> were paper leaks. The document's conclusion is the key idea of this whole
+project: the failure is <b>not detection</b> — leaks are usually found — it is
+<b>evidence and attribution</b>.
+</p>
+
+<h3>Who uses it?</h3>
+<table>
+<tr><th>User</th><th>What they do</th></tr>
+<tr><td>District officer</td><td>Seals the paper bundle, records the seal number, hands it to a courier</td></tr>
+<tr><td>Courier</td><td>Carries the package; records pickup and delivery</td></tr>
+<tr><td>Custodian</td><td>Keeps the package overnight in a strongroom</td></tr>
+<tr><td>Centre superintendent</td><td>Receives, opens, prints, and confirms key destruction</td></tr>
+<tr><td>Control-room operator</td><td>Watches everything on a dashboard and investigates problems</td></tr>
+</table>
+<div class="box warn">
+<b>Important honesty point.</b> Only the <b>control room</b> (the operator dashboard) is
+actually built as a working screen. The apps for couriers and centres exist as empty
+folders — <code>apps/field-app</code> and <code>apps/centre-client</code> contain no working
+UI. In the demo, the field actions come from a seeding tool that talks to the real engine.
+</div>
+
+<h3>Why is it useful?</h3>
+<ul>
+<li>An investigator can say exactly <b>who held the package between 21:40 and 06:15</b>.</li>
+<li>If someone edits an old record, the system <b>shows that it was edited</b>.</li>
+<li>If a record is <b>missing</b>, that gap is reported — silence is treated as a problem, not as "everything fine".</li>
+</ul>
+
+<h3>What does the user actually do?</h3>
+<p>
+A control-room operator opens the website, looks at the dashboard, sees which packages are
+moving and which access attempts were refused, clicks into one package to read its full
+history event by event, and checks that the record has not been tampered with.
+</p>
+
+<h3>2-line explanation (memorise this)</h3>
+<div class="box ok">
+"Mohar is a tamper-evident custody chain for exam papers. Every handover is digitally signed
+and permanently linked, so the record of who held the paper can be proved and cannot be
+secretly changed."
+</div>
+
+<h3>1-minute explanation (speak this)</h3>
+<div class="box">
+"Exam paper leaks in India are usually detected, but almost never convicted. The reason is
+that the chain of custody — who held the sealed papers and when — is kept on paper registers
+and phone photos, which cannot be proved in court. Mohar fixes that. Every time a package
+changes hands, the act is signed by the device of the person doing it and written into an
+append-only ledger, where each record is mathematically linked to the one before it. If
+anyone edits an old record, every later link breaks and the tampering becomes visible. On
+top of that, opening a package needs a special key that only works for one stage and only
+for six hours, and the system runs fifteen separate checks before allowing it. The control
+room shows all of this live. We do not claim it stops leaks — we claim it makes leaking
+traceable."
+</div>
+
+<h2 class="pg">2 · Complete feature list</h2>
+<p class="lead">These are the features that actually exist in the code. Small UI details are not listed as features.</p>
+<table>
+<tr><th>#</th><th>Feature</th><th>Where it lives in the code</th><th>Status</th></tr>
+<tr><td>1</td><td>Append-only hash-chained ledger</td><td><code>services/ledger</code>, <code>infra/migrations</code></td><td>Working</td></tr>
+<tr><td>2</td><td>Digital signatures on every event</td><td><code>packages/crypto-core</code></td><td>Working</td></tr>
+<tr><td>3</td><td>Rotating custody keys (6-hour)</td><td><code>crypto-core/custody-key.ts</code>, <code>domain/keys.ts</code></td><td>Working</td></tr>
+<tr><td>4</td><td>Access decision engine (15 checks)</td><td><code>domain/policy.ts</code></td><td>Working</td></tr>
+<tr><td>5</td><td>Custody projection + 7 anomaly detectors</td><td><code>domain/custody.ts</code></td><td>Working</td></tr>
+<tr><td>6</td><td>Activity ledger (evidence view)</td><td><code>domain/activity.ts</code></td><td>Working</td></tr>
+<tr><td>7</td><td>Chain integrity verification</td><td><code>/verify/chain</code></td><td>Working</td></tr>
+<tr><td>8</td><td>Merkle anchors + inclusion proof</td><td><code>/anchors</code>, <code>/verify/inclusion/:id</code></td><td>Working</td></tr>
+<tr><td>9</td><td>Control room dashboard (7 screens)</td><td><code>apps/control-room</code></td><td>Working</td></tr>
+<tr><td>10</td><td>Animated landing page</td><td><code>control-room/src/landing</code></td><td>Working</td></tr>
+<tr><td>11</td><td>Device enrolment &amp; revocation</td><td><code>/devices</code></td><td>Working</td></tr>
+<tr><td>12</td><td>Shamir 3-of-4 key splitting</td><td><code>crypto-core/shamir.ts</code></td><td>Code exists, <b>not connected</b></td></tr>
+</table>
+
+<div class="feat">
+<h3>Feature 1 — Append-only hash-chained ledger</h3>
+<p><span class="lbl">What is it?</span> A list of records where nothing can ever be edited or deleted.</p>
+<p><span class="lbl">What does it do?</span> It stores every custody act (seal, handover, receive, open, print, destroy) forever, and links each record to the one before it.</p>
+<p><span class="lbl">Why do we need it?</span> Because if records can be edited, a guilty person can simply change the history and the evidence disappears.</p>
+<p><span class="lbl">How is it used?</span></p>
+<pre>Person performs a handover → device signs it → sent to ledger → saved forever → operator can read it</pre>
+<p><span class="lbl">Real-life example:</span> A school attendance register written in permanent ink where every page is numbered and glued to the previous one. You can add a page, but you cannot remove or rewrite one without it showing.</p>
+<p><span class="lbl">What happens technically?</span> Each record gets a fingerprint called a hash. The new record's hash is calculated from the previous record's hash plus its own content: <code>hash = SHA256(prevHash ‖ bodyHash)</code>. Change any old record and every hash after it stops matching.</p>
+<p><span class="lbl">Technical term:</span> Hash chain / append-only ledger.</p>
+<div class="viva"><b>Viva:</b> "It is an append-only ledger where every record is cryptographically linked to the previous one, so editing history breaks the chain and becomes visible."</div>
+<p><span class="lbl">Remember:</span> (1) Nothing is ever edited. (2) Each record contains the previous record's fingerprint. (3) Tampering is detectable, not preventable.</p>
+</div>
+
+<div class="feat">
+<h3>Feature 2 — Digital signatures on every event</h3>
+<p><span class="lbl">What is it?</span> An electronic signature proving which device created a record.</p>
+<p><span class="lbl">What does it do?</span> It attaches proof of authorship to every custody act.</p>
+<p><span class="lbl">Why do we need it?</span> A hash proves the record did not change, but not <i>who wrote it</i>. Without signatures, anyone could add fake records.</p>
+<p><span class="lbl">How is it used?</span></p>
+<pre>Device has a secret private key → signs the record → server checks it with the public key</pre>
+<p><span class="lbl">Real-life example:</span> Your handwritten signature on a form. Others can recognise it, but only you can produce it.</p>
+<p><span class="lbl">What happens technically?</span> The project uses <b>Ed25519</b> signatures over <b>RFC 8785 canonical JSON</b>. Canonical JSON means the data is always written in one fixed order, so the same information always produces the same fingerprint even after it goes into the database and comes back.</p>
+<p><span class="lbl">Technical term:</span> Public-key digital signature; JSON canonicalisation.</p>
+<div class="viva"><b>Viva:</b> "Every event is signed with Ed25519 over canonical JSON, so we know which enrolled device created it and the signature still verifies after a database round trip."</div>
+<p><span class="lbl">Remember:</span> (1) Private key signs, public key verifies. (2) Canonical JSON keeps the bytes stable. (3) Signature = who; hash = unchanged.</p>
+</div>
+
+<div class="feat">
+<h3>Feature 3 — Rotating custody keys (six-hour epochs)</h3>
+<p><span class="lbl">What is it?</span> A short code that an officer must present to act at a stage, which stops working after six hours.</p>
+<p><span class="lbl">What does it do?</span> It limits who can do what, and for how long.</p>
+<p><span class="lbl">Why do we need it?</span> If a key is stolen or photographed, it becomes useless very quickly.</p>
+<p><span class="lbl">How is it used?</span></p>
+<pre>Control room issues key → officer types it at the stage → engine checks it → allowed or refused</pre>
+<p><span class="lbl">Real-life example:</span> A hotel room card that stops working at checkout time.</p>
+<p><span class="lbl">What happens technically?</span> Time is divided into 6-hour blocks called epochs: <code>epoch = floor(unixSeconds / 21600)</code>. A key stores which epoch it belongs to. When presented, the system compares that number with the current epoch. There is <b>no background job</b> that expires keys — they expire because time moves. The key itself is never stored, only its SHA-256 hash, exactly like a password.</p>
+<p><span class="lbl">Technical term:</span> Time-bounded credential; expiry by arithmetic.</p>
+<div class="viva"><b>Viva:</b> "Keys are scoped to one package and one stage and are valid for one six-hour epoch. Expiry is arithmetic against the clock, so there is no scheduler whose failure could leave keys valid."</div>
+<p><span class="lbl">Remember:</span> (1) 6 hours = 21600 seconds. (2) Only the hash is stored. (3) Broken infrastructure denies access instead of granting it.</p>
+</div>
+
+<div class="feat">
+<h3>Feature 4 — Access decision engine (15 checks)</h3>
+<p><span class="lbl">What is it?</span> The function that decides whether a sealed package may be opened.</p>
+<p><span class="lbl">What does it do?</span> It runs fifteen separate tests and only allows access if <b>every one</b> passes.</p>
+<p><span class="lbl">Why do we need it?</span> Opening a paper bundle is the highest-risk moment. One check is not enough.</p>
+<p><span class="lbl">How is it used?</span></p>
+<pre>Officer requests access → 15 checks run → attempt is SAVED FIRST → then allowed or refused</pre>
+<p><span class="lbl">Real-life example:</span> Airport security — boarding pass, ID, bag scan, metal detector. Failing any one stops you.</p>
+<p><span class="lbl">What happens technically?</span> The 15 checks are: key presented, key valid, key in window, key stage match, device enrolled, device binding, roster membership, role permitted, geofence, geo accuracy, custody window, clock skew, seal serial, package state, exam active. The engine <b>never stops at the first failure</b> — all fifteen always run, so the full shape of a suspicious attempt is recorded.</p>
+<p><span class="lbl">Technical term:</span> Deny-by-default policy engine.</p>
+<div class="viva"><b>Viva:</b> "It is deny-by-default. Fifteen checks always run without short-circuiting, and the attempt is written to the ledger before the caller is told the outcome, so a denied attempt cannot be hidden."</div>
+<p><span class="lbl">Remember:</span> (1) Deny first, allow only if all pass. (2) Every check always runs. (3) The attempt is recorded before the answer is given.</p>
+</div>
+
+<div class="feat">
+<h3>Feature 5 — Custody projection and anomaly detection</h3>
+<p><span class="lbl">What is it?</span> The system calculates where a package is by replaying its history, instead of storing a "status" column.</p>
+<p><span class="lbl">What does it do?</span> It works out the current state and finds problems automatically.</p>
+<p><span class="lbl">Why do we need it?</span> A stored status can be wrong or falsified. A calculated status always matches the evidence.</p>
+<p><span class="lbl">How is it used?</span></p>
+<pre>Operator opens a package → system replays all its events → shows state + list of anomalies</pre>
+<p><span class="lbl">Real-life example:</span> Instead of trusting a bank's printed balance, you re-add every transaction yourself.</p>
+<p><span class="lbl">What happens technically?</span> <code>projectCustody()</code> reads events in order and derives state, current holder, and anomalies. The seven detectors are: <code>illegal_transition</code>, <code>handoff_holder_mismatch</code>, <code>seal_serial_changed</code>, <code>custody_gap</code>, <code>printed_without_grant</code>, <code>opened_before_window</code>, <code>key_not_destroyed</code>.</p>
+<p><span class="lbl">Technical term:</span> Event sourcing / projection.</p>
+<div class="viva"><b>Viva:</b> "Package state is never stored — it is projected by replaying events, so a missing handover shows up as a visible gap instead of a plausible-looking timeline."</div>
+<p><span class="lbl">Remember:</span> (1) State is calculated, not stored. (2) Seven anomaly types. (3) A gap in the record is itself a finding.</p>
+</div>
+
+<div class="feat">
+<h3>Feature 6 — Chain integrity verification and Merkle anchors</h3>
+<p><span class="lbl">What is it?</span> A button that re-checks the whole chain, plus a way to prove one single record to an outsider.</p>
+<p><span class="lbl">What does it do?</span> It recalculates every link and reports any break.</p>
+<p><span class="lbl">Why do we need it?</span> To prove the record is intact without asking anyone to trust us.</p>
+<p><span class="lbl">How is it used?</span></p>
+<pre>Operator opens Integrity page → clicks verify → system recomputes all hashes → reports intact or lists breaks</pre>
+<p><span class="lbl">Real-life example:</span> Counting cash in a till against the receipt roll at closing time.</p>
+<p><span class="lbl">What happens technically?</span> <code>/verify/chain</code> recomputes <code>SHA256(prevHash ‖ bodyHash)</code> for every entry. A <b>Merkle tree</b> (RFC 6962) also lets you prove one event belongs to a day's records by showing only about 20 hashes instead of all events — so you prove one fact without revealing the others.</p>
+<p><span class="lbl">Technical term:</span> Merkle tree; inclusion proof.</p>
+<div class="viva"><b>Viva:</b> "We recompute the hash chain on demand, and daily Merkle roots let a third party verify that one specific event was included without seeing any other event."</div>
+<p><span class="lbl">Remember:</span> (1) Anyone can recheck. (2) Merkle proof reveals only one record. (3) Proof size grows very slowly (log n).</p>
+</div>
+
+<h2 class="pg">3 · How the whole project works (the story)</h2>
+<p>
+A user opens the website. They land on the animated landing page, read what Mohar does, and
+click <b>"Open Control Room"</b>. The dashboard loads and immediately asks the backend for
+live numbers. The backend reads the database, calculates the answers, and sends them back.
+The dashboard draws them on screen. Nothing the user does on this screen ever changes the
+stored history.
+</p>
+<pre>USER
+ ↓  opens http://localhost:5173
+BROWSER loads the React app (the Frontend)
+ ↓  user clicks "Open Control Room" → /overview
+FRONTEND asks for data
+ ↓  HTTP request:  GET /api/summary
+VITE DEV SERVER forwards /api → http://localhost:8081
+ ↓
+BACKEND (Fastify, services/ledger) receives it
+ ↓  runs SQL
+DATABASE (PostgreSQL) returns rows from led.event, led.access_attempt, ref.*
+ ↓
+BACKEND turns rows into counts and JSON
+ ↓  HTTP response (JSON)
+FRONTEND receives JSON and updates the screen
+ ↓
+USER sees packages, refusals, keys and chain tip</pre>
+
+<h3>Every arrow explained simply</h3>
+<table>
+<tr><th>Arrow</th><th>What is really happening</th></tr>
+<tr><td>User → Browser</td><td>The person types the address; the browser downloads the web page files.</td></tr>
+<tr><td>Browser → Frontend</td><td>React builds the visible screen out of small reusable pieces called components.</td></tr>
+<tr><td>Frontend → API request</td><td>JavaScript calls <code>fetch()</code> asking the backend a question, e.g. "give me the summary".</td></tr>
+<tr><td>Vite proxy</td><td>In development the frontend runs on port 5173 and the backend on 8081. Vite forwards anything starting with <code>/api</code> so the browser does not hit a cross-origin problem.</td></tr>
+<tr><td>Backend → Database</td><td>Fastify runs an SQL query using the <code>pg</code> library.</td></tr>
+<tr><td>Database → Backend</td><td>PostgreSQL returns matching rows.</td></tr>
+<tr><td>Backend → Frontend</td><td>The backend converts rows into JSON, a simple text format both sides understand.</td></tr>
+<tr><td>Frontend → User</td><td>React re-renders and the numbers appear. It also re-asks every 10 seconds so the screen stays live.</td></tr>
+</table>
+
+<h3>The writing flow (how a record gets in)</h3>
+<pre>Field device (has a private key)
+ ↓  builds the event, converts to canonical JSON, signs it with Ed25519
+POST /events   (or /events/batch when it was offline)
+ ↓
+LEDGER checks the signature, computes bodyHash, reads the last chain hash
+ ↓
+INSERT into led.event with hash = SHA256(prevHash ‖ bodyHash)
+ ↓
+Record is now permanent — the app's database user has no UPDATE or DELETE right</pre>
+
+<h2>4 · Frontend, Backend, Database</h2>
+
+<h3>Frontend — "the part the user can see and interact with"</h3>
+<p>
+In this project the frontend is the <b>control room</b>, a React application in
+<code>apps/control-room</code>. It has seven screens plus a landing page. It only
+<b>reads and displays</b>; it never creates a signed event, because writing to the chain
+requires a device's private key and a browser is not a trusted device.
+</p>
+
+<h3>Backend — "the part working behind the screen"</h3>
+<p>
+The backend is the <b>ledger service</b> in <code>services/ledger</code>, built with
+Fastify. It receives requests, checks rules, talks to the database, runs the access engine,
+calculates the custody projection, and returns JSON.
+</p>
+
+<h3>Database — "the place where information is stored"</h3>
+<p>PostgreSQL. It has three groups of tables:</p>
+<table>
+<tr><th>Group</th><th>Tables</th><th>What it holds</th></tr>
+<tr><td><code>led</code> (ledger)</td><td><code>event</code>, <code>access_attempt</code>, <code>access_key</code>, <code>anchor</code>, <code>custody_stage</code></td><td>The permanent history: every act, every access attempt, key records, daily Merkle roots, the 8 stage definitions</td></tr>
+<tr><td><code>ref</code> (reference)</td><td><code>authority</code>, <code>exam</code>, <code>centre</code>, <code>package</code>, <code>person</code>, <code>device</code>, <code>roster</code></td><td>The facts that can change: who exists, which centres, which exams, which packages</td></tr>
+<tr><td><code>fp</code> (fingerprint)</td><td><code>copy</code>, <code>attribution</code></td><td>Printed-copy fingerprinting tables</td></tr>
+</table>
+
+<h3>Restaurant analogy (adapted to this project)</h3>
+<table>
+<tr><th>Restaurant</th><th>Mohar</th></tr>
+<tr><td>Customer</td><td>Control-room operator</td></tr>
+<tr><td>Menu</td><td>Control room screens (React)</td></tr>
+<tr><td>Waiter</td><td>The API (HTTP requests to port 8081)</td></tr>
+<tr><td>Kitchen</td><td>Ledger service (Fastify)</td></tr>
+<tr><td>Storage</td><td>PostgreSQL database</td></tr>
+</table>
+<div class="box"><b>Where the analogy breaks — say this and you will sound sharp:</b> in a
+normal restaurant the kitchen can throw away or change stock. Here the kitchen is only
+allowed to <b>add</b> to storage. The database user the backend logs in as has
+<code>INSERT</code> and <code>SELECT</code> permission on the event table and
+<b>no UPDATE and no DELETE</b>.</div>
+
+<h2 class="pg">5 · API — from zero</h2>
+<p><b>An API is a way for different parts of software to communicate.</b></p>
+<p>
+<b>Real-life example:</b> You do not walk into the kitchen to cook. You tell the waiter what
+you want, in a fixed format ("one plate of rice"). The waiter takes it to the kitchen and
+brings back a result. The waiter is the API — a fixed, agreed way of asking.
+</p>
+<pre>FRONTEND  →  API request   →  BACKEND  →  processing  →  DATABASE
+                                                             ↓
+FRONTEND  ←  JSON response ←  BACKEND  ←  rows        ←──────┘</pre>
+<table>
+<tr><th>Step</th><th>Simple meaning</th></tr>
+<tr><td>API request</td><td>The frontend asks a question at a fixed address, using GET (read) or POST (send/do).</td></tr>
+<tr><td>Backend</td><td>Checks what was asked and whether it is allowed.</td></tr>
+<tr><td>Processing</td><td>Runs the rules — for example the 15 access checks, or replaying events.</td></tr>
+<tr><td>Database</td><td>Stores or fetches the rows.</td></tr>
+<tr><td>Response</td><td>The answer comes back as JSON — text that looks like <code>{"ok":true}</code>.</td></tr>
+</table>
+
+<h3>The actual APIs in this project</h3>
+<p class="lead">Base address in development: <code>http://localhost:8081</code>. All of these were read directly from the route files.</p>
+<table>
+<tr><th>Method</th><th>Endpoint</th><th>Input</th><th>What it does</th><th>Output</th></tr>
+<tr><td>GET</td><td><code>/health</code></td><td>—</td><td>Checks the service and returns the newest chain entry</td><td><code>{ok, chainTip}</code></td></tr>
+<tr><td>GET</td><td><code>/summary</code></td><td>optional examId</td><td>Counts packages, attempts, keys, devices</td><td>counts JSON</td></tr>
+<tr><td>GET</td><td><code>/activity</code></td><td>filters</td><td>Merges events + access attempts into one evidence list</td><td>activity array</td></tr>
+<tr><td>GET</td><td><code>/packages</code></td><td>optional examId</td><td>Lists packages with risk score</td><td>package array</td></tr>
+<tr><td>GET</td><td><code>/packages/:id</code></td><td>package id</td><td>One package: projection + full timeline</td><td>package detail</td></tr>
+<tr><td>POST</td><td><code>/packages/:id/declared-state</code></td><td>state</td><td>Records the operator's <i>planned</i> state (not the observed one)</td><td>status</td></tr>
+<tr><td>GET</td><td><code>/access/epoch</code></td><td>—</td><td>Current 6-hour epoch and time remaining</td><td>epoch JSON</td></tr>
+<tr><td>GET</td><td><code>/access/stages</code></td><td>—</td><td>The 8 custody stages</td><td>stage list</td></tr>
+<tr><td>POST</td><td><code>/access/request</code></td><td>key, device, person, geo, seal</td><td><b>Runs the 15 checks</b> and records the attempt</td><td>granted/denied + evidence</td></tr>
+<tr><td>GET</td><td><code>/keys</code></td><td>filters</td><td>Lists custody keys (never the secret)</td><td>key list</td></tr>
+<tr><td>POST</td><td><code>/keys/issue</code></td><td>packageId, stage</td><td>Creates a key for this epoch</td><td>key (shown once)</td></tr>
+<tr><td>POST</td><td><code>/keys/rotate</code></td><td>—</td><td>Issues keys for the current epoch</td><td>counts</td></tr>
+<tr><td>POST</td><td><code>/keys/:id/revoke</code></td><td>reason</td><td>Cancels a key early</td><td>status</td></tr>
+<tr><td>POST</td><td><code>/events</code></td><td>signed event</td><td>Appends one record to the chain</td><td>seq + hash</td></tr>
+<tr><td>POST</td><td><code>/events/batch</code></td><td>signed events</td><td>Uploads a queue collected offline</td><td>results</td></tr>
+<tr><td>GET</td><td><code>/devices</code></td><td>—</td><td>Lists enrolled signing devices</td><td>device list</td></tr>
+<tr><td>POST</td><td><code>/devices</code></td><td>pubkey, kind</td><td>Enrols a device</td><td>device</td></tr>
+<tr><td>POST</td><td><code>/devices/:id/revoke</code></td><td>—</td><td>Blocks a device from future signing</td><td>status</td></tr>
+<tr><td>GET</td><td><code>/exams</code> <code>/centres</code> <code>/persons</code></td><td>—</td><td>Reference data used by the dashboard</td><td>lists</td></tr>
+<tr><td>GET</td><td><code>/verify/chain</code></td><td>fromSeq, toSeq</td><td><b>Recomputes every hash</b> and reports breaks</td><td>intact + breaks</td></tr>
+<tr><td>GET</td><td><code>/verify/inclusion/:eventId</code></td><td>event id</td><td>Merkle proof that one event is in the tree</td><td>proof</td></tr>
+<tr><td>GET</td><td><code>/anchors</code></td><td>—</td><td>Lists daily Merkle roots</td><td>anchor list</td></tr>
+<tr><td>POST</td><td><code>/anchors/build</code></td><td>optional day</td><td>Builds that day's Merkle tree</td><td>day + treeSize</td></tr>
+</table>
+
+<h2>6 · Technology stack</h2>
+<table>
+<tr><th>Technology</th><th>What is it?</th><th>Why is it used here?</th></tr>
+<tr><td>TypeScript</td><td>JavaScript with type checking</td><td>Catches mistakes before the code runs — important when handling evidence</td></tr>
+<tr><td>React 18</td><td>Library for building user interfaces from components</td><td>Builds the control-room screens</td></tr>
+<tr><td>Vite 5</td><td>Development server and build tool</td><td>Fast reloading while developing; also proxies <code>/api</code> to the backend</td></tr>
+<tr><td>React Router 6</td><td>Handles page addresses inside one web app</td><td>Gives each screen its own URL, e.g. <code>/packages</code></td></tr>
+<tr><td>Leaflet 1.9</td><td>Map library</td><td>Shows exam centres on a map</td></tr>
+<tr><td>GSAP + ScrollTrigger</td><td>Animation library</td><td>Animates the landing page only</td></tr>
+<tr><td>Node.js</td><td>Runs JavaScript on the server</td><td>Runs the backend</td></tr>
+<tr><td>Fastify 5</td><td>Web framework for building APIs</td><td>Receives requests and sends JSON; chosen for speed and built-in validation</td></tr>
+<tr><td>PostgreSQL 18</td><td>Relational database</td><td>Stores everything; its permission system is what enforces append-only</td></tr>
+<tr><td><code>pg</code></td><td>PostgreSQL driver for Node</td><td>Lets the backend run SQL</td></tr>
+<tr><td>zod 3</td><td>Data validation library</td><td>Rejects malformed input before it reaches the database</td></tr>
+<tr><td>pino</td><td>Logging library</td><td>Records what the server did</td></tr>
+<tr><td>@noble/hashes</td><td>Hashing library</td><td>SHA-256 for the chain and key hashing</td></tr>
+<tr><td>@noble/curves</td><td>Cryptography library</td><td>Ed25519 signing and verification</td></tr>
+<tr><td>@noble/ciphers</td><td>Encryption library</td><td>Present in crypto-core for bundle encryption</td></tr>
+<tr><td>canonicalize</td><td>RFC 8785 JSON canonicaliser</td><td>Makes JSON byte-stable so signatures verify</td></tr>
+<tr><td>shamir-secret-sharing</td><td>Splits a secret into parts</td><td>3-of-4 key splitting (<b>code present, not connected to the unlock flow</b>)</td></tr>
+<tr><td>pnpm + Turbo</td><td>Package manager and build orchestrator</td><td>Manages the many folders (monorepo) and builds them in the right order</td></tr>
+</table>
+<div class="box ok"><b>Why these choices?</b> Everything is free and open source. The project
+records this as a rule in <code>docs/adr/0004-no-paid-dependencies.md</code> — no paid API,
+no cloud service, no hardware security module — because a per-centre licence cost would make
+district-scale deployment impossible.</div>
+
+<h2>7 · Feature → technology mapping</h2>
+<table>
+<tr><th>Feature</th><th>Frontend</th><th>Backend</th><th>Database / Other</th></tr>
+<tr><td>Hash-chained ledger</td><td>Integrity page (React)</td><td>Fastify + <code>@noble/hashes</code></td><td><code>led.event</code>; grants enforce append-only</td></tr>
+<tr><td>Digital signatures</td><td>—</td><td><code>@noble/curves</code> + <code>canonicalize</code></td><td><code>ref.device</code> holds public keys</td></tr>
+<tr><td>Custody keys</td><td>Keys page + epoch bar</td><td><code>domain/keys.ts</code></td><td><code>led.access_key</code> (hash only)</td></tr>
+<tr><td>Access engine</td><td>Activity page</td><td><code>domain/policy.ts</code></td><td><code>led.access_attempt</code></td></tr>
+<tr><td>Custody projection</td><td>Packages + Workflow pages</td><td><code>domain/custody.ts</code></td><td>Replays <code>led.event</code></td></tr>
+<tr><td>Chain verification</td><td>Integrity page</td><td><code>/verify/chain</code></td><td><code>led.event</code>, <code>led.anchor</code></td></tr>
+<tr><td>Centre map</td><td>Leaflet</td><td><code>/centres</code></td><td><code>ref.centre</code></td></tr>
+<tr><td>Landing page</td><td>React + GSAP</td><td>reads <code>/summary</code></td><td>—</td></tr>
+</table>
+
+<h2>8 · Animations and UI</h2>
+<p><b>What is animation?</b> Making something on screen change smoothly over time instead of jumping instantly.</p>
+<p><b>What is GSAP?</b> GreenSock Animation Platform — a JavaScript library that animates elements smoothly and reliably across browsers.</p>
+<p><b>What is ScrollTrigger?</b> A GSAP add-on that starts an animation when the user scrolls to a certain point.</p>
+<p><b>Why are they used?</b> Only on the <b>landing page</b>, to make the product introduction feel polished. The control-room dashboard is deliberately <b>not</b> animated, because an operator reading it for hours needs stillness, not motion.</p>
+<pre>User scrolls
+ ↓
+ScrollTrigger detects the section entering the screen
+ ↓
+GSAP starts the animation
+ ↓
+Element fades in and moves up into place</pre>
+<table>
+<tr><th>Concept</th><th>Simple meaning</th><th>Where it is used here</th></tr>
+<tr><td>Scroll animation</td><td>Animation triggered by scrolling</td><td>Every section reveals as you reach it</td></tr>
+<tr><td>Stagger</td><td>Items animate one after another, not together</td><td>Feature cards appear one by one</td></tr>
+<tr><td>Easing</td><td>Speed curve — starts fast, slows down</td><td><code>power3.out</code> on reveals</td></tr>
+<tr><td>Parallax</td><td>Background moves less than foreground, creating depth</td><td>Hero follows the mouse slightly</td></tr>
+<tr><td>Pinned horizontal scroll</td><td>Section sticks while content slides sideways</td><td>Feature showcase section</td></tr>
+<tr><td>Magnetic button</td><td>Button leans toward the cursor</td><td>All CTA and Sign In / Sign Up buttons</td></tr>
+</table>
+<div class="box"><b>Accessibility note worth mentioning:</b> the landing page respects
+<code>prefers-reduced-motion</code>. If a user has asked their computer to reduce motion,
+everything still appears but nothing moves.</div>
+
+<h2 class="pg">9 · Security</h2>
+<p class="lead">Only mechanisms that actually exist in the code are listed. Missing ones are stated honestly.</p>
+
+<h3>9.1 Append-only enforced by database permissions</h3>
+<p><b>What is it?</b> The backend's database account is not allowed to change or delete records.<br>
+<b>Why needed?</b> If the program could edit history, then anyone who breaks into the program could edit history.<br>
+<b>How it works?</b> <code>grant select, insert on led.event to mohar_app;</code> — there is no UPDATE or DELETE grant. A separate account, <code>mohar_migrator</code>, is used only to create tables.<br>
+<b>Example:</b> A postbox — you can drop letters in, you cannot take them out.</p>
+<div class="viva"><b>Viva:</b> "Append-only is enforced by PostgreSQL role grants, not by application code, so even full compromise of the service cannot rewrite history."</div>
+
+<h3>9.2 Hash chain (tamper evidence)</h3>
+<p><b>What is it?</b> Each record carries the fingerprint of the previous one.<br>
+<b>Why needed?</b> To detect changes made directly in the database by a powerful attacker.<br>
+<b>How it works?</b> <code>hash = SHA256(prevHash ‖ bodyHash)</code>. Editing record 50 breaks 51, 52, 53 and everything after.<br>
+<b>Example:</b> Numbered pages glued together — remove one and the glue shows.</p>
+<div class="viva"><b>Viva:</b> "We do not claim records cannot be altered; we claim alteration cannot be hidden."</div>
+
+<h3>9.3 Ed25519 digital signatures</h3>
+<p><b>What is it?</b> Proof of which device created a record.<br>
+<b>Why needed?</b> Hashes prove integrity, not authorship.<br>
+<b>How it works?</b> The device signs the canonical JSON body with a private key that never leaves it; the server verifies with the stored public key.<br>
+<b>Example:</b> A signature on a cheque.</p>
+<div class="viva"><b>Viva:</b> "Every event is attributable to an enrolled device through an Ed25519 signature over RFC 8785 canonical JSON."</div>
+
+<h3>9.4 Custody keys — hashed, scoped, time-limited</h3>
+<p><b>What is it?</b> Short codes that expire after six hours.<br>
+<b>Why needed?</b> To limit the damage of a stolen or shared key.<br>
+<b>How it works?</b> Only SHA-256 of the key is stored, comparison is <b>constant-time</b> (so an attacker cannot guess it letter by letter by measuring response time), and validity is checked by comparing epoch numbers.<br>
+<b>Example:</b> An OTP that stops working after a few minutes.</p>
+<div class="viva"><b>Viva:</b> "Keys are stored only as SHA-256 hashes and verified in constant time, and they expire by arithmetic so the system fails closed."</div>
+
+<h3>9.5 Deny-by-default access engine</h3>
+<p><b>What is it?</b> Fifteen checks, all must pass.<br>
+<b>Why needed?</b> Opening a paper bundle is the highest-risk action in the system.<br>
+<b>How it works?</b> Every check runs; the attempt is written to <code>led.access_attempt</code> before the response is returned, and that table also has only SELECT and INSERT grants, so denials cannot be deleted.<br>
+<b>Example:</b> A bank locker needing two keys, ID, and a signature — all of them.</p>
+<div class="viva"><b>Viva:</b> "Access is deny-by-default with fifteen non-short-circuiting checks, and refusals are recorded before the caller learns the outcome."</div>
+
+<h3>9.6 Evidence instead of verdicts</h3>
+<p><b>What is it?</b> The system stores what it measured, not what it concluded.<br>
+<b>Why needed?</b> A conclusion cannot be re-examined later; a measurement can.<br>
+<b>How it works?</b> It stores <code>"412 m from centre boundary; geofence 150 m"</code> instead of <code>"outside_geofence"</code>.<br>
+<b>Example:</b> A doctor writing "temperature 39.4 °C" instead of just "unwell".</p>
+<div class="viva"><b>Viva:</b> "We record evidence rather than verdicts, so a refusal can be re-examined years later and can be annexed to an FIR."</div>
+
+<h3>9.7 Merkle anchors</h3>
+<p><b>What is it?</b> A daily summary fingerprint of all that day's records.<br>
+<b>Why needed?</b> So an outsider can check one record without seeing all of them.<br>
+<b>How it works?</b> RFC 6962 Merkle tree; <code>/verify/inclusion/:eventId</code> returns the proof.</p>
+
+<div class="box no">
+<h4 style="margin-top:0">NOT implemented — say this honestly if asked</h4>
+<ul>
+<li><b>Authentication / login.</b> There is no sign-in system, no user table, no password handling, no sessions, no JWT. The <code>gateway</code> service folder is empty. <b>The API is currently unauthenticated.</b></li>
+<li><b>Authorisation / protected routes.</b> Not implemented, because there is no login.</li>
+<li><b>RFC 3161 external timestamping.</b> Anchors are built and stored, but never sent to an outside timestamping authority. The <code>notarised</code> flag is never set to true.</li>
+<li><b>Rate limiting.</b> Not present on any endpoint.</li>
+<li><b>Device attestation.</b> Devices are enrolled but their hardware identity is not verified.</li>
+<li><b>Shamir 3-of-4 in the live unlock flow.</b> The code exists in <code>crypto-core</code> but is not connected to the running system.</li>
+<li><b>Time-lock encryption (drand/tlock) and the ESP32 hardware.</b> Designed in the docs, not built.</li>
+<li><b>HTTPS/TLS.</b> Development runs over plain HTTP on localhost.</li>
+</ul>
+</div>
+
+<h2>10 · Important terms</h2>
+<table>
+<tr><td><b>Frontend</b></td><td>What the user sees.</td><td><b>Backend</b></td><td>What works behind the screen.</td></tr>
+<tr><td><b>API</b></td><td>A fixed way for software parts to talk.</td><td><b>Database</b></td><td>Where information is stored.</td></tr>
+<tr><td><b>Component</b></td><td>A reusable piece of UI.</td><td><b>Route</b></td><td>The address of a page.</td></tr>
+<tr><td><b>Endpoint</b></td><td>One specific API address.</td><td><b>JSON</b></td><td>Simple text format for sending data.</td></tr>
+<tr><td><b>Hash</b></td><td>A fixed-length fingerprint of data.</td><td><b>SHA-256</b></td><td>The specific hash function used here.</td></tr>
+<tr><td><b>Hash chain</b></td><td>Records linked by including the previous fingerprint.</td><td><b>Append-only</b></td><td>You can add, never edit or delete.</td></tr>
+<tr><td><b>Digital signature</b></td><td>Proof of who created data.</td><td><b>Ed25519</b></td><td>The signature method used here.</td></tr>
+<tr><td><b>Private key</b></td><td>Secret, used to sign.</td><td><b>Public key</b></td><td>Shared, used to verify.</td></tr>
+<tr><td><b>Canonical JSON</b></td><td>JSON always written in one fixed order.</td><td><b>Epoch</b></td><td>A fixed 6-hour time block.</td></tr>
+<tr><td><b>Merkle tree</b></td><td>Hashes combined in pairs up to one root.</td><td><b>Inclusion proof</b></td><td>Proof one record is in the tree.</td></tr>
+<tr><td><b>Projection</b></td><td>State calculated by replaying events.</td><td><b>Anomaly</b></td><td>Something the system flags as wrong.</td></tr>
+<tr><td><b>Geofence</b></td><td>An allowed circle on the map.</td><td><b>Clock skew</b></td><td>Difference between two clocks.</td></tr>
+<tr><td><b>Authentication</b></td><td>Checking who you are. <i>(not in this project)</i></td><td><b>Authorisation</b></td><td>Checking what you may do. <i>(not in this project)</i></td></tr>
+<tr><td><b>Monorepo</b></td><td>Many projects in one repository.</td><td><b>Deny by default</b></td><td>Refuse unless every check passes.</td></tr>
+</table>
+
+<h2>11 · User journey</h2>
+<table>
+<tr><th>Step</th><th>What happens</th></tr>
+<tr><td>1</td><td>User opens <code>http://localhost:5173</code> and the <b>landing page</b> loads.</td></tr>
+<tr><td>2</td><td>The landing page quietly calls <code>GET /api/summary</code> to show real live counts.</td></tr>
+<tr><td>3</td><td>User clicks <b>Open Control Room</b> → React Router moves to <code>/overview</code>.</td></tr>
+<tr><td>4</td><td>The dashboard loads and calls <code>/health</code>, <code>/summary</code>, <code>/access/epoch</code>. It repeats these every 10 seconds.</td></tr>
+<tr><td>5</td><td>Fastify receives each request and runs SQL through <code>pg</code>.</td></tr>
+<tr><td>6</td><td>PostgreSQL returns rows from <code>led.event</code>, <code>led.access_attempt</code>, <code>ref.*</code>.</td></tr>
+<tr><td>7</td><td>The backend calculates counts and returns JSON.</td></tr>
+<tr><td>8</td><td>React updates the screen — packages, refusals, unresolved acts, chain tip.</td></tr>
+<tr><td>9</td><td>User clicks <b>Workflow</b> and picks a package → <code>GET /packages/JPR-002</code>.</td></tr>
+<tr><td>10</td><td>Backend replays that package's events, builds the projection, finds anomalies, returns state + timeline.</td></tr>
+<tr><td>11</td><td>User reads each event with actor, device, position, clock skew, hashes, and raw payload.</td></tr>
+<tr><td>12</td><td>User opens <b>Integrity</b> and verifies the chain → <code>GET /verify/chain</code> recomputes every hash.</td></tr>
+</table>
+
+<h2>12 · Advantages and limitations</h2>
+<div class="two">
+<div>
+<h3>Advantages</h3>
+<ul>
+<li>History cannot be silently edited — enforced by the database, not just by code.</li>
+<li>Every record is attributable to a specific enrolled device.</li>
+<li>A missing record shows as a gap instead of a believable timeline.</li>
+<li>Anyone can independently recompute the chain and verify it.</li>
+<li>Access needs 15 checks, and refusals are permanently recorded.</li>
+<li>Keys expire without any background job, so failure denies rather than allows.</li>
+<li>Entirely free and open-source — no paid service anywhere.</li>
+<li>Works offline: devices sign locally and upload later; duplicate uploads are safe.</li>
+</ul>
+</div>
+<div>
+<h3>Limitations (be honest)</h3>
+<ul>
+<li><b>No login or user accounts.</b> The API is unauthenticated.</li>
+<li>Only the control room is a working app; field and centre apps are empty folders.</li>
+<li>Merkle anchors are stored but never externally timestamped.</li>
+<li>No rate limiting on any endpoint.</li>
+<li>Devices are enrolled but not hardware-verified.</li>
+<li>Shamir key splitting is written but not connected.</li>
+<li>Hardware (ESP32) is designed on paper only.</li>
+<li>It cannot stop a leak by someone with legitimate access at the moment of opening.</li>
+<li>Runs on localhost over plain HTTP; not deployed.</li>
+</ul>
+</div>
+</div>
+
+<h2>13 · Future scope</h2>
+<div class="box warn"><b>NOT CURRENTLY IMPLEMENTED — POSSIBLE FUTURE IMPROVEMENTS</b></div>
+<ul>
+<li><b>Authentication and roles</b> — add login so each officer has an account, in the empty <code>gateway</code> service.</li>
+<li><b>RFC 3161 timestamping</b> — send each daily Merkle root to a free public timestamp authority so the anchor is provable outside our own database.</li>
+<li><b>Field and centre apps</b> — build the courier and superintendent screens that currently exist only as folders.</li>
+<li><b>Connect Shamir 3-of-4</b> — wire the existing key-splitting code into the real unlock flow.</li>
+<li><b>ESP32 room monitor</b> — the designed hardware for door, presence and footfall sensing.</li>
+<li><b>Rate limiting and device attestation.</b></li>
+<li><b>Deployment with HTTPS.</b></li>
+</ul>
+
+<h2>14 · Viva questions and answers</h2>
+
+<h3>Very easy</h3>
+<p class="q">1. What is your project?</p><p class="a">A system that keeps a permanent, tamper-evident record of who handled exam question papers at every stage.</p>
+<p class="q">2. Why did you make it?</p><p class="a">Because exam paper leaks are usually detected but almost never convicted — the custody record cannot be proved in court.</p>
+<p class="q">3. What problem does it solve?</p><p class="a">It turns an unprovable paper trail into digital evidence that is signed, permanent, and independently checkable.</p>
+<p class="q">4. Who uses it?</p><p class="a">Exam boards — district officers, couriers, custodians, centre superintendents, and control-room operators.</p>
+<p class="q">5. What are the main features?</p><p class="a">An append-only ledger, digital signatures, six-hour custody keys, a fifteen-check access engine, automatic anomaly detection, and chain verification.</p>
+
+<h3>Basic technical</h3>
+<p class="q">6. What is frontend?</p><p class="a">The part the user sees. Here it is the React control room with seven screens plus a landing page.</p>
+<p class="q">7. What is backend?</p><p class="a">The part working behind the screen. Here it is a Fastify service that checks rules and talks to the database.</p>
+<p class="q">8. What is an API?</p><p class="a">A fixed way for software parts to communicate. Our frontend calls addresses like <code>/summary</code> and gets JSON back.</p>
+<p class="q">9. What is a database and which one did you use?</p><p class="a">Where information is stored. We use PostgreSQL, with schemas for the ledger, reference data, and fingerprinting.</p>
+<p class="q">10. Why did you choose these technologies?</p><p class="a">TypeScript for safety, Fastify for a fast validated API, PostgreSQL because its permission system is what actually enforces append-only, and everything free because per-centre licence costs would block district-scale use.</p>
+
+<h3>Project specific</h3>
+<p class="q">11. What does "append-only" mean and how do you enforce it?</p><p class="a">Records can be added but never changed or deleted. We enforce it with PostgreSQL grants — the application's database user has INSERT and SELECT but no UPDATE or DELETE.</p>
+<p class="q">12. How does the hash chain work?</p><p class="a">Each record's hash is SHA-256 of the previous record's hash joined with its own body hash, so editing an old record breaks every hash after it.</p>
+<p class="q">13. Why two hashes per event?</p><p class="a"><code>bodyHash</code> proves the content is unchanged and is what gets signed; the chain <code>hash</code> proves the record's position in history.</p>
+<p class="q">14. What is a custody key?</p><p class="a">A short code scoped to one package and one stage, valid for a single six-hour epoch, stored only as a SHA-256 hash.</p>
+<p class="q">15. How do keys expire without a scheduler?</p><p class="a">The epoch is calculated as <code>floor(unixSeconds / 21600)</code> and compared at request time. Nothing needs to run, so nothing can fail and leave keys valid.</p>
+<p class="q">16. What are the 15 checks?</p><p class="a">Key presented, valid, in window, stage match; device enrolled and bound; person on roster and role permitted; geofence and GPS accuracy; custody window; clock skew; seal serial; package state; exam active.</p>
+<p class="q">17. Why do all checks run even after one fails?</p><p class="a">Because an attempt failing four checks is a different event from one failing a clock skew, and there is no second chance to observe an attempt that already happened.</p>
+<p class="q">18. What is the custody projection?</p><p class="a">Package state is not stored — it is recalculated by replaying every event, so it can never disagree with the evidence.</p>
+<p class="q">19. What is a custody gap?</p><p class="a">More than six hours in transit with no recorded holder. The silence itself is reported as a finding.</p>
+<p class="q">20. Why did you remove severity labels like "critical"?</p><p class="a">Because the severity is invented while the facts are not. We show the distance, the epochs, the skew, and one boolean — whether a human still needs to act.</p>
+
+<h3>Slightly advanced</h3>
+<p class="q">21. Why not use blockchain?</p><p class="a">Blockchain buys agreement among parties who do not trust each other. An exam board is a legal authority, so that problem does not exist. We use the same cryptography — hash chains, Merkle trees, signatures — without the consensus cost, and we work offline.</p>
+<p class="q">22. What stops your own admin from editing records?</p><p class="a">Nothing stops a database superuser, but nothing hides it either — the edit breaks every later hash and invalidates the day's Merkle root.</p>
+<p class="q">23. Why canonical JSON?</p><p class="a">Because the same data written in a different key order produces a different hash, which would make a valid signature fail. RFC 8785 fixes one byte representation.</p>
+<p class="q">24. What is a Merkle tree used for here?</p><p class="a">To prove one event was included in a day's records without revealing any other event — about twenty hashes instead of the whole ledger.</p>
+<p class="q">25. What happens when the network is down?</p><p class="a">Devices sign and queue events locally and upload later. Each event carries a unique id, so retrying is safe and never duplicates.</p>
+<p class="q">26. Does your project have login?</p><p class="a">No. Authentication is not implemented — the gateway service is an empty scaffold and the API is currently unauthenticated. It is our main known gap.</p>
+<p class="q">27. Does it prevent leaks?</p><p class="a">No, and we do not claim it. Someone with legitimate access can still photograph a paper. What we change is that every act becomes attributable and the exposure window narrows.</p>
+
+<h2 class="pg">15 · Presentation script</h2>
+<p><b>1. Introduction —</b> "Good morning. Our project is called Mohar, which means a seal. It is a custody-tracking system for examination question papers."</p>
+<p><b>2. Problem —</b> "Between 2015 and 2026 there were about 148 exam-fraud cases across 21 states, and only one conviction. Roughly 70% were paper leaks. The leaks were detected — but the cases failed, because who held the papers was recorded in handwritten registers and phone photos, which cannot be proved in court."</p>
+<p><b>3. Solution —</b> "So we did not build a leak detector. We built an evidence system. Every handover is digitally signed by the person's device and written into a ledger where nothing can be edited."</p>
+<p><b>4. How it works —</b> "Each record contains the fingerprint of the previous record. If someone edits an old entry, every later fingerprint stops matching, and the tampering becomes visible to anyone who checks."</p>
+<p><b>5. Main features —</b> "An append-only ledger, Ed25519 signatures, custody keys that expire every six hours, an access engine that runs fifteen checks before a package can be opened, automatic anomaly detection, and one-click chain verification."</p>
+<p><b>6. Technology —</b> "React and Vite on the frontend, Fastify and Node on the backend, PostgreSQL for storage, and TypeScript throughout. Everything is free and open source."</p>
+<p><b>7. Architecture —</b> "The frontend only reads. Writing to the chain needs a device's private key, and a browser is not a trusted device. Append-only is not enforced by our code — it is enforced by PostgreSQL permissions, so even if our service is fully compromised it still cannot rewrite history."</p>
+<p><b>8. Security —</b> "Hash chaining for tamper evidence, signatures for attribution, hashed and time-limited keys, deny-by-default access, and we store evidence rather than verdicts — 412 metres, not 'outside geofence' — because a measurement can be re-examined in court and a label cannot."</p>
+<p><b>9. Demo —</b> "Let me show you a package with an eighteen-hour custody gap." <i>(see the demo script below)</i></p>
+<p><b>10. Advantages —</b> "It is tamper-evident, attributable, independently verifiable, works offline, and costs nothing to run."</p>
+<p><b>11. Limitations —</b> "We are honest about what is missing. There is no login yet — the API is unauthenticated. Our Merkle anchors are not externally timestamped. And no custody system can stop someone with legitimate access from photographing a paper. We narrow the window and make it attributable; we do not claim to make exams leak-proof."</p>
+<p><b>12. Conclusion —</b> "Mohar turns a paper trail that collapses under cross-examination into cryptographic evidence that does not. Thank you."</p>
+
+<h2>16 · Demo script</h2>
+<table>
+<tr><th>#</th><th>Do this</th><th>Say this</th></tr>
+<tr><td>1</td><td>Open <code>http://localhost:5173</code></td><td>"This is the landing page. These counters are live from our database, not screenshots."</td></tr>
+<tr><td>2</td><td>Scroll through the sections</td><td>"It explains the problem and the seven surfaces of the control room."</td></tr>
+<tr><td>3</td><td>Click <b>Open Control Room</b></td><td>"This takes us into the actual application at <code>/overview</code>."</td></tr>
+<tr><td>4</td><td>Point at the dashboard</td><td>"What is moving, what was refused, and what nobody has resolved. It refreshes every ten seconds."</td></tr>
+<tr><td>5</td><td>Open <b>Workflow</b>, pick <code>JPR-002</code></td><td>"This is one package's entire life, event by event."</td></tr>
+<tr><td>6</td><td>Scroll to the custody gap</td><td>"Eighteen hours in transit with nobody recorded as holding it. The system reports the silence — that gap is the finding."</td></tr>
+<tr><td>7</td><td>Expand one event's details</td><td>"Under each event: who, which device, GPS position, clock skew, the body hash, the chain hash, and the raw payload."</td></tr>
+<tr><td>8</td><td>Open <b>Activity</b>, find a denied attempt</td><td>"A refusal. Notice it says the actual distance and the epoch numbers — evidence, not a severity label."</td></tr>
+<tr><td>9</td><td>Open <b>Keys</b>, show the epoch bar</td><td>"These rotate in about two hours. Nothing rotates them — they expire because time passed. If our servers die, keys still expire."</td></tr>
+<tr><td>10</td><td>Open <b>Integrity</b>, click verify</td><td>"This recomputes every hash in the chain live and reports whether it is intact."</td></tr>
+<tr><td>11</td><td>Explain what a break would mean</td><td>"If this ever failed, it would mean someone edited the database directly — and that is exactly what we want to be impossible to hide."</td></tr>
+</table>
+<div class="box warn"><b>Before the demo:</b> start the backend (<code>node services\ledger\dist\index.js</code> with <code>DATABASE_URL</code> set) and the frontend (<code>npx.cmd vite</code>). Check <code>http://localhost:8081/health</code> returns <code>ok:true</code>. Keep a browser tab already open as a backup.</div>
+
+<h2>17 · Final one-minute answer</h2>
+<div class="box ok">
+<p><b>"Tell me about your project."</b></p>
+<p>"My project is called Mohar, which means a seal. It is a custody-tracking system for
+examination question papers.</p>
+<p>The problem is that exam paper leaks in India are usually detected but almost never
+convicted — around 148 documented cases produced one conviction — because the record of who
+held the sealed papers is kept on handwritten registers and phone photos, which does not
+survive cross-examination.</p>
+<p>So instead of building a leak detector, we built an evidence system. Every time a package
+changes hands, that act is digitally signed by the person's device and written into an
+append-only ledger where each record carries the fingerprint of the record before it. If
+anyone edits old history, every later fingerprint breaks and the tampering becomes visible.
+And append-only is not just a promise in our code — it is enforced by PostgreSQL permissions,
+so our own service has no ability to delete or update.</p>
+<p>The main features are that ledger, Ed25519 signatures, custody keys that are scoped to one
+stage and expire every six hours, an access engine that runs fifteen checks before a package
+can be opened, automatic anomaly detection like custody gaps and seal mismatches, and
+one-click verification of the whole chain.</p>
+<p>Technically it is React with Vite on the frontend, Fastify on Node for the backend,
+PostgreSQL for storage, all in TypeScript, and everything free and open source.</p>
+<p>And to be honest about scope — it does not make exams leak-proof, and we have not built
+authentication yet. What it does is make every act attributable and every change visible."</p>
+</div>
+
+<div class="fin">
+Mohar — beginner study guide. Every feature, endpoint, table, and technology listed here was
+read directly from the repository. Items that do not exist are marked as not implemented
+rather than described. Source: <code>docs/learn/mohar-beginner-study-guide.html</code>
+</div>
+
+</body>
+</html>

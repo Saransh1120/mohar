@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mohar — Study Guide</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 20mm 16mm; }
+  :root{
+    --ink:#14181d; --ink2:#3d4650; --ink3:#6b7683;
+    --rule:#d5dae0; --accent:#1f4d70; --wash:#f4f6f8; --code:#f7f8fa;
+  }
+  *{box-sizing:border-box}
+  body{
+    font-family:"Charter","Georgia","Times New Roman",serif;
+    color:var(--ink); font-size:10.5pt; line-height:1.55; margin:0;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  h1,h2,h3,h4{font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;line-height:1.25}
+  h1{font-size:26pt;margin:0 0 6pt;letter-spacing:-.5pt}
+  h2{
+    font-size:15pt;margin:26pt 0 10pt;padding-bottom:5pt;
+    border-bottom:1.5pt solid var(--accent);color:var(--accent);
+    page-break-after:avoid;
+  }
+  h3{font-size:11.5pt;margin:16pt 0 5pt;page-break-after:avoid}
+  h4{font-size:10pt;margin:12pt 0 4pt;color:var(--ink2);page-break-after:avoid}
+  p{margin:0 0 8pt}
+  ul,ol{margin:0 0 8pt;padding-left:18pt}
+  li{margin:0 0 4pt}
+  code,pre,.mono{font-family:"Cascadia Mono","Consolas","DejaVu Sans Mono",monospace}
+  code{font-size:9pt;background:var(--code);padding:1px 3px;border-radius:2px}
+  pre{
+    background:var(--code);border:.5pt solid var(--rule);border-left:2.5pt solid var(--accent);
+    padding:8pt 10pt;font-size:8.5pt;line-height:1.45;
+    white-space:pre-wrap;word-wrap:break-word;margin:0 0 10pt;page-break-inside:avoid;
+  }
+  pre code{background:none;padding:0;font-size:inherit}
+  table{border-collapse:collapse;width:100%;font-size:9pt;margin:0 0 10pt;page-break-inside:avoid}
+  th,td{border:.5pt solid var(--rule);padding:4pt 6pt;text-align:left;vertical-align:top}
+  th{background:var(--wash);font-family:"Segoe UI",Arial,sans-serif;font-weight:600;font-size:8.5pt}
+  .note{
+    background:var(--wash);border-left:2.5pt solid var(--accent);
+    padding:8pt 10pt;margin:0 0 10pt;font-size:9.5pt;page-break-inside:avoid;
+  }
+  .note b{font-family:"Segoe UI",Arial,sans-serif}
+  .warn{background:#fdf6ee;border-left-color:#a8793f}
+  .kill{background:#fdf1f0;border-left-color:#b0524b}
+  .lede{font-size:11pt;color:var(--ink2)}
+  .cover{
+    height:245mm;display:flex;flex-direction:column;justify-content:center;
+    page-break-after:always;
+  }
+  .cover .rule{height:3pt;background:var(--accent);width:60mm;margin:0 0 14pt}
+  .cover .sub{font-size:13pt;color:var(--ink2);margin:0 0 26pt;font-family:"Segoe UI",Arial,sans-serif}
+  .cover dl{font-size:10pt;margin:0}
+  .cover dt{font-family:"Segoe UI",Arial,sans-serif;font-size:8pt;text-transform:uppercase;
+    letter-spacing:.6pt;color:var(--ink3);margin:10pt 0 1pt}
+  .cover dd{margin:0}
+  .toc{page-break-after:always}
+  .toc ol{list-style:none;padding:0;counter-reset:t}
+  .toc li{counter-increment:t;padding:4pt 0;border-bottom:.5pt dotted var(--rule);font-size:10pt}
+  .toc li::before{content:counter(t) ".";display:inline-block;width:22pt;color:var(--accent);
+    font-family:"Segoe UI",Arial,sans-serif;font-weight:600}
+  .toc .sm{color:var(--ink3);font-size:9pt}
+  .kv{font-size:9pt}
+  .kv td:first-child{width:34%;font-family:"Segoe UI",Arial,sans-serif;font-weight:600}
+  .part{page-break-before:always}
+  .lvl{
+    display:inline-block;font-family:"Segoe UI",Arial,sans-serif;font-size:7.5pt;
+    letter-spacing:.6pt;text-transform:uppercase;background:var(--accent);color:#fff;
+    padding:1.5pt 5pt;border-radius:2pt;vertical-align:middle;margin-left:8pt;font-weight:600;
+  }
+  .lvl.b{background:#4a7a52} .lvl.i{background:#7a6a3a} .lvl.a{background:#8a4a4a}
+  .ascii{font-size:8pt;line-height:1.3}
+  .qa{page-break-inside:avoid;margin:0 0 10pt}
+  .qa .q{font-family:"Segoe UI",Arial,sans-serif;font-weight:600;margin:0 0 3pt}
+  .qa .a{margin:0;padding-left:12pt;border-left:1.5pt solid var(--rule)}
+  .foot{margin-top:20pt;padding-top:8pt;border-top:.5pt solid var(--rule);
+    font-size:8.5pt;color:var(--ink3)}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════ COVER ══════════════════ -->
+<section class="cover">
+  <div class="rule"></div>
+  <h1>Mohar</h1>
+  <p class="sub">A sealed custody chain for examination papers<br>Study guide — basics to advanced</p>
+  <p class="lede" style="max-width:130mm">
+    This document explains, from first principles, what the system does, which
+    cryptography it uses and why, how the access engine reaches a decision, and
+    which parts of it are honestly unfinished. Read it end to end and you will be
+    able to defend every design choice in the repository.
+  </p>
+  <dl>
+    <dt>Prepared for</dt><dd>Smart India Hackathon — technical presentation and Q&amp;A</dd>
+    <dt>Scope</dt><dd>Architecture, cryptography, custody model, access control, operations</dd>
+    <dt>Reading order</dt><dd>Parts 1–4 are foundational. Parts 5–10 are the system proper. Parts 11–12 are for the demo and the questions.</dd>
+    <dt>Reading time</dt><dd>Roughly 70 minutes at a careful pace</dd>
+  </dl>
+</section>
+
+<!-- ══════════════════ TOC ══════════════════ -->
+<section class="toc">
+  <h2 style="margin-top:0">Contents</h2>
+  <ol>
+    <li>The problem Mohar actually solves <span class="sm">— why leaks survive, and why this is an evidence failure</span></li>
+    <li>Goals, non-goals, and the one honest claim <span class="sm">— what we promise and refuse to promise</span></li>
+    <li>Cryptographic foundations <span class="sm">— hashes, chains, signatures, from zero</span></li>
+    <li>The ledger <span class="sm">— event shape, two hashes, canonical JSON, append-only by grant</span></li>
+    <li>Merkle trees and anchoring <span class="sm">— proving one event without revealing the rest</span></li>
+    <li>Why this is deliberately not a blockchain <span class="sm">— ADR 0001, defended</span></li>
+    <li>The custody model <span class="sm">— eight stages, projection, and divergence as a finding</span></li>
+    <li>Rotating custody keys <span class="sm">— six-hour epochs that expire by arithmetic</span></li>
+    <li>The access decision engine <span class="sm">— fifteen checks, deny by default, evidence not verdicts</span></li>
+    <li>Why the severity labels were removed <span class="sm">— a design argument worth making out loud</span></li>
+    <li>Repository map and how to run it <span class="sm">— services, packages, commands, seeded scenarios</span></li>
+    <li>Honest gaps and judge questions <span class="sm">— what is missing, and how to answer for it</span></li>
+  </ol>
+</section>
+
+<!-- ══════════════════ 1 ══════════════════ -->
+<section class="part">
+<h2>1 &nbsp;The problem Mohar actually solves</h2>
+
+<h3>The visible problem</h3>
+<p>
+Examination question papers in India travel a long physical road. A paper is set,
+printed, sealed into bundles, handed to a courier, driven across a district, held
+overnight in a custodian's strongroom, delivered to an examination centre,
+stored again, and finally opened minutes before the examination begins. At every
+handover the bundle changes hands between people who may never meet again.
+</p>
+<p>
+Leaks happen along this road. When a paper surfaces on a messaging app the night
+before an examination, an entire cohort's results become unsafe, and the usual
+remedy is to cancel and re-conduct the examination at enormous public cost.
+</p>
+
+<h3>The problem underneath it</h3>
+<p>
+The instinctive framing is that leaks are a <em>detection</em> problem — that we
+need to catch the leak faster. That framing is wrong, and getting this right is
+the single most important idea in the whole project.
+</p>
+<div class="note">
+<b>The real failure is evidentiary.</b> Leaks are usually detected. What
+collapses afterwards is the case. By the time an investigator asks who held the
+bundle between 21:40 and 06:15, the answer lives in a paper register with
+handwritten times, a photograph of a seal on somebody's phone, and four people's
+recollections. None of that survives cross-examination. A prosecution that
+cannot pin custody to a person at a time cannot convict.
+</div>
+<p>
+So Mohar is not a leak detector. It is a machine for producing custody evidence
+that is admissible, tamper-evident, and complete enough that the gap in the
+record <em>is itself</em> the finding. If a bundle has no recorded holder for
+eighteen hours, that silence is a fact the system reports, not a fact it hides.
+</p>
+
+<h3>Restating it as an engineering brief</h3>
+<ul>
+  <li><b>Every custody act must be recorded by the person who performed it</b>, on a device bound to them, with a signature only that device could produce.</li>
+  <li><b>The record must be impossible to edit after the fact</b> — including by the people who run the system.</li>
+  <li><b>Absence of a record must be as loud as a bad record.</b> A chain with a hole in it must report the hole.</li>
+  <li><b>It must work offline</b>, because strongrooms have concrete walls and rural centres lose signal.</li>
+  <li><b>Any outside party must be able to verify the record</b> without being given the papers, the database, or trust in the operator.</li>
+</ul>
+</section>
+
+<!-- ══════════════════ 2 ══════════════════ -->
+<section class="part">
+<h2>2 &nbsp;Goals, non-goals, and the one honest claim</h2>
+
+<h3>What the system claims</h3>
+<table class="kv">
+<tr><td>Tamper-evidence</td><td>Any alteration to a past record breaks a hash chain that anyone can recompute. We do not claim the record cannot be altered; we claim alteration cannot be hidden.</td></tr>
+<tr><td>Attribution</td><td>Every entry carries an Ed25519 signature from an enrolled device, and the device is bound to a person and a centre in reference data.</td></tr>
+<tr><td>Completeness</td><td>Custody state is derived by replaying events. A missing handover produces a visible gap, not a plausible-looking timeline.</td></tr>
+<tr><td>Independent verification</td><td>Daily Merkle roots are published. A third party can prove one event was included without seeing any other event.</td></tr>
+<tr><td>Least-privilege access</td><td>A stage-scoped key that dies after six hours, checked against fifteen independent conditions before any bundle is opened.</td></tr>
+</table>
+
+<h3>What the system explicitly does not claim</h3>
+<div class="note kill">
+<b>Mohar does not make examinations leak-proof.</b> A superintendent with
+legitimate access, a phone, and bad intent can photograph a paper at the moment
+it is legitimately opened. No custody system can prevent that, and claiming
+otherwise is the fastest way to lose credibility in a technical review.
+</div>
+<p>
+What Mohar changes is the cost. It narrows the window in which a leak is
+possible from days to minutes, and it narrows the set of people who could have
+done it from hundreds to a named few, with cryptographic evidence of who held
+what and when. That is a real, defensible, bounded claim. Make exactly that
+claim and no larger one.
+</p>
+
+<h3>Threat model in one page</h3>
+<table>
+<tr><th>Adversary</th><th>Capability</th><th>What stops them</th></tr>
+<tr><td>Opportunistic courier</td><td>Physical access in transit; can open and reseal a bundle</td><td>Seal serial is registered at seal time and re-read at every hop; a changed serial is an anomaly on the package</td></tr>
+<tr><td>Colluding custodian</td><td>Legitimate possession overnight; wants no record of a detour</td><td>Custody gap detection — a stretch of time in transit with no recorded holder is reported as a gap in minutes</td></tr>
+<tr><td>Insider operator</td><td>Database credentials for the running application</td><td>The application role holds <code>INSERT</code> and <code>SELECT</code> only. There is no <code>UPDATE</code> or <code>DELETE</code> grant on the event table, so the application literally cannot rewrite history</td></tr>
+<tr><td>Database administrator</td><td>Full database access, can rewrite rows directly</td><td>Cannot be prevented — but cannot be hidden. Rewriting one row breaks every chain hash after it, and the daily Merkle root already published elsewhere no longer matches</td></tr>
+<tr><td>Early opener</td><td>Wants to open a bundle before the examination window</td><td>Custody window check plus key epoch — a key for a stage does not exist outside its window, and the attempt is recorded whether it succeeds or not</td></tr>
+<tr><td>Key thief</td><td>Steals or photographs an issued custody key</td><td>The key is stage-scoped, package-scoped, and dies at the end of its six-hour epoch. It is also useless without an enrolled device inside the geofence</td></tr>
+</table>
+</section>
+
+<!-- ══════════════════ 3 ══════════════════ -->
+<section class="part">
+<h2>3 &nbsp;Cryptographic foundations <span class="lvl b">Basics</span></h2>
+
+<p class="lede">If you already know hashing and signatures, skim to §3.4. Everything here is standard, but the presentation is chosen to make the later design decisions obvious.</p>
+
+<h3>3.1 &nbsp;A hash function</h3>
+<p>
+A cryptographic hash takes any input — a byte, a book, a JSON object — and
+produces a fixed-length fingerprint. Mohar uses SHA-256, which produces 32 bytes
+(64 hexadecimal characters).
+</p>
+<pre><code>SHA256("Mohar")   → 3b7a...  (32 bytes)
+SHA256("Mohar.")  → e91c...  (completely different)</code></pre>
+<p>Three properties matter, and only these three:</p>
+<ol>
+  <li><b>Deterministic.</b> The same input always gives the same output. This is what lets an auditor recompute our hashes and get our answers.</li>
+  <li><b>One-way.</b> Given the fingerprint you cannot recover the input. This is why we store a <em>hash</em> of every custody key rather than the key itself.</li>
+  <li><b>Avalanche and collision resistance.</b> Changing one bit changes roughly half the output bits, and nobody can construct two different inputs with the same fingerprint. This is what makes tampering detectable.</li>
+</ol>
+
+<h3>3.2 &nbsp;A hash chain</h3>
+<p>
+Take a list of records. For each one, compute a hash not just of the record but
+of the record <em>plus the previous record's hash</em>.
+</p>
+<pre class="ascii"><code>entry 1:  hash₁ = SHA256( GENESIS  ‖ body₁ )
+entry 2:  hash₂ = SHA256( hash₁    ‖ body₂ )
+entry 3:  hash₃ = SHA256( hash₂    ‖ body₃ )
+entry 4:  hash₄ = SHA256( hash₃    ‖ body₄ )
+
+           ┌───────┐   ┌───────┐   ┌───────┐   ┌───────┐
+GENESIS ──▶│ body₁ │──▶│ body₂ │──▶│ body₃ │──▶│ body₄ │
+           │ hash₁ │   │ hash₂ │   │ hash₃ │   │ hash₄ │
+           └───────┘   └───────┘   └───────┘   └───────┘</code></pre>
+<p>
+Now suppose someone edits <code>body₂</code> — say, changing a handover time to
+cover an eighteen-hour gap. Recomputing gives a different <code>hash₂</code>. But
+<code>hash₃</code> was built from the <em>old</em> <code>hash₂</code>, so
+<code>hash₃</code> no longer matches. Neither does <code>hash₄</code>, or
+anything after it. To hide the edit the attacker must rewrite every subsequent
+entry — and if any root has already been published outside the database, even
+that is not enough.
+</p>
+<div class="note">
+<b>The genesis value.</b> The first entry has no predecessor, so Mohar uses 32
+zero bytes as the <code>GENESIS</code> hash. This is a convention, not a
+cryptographic requirement — it just gives the recursion a defined base case so
+verification code needs no special first-entry branch.
+</div>
+
+<h3>3.3 &nbsp;Digital signatures</h3>
+<p>
+A hash proves a record has not changed. It does <em>not</em> prove who wrote it —
+anyone can compute a hash. For attribution we need signatures.
+</p>
+<p>
+Each enrolled device holds a <b>private key</b> it never transmits, and publishes
+a matching <b>public key</b>. Signing produces a value that only the private key
+could have produced but that anyone with the public key can check.
+</p>
+<pre><code>signature = Ed25519_sign(devicePrivateKey, bodyHash)
+valid?    = Ed25519_verify(devicePublicKey, bodyHash, signature)</code></pre>
+<p>
+Mohar uses <b>Ed25519</b> rather than RSA or ECDSA for three practical reasons:
+signatures are 64 bytes and keys 32 bytes, which matters when a field device
+queues events offline; signing is deterministic, so there is no catastrophic
+failure mode from a bad random number generator as ECDSA has; and it is fast
+enough on cheap Android hardware.
+</p>
+
+<h3>3.4 &nbsp;The problem canonical JSON solves</h3>
+<p>
+Here is a subtle failure that breaks naïve implementations. A device signs an
+event body. The server receives it, parses the JSON, stores it, and later
+re-serialises it to verify the signature. But:
+</p>
+<pre><code>{"copies":240,"centre":"JPR-07"}     → hash A
+{"centre":"JPR-07","copies":240}     → hash B     ← same data, different hash
+{"copies": 240, "centre": "JPR-07"}  → hash C     ← whitespace, different again</code></pre>
+<p>
+Semantically identical JSON produces different bytes, therefore different hashes,
+therefore a signature that fails to verify even though nothing was tampered
+with. Key order is not preserved across parsers, languages, or database
+round-trips.
+</p>
+<p>
+The fix is a <b>canonicalisation standard</b>: a single deterministic byte
+representation for any given JSON value. Mohar uses <b>RFC 8785 JSON
+Canonicalization Scheme (JCS)</b>, via the <code>canonicalize</code> package in
+<code>packages/crypto-core</code>. JCS fixes key ordering (lexicographic by
+UTF-16 code unit), removes insignificant whitespace, and pins number formatting.
+</p>
+<div class="note">
+<b>Say this in the demo.</b> "We never hash <code>JSON.stringify</code> output. We
+hash RFC 8785 canonical form, so a signature made on an Android device in a
+strongroom still verifies after the JSON has been through Postgres and back."
+That one sentence signals you have actually built this rather than sketched it.
+</div>
+</section>
+
+<!-- ══════════════════ 4 ══════════════════ -->
+<section class="part">
+<h2>4 &nbsp;The ledger <span class="lvl i">Core</span></h2>
+
+<h3>4.1 &nbsp;What an event is</h3>
+<p>
+An event is one custody act: a seal applied, a bundle handed over, a package
+received, a bundle opened, a key destroyed. It is written once and never
+modified. Conceptually:
+</p>
+<pre><code>{
+  seq:           190,                      // monotonic position in the chain
+  id:            "…uuid…",
+  kind:          "custody.handover",
+  occurredAt:    "2026-08-19T21:40:11Z",   // device clock, as reported
+  receivedAt:    "2026-08-19T21:44:02Z",   // server clock, on arrival
+  clockSkewMs:   231000,                   // the difference, recorded not corrected
+  actorPersonId: "…", actorRole: "courier",
+  actorDeviceId: "dev-jpr-courier-02",
+  cosignDeviceId:"dev-jpr-custodian-01",   // both parties to a handover sign
+  lat: 26.9124, lon: 75.7873, geoAccuracyM: 8,
+  payload:       { packageId:"JPR-002", fromPersonId:"…", toPersonId:"…",
+                   sealSerialRead:"MH-4471-A" },
+  bodyHash:      "…",   // SHA256 of canonical body
+  prevHash:      "…",   // chain hash of the previous entry
+  hash:          "…"    // SHA256(prevHash ‖ bodyHash)
+}</code></pre>
+
+<h3>4.2 &nbsp;Why there are two hashes</h3>
+<p>This trips people up, so be precise about it.</p>
+<table>
+<tr><th></th><th><code>bodyHash</code></th><th><code>hash</code> (chain hash)</th></tr>
+<tr><td>Computed over</td><td>The canonical event body alone</td><td><code>prevHash ‖ bodyHash</code></td></tr>
+<tr><td>Answers</td><td>"Is this event's content unaltered, and who signed it?"</td><td>"Is this event in the right place in history?"</td></tr>
+<tr><td>Depends on</td><td>Nothing else in the ledger</td><td>Every event before it</td></tr>
+<tr><td>What signs it</td><td>The device's Ed25519 key signs <code>bodyHash</code></td><td>Nothing — it is derived, and recomputable by anyone</td></tr>
+</table>
+<p>
+The separation matters because it lets you prove a single event to an outsider
+without handing over the whole chain. Give them the event body and the
+signature and they verify authorship. Give them the surrounding hashes and an
+inclusion proof and they verify position. Neither step requires them to see
+other packages, other centres, or the papers themselves.
+</p>
+
+<h3>4.3 &nbsp;Append-only is enforced by the database, not the code</h3>
+<p>
+This is the design decision most worth defending in a technical review, so
+understand the argument properly.
+</p>
+<p>
+A lot of systems say "append-only" and mean "our code never issues an
+<code>UPDATE</code>". That is a promise, not a control. It survives exactly
+until someone adds an endpoint, or a maintenance script, or a compromised
+dependency issues an update on their behalf.
+</p>
+<p>Mohar enforces it one layer down, in Postgres role grants:</p>
+<pre><code>-- the role the running application connects as
+grant select, insert on led.event          to mohar_app;
+grant select, insert on led.access_attempt to mohar_app;
+--  no UPDATE. no DELETE. no TRUNCATE.
+
+-- a separate role, used only by migrations, holds DDL rights
+-- mohar_migrator — never used by the service at runtime</code></pre>
+<div class="note">
+<b>Why this is stronger.</b> If an attacker achieves full remote code execution
+inside the ledger service, they still cannot rewrite a past event, because the
+credentials that process holds do not carry the privilege. The database refuses
+the statement. This turns an application-layer promise into a database-layer
+<em>capability boundary</em>.
+</div>
+<p>
+Note honestly what it does <em>not</em> stop: someone who obtains the superuser
+or migrator credentials can rewrite anything. That is what the hash chain and the
+externally published Merkle roots are for. The two controls are layered
+deliberately — grants stop the likely attacker, hashes expose the powerful one.
+</p>
+
+<h3>4.4 &nbsp;Clock skew is recorded, never corrected</h3>
+<p>
+Field devices have wrong clocks. The naïve response is to overwrite the device
+time with the server time on arrival. Mohar stores both and the difference.
+</p>
+<p>
+The reason is evidentiary. A device whose clock is consistently four minutes
+slow is a maintenance problem. A device whose clock jumped backwards by six
+hours immediately before a handover is a tampering indicator — and if you had
+normalised the timestamp on arrival, you destroyed the only evidence of it. The
+access engine treats skew above two minutes as a failed check, but it never
+edits the reported time.
+</p>
+
+<h3>4.5 &nbsp;Idempotency for offline queues</h3>
+<p>
+A field device in a strongroom queues events locally and uploads when it
+regains signal. Uploads get retried; retries produce duplicates. Each event
+carries a client-generated UUID, and re-submitting an ID already in the ledger
+returns the existing entry rather than appending a second one. Retrying is
+therefore always safe, which is what makes an aggressive offline retry policy
+acceptable.
+</p>
+</section>
+
+<!-- ══════════════════ 5 ══════════════════ -->
+<section class="part">
+<h2>5 &nbsp;Merkle trees and anchoring <span class="lvl i">Core</span></h2>
+
+<h3>5.1 &nbsp;The limitation of a plain chain</h3>
+<p>
+A hash chain proves history is intact, but only if you can walk the whole thing.
+To convince an outsider that event 190 is genuine, you would have to hand them
+all 190 events. For an examination board that means disclosing every centre's
+custody record to prove one fact about one package. That is unacceptable.
+</p>
+
+<h3>5.2 &nbsp;The tree</h3>
+<p>
+A Merkle tree hashes events in pairs, then hashes those hashes in pairs, up to a
+single <b>root</b> that summarises everything below it.
+</p>
+<pre class="ascii"><code>                    ROOT
+                  /      \
+              H(AB)       H(CD)
+             /    \      /     \
+          H(A)   H(B)  H(C)   H(D)
+           |      |     |      |
+          ev1    ev2   ev3    ev4</code></pre>
+<p>
+To prove <code>ev3</code> is in this tree, you need <code>ev3</code> itself plus
+just two hashes — its sibling <code>H(D)</code>, and <code>H(AB)</code>. The
+verifier recomputes upward and checks they land on the published root. They
+learn nothing about <code>ev1</code>, <code>ev2</code>, or <code>ev4</code>.
+This is an <b>inclusion proof</b>, and its size grows as log₂(n) — proving one
+event out of a million costs about twenty hashes.
+</p>
+
+<h3>5.3 &nbsp;RFC 6962</h3>
+<p>
+Mohar follows <b>RFC 6962</b>, the Certificate Transparency specification, rather
+than inventing a tree format. RFC 6962 prefixes leaves with a <code>0x00</code>
+byte and internal nodes with <code>0x01</code>, which prevents second-preimage
+attacks where an attacker passes off an internal node as a leaf.
+</p>
+<p>
+Using a published standard also means any existing CT verification library can
+check our proofs. "We use the same tree construction that browsers use to audit
+the world's TLS certificates" is a much better answer than "we wrote a Merkle
+tree."
+</p>
+
+<h3>5.4 &nbsp;Daily anchors and external timestamping</h3>
+<p>
+Each day the ledger builds a Merkle tree over that day's events and stores the
+root as an <b>anchor</b>, along with the first and last sequence numbers and the
+tree size. The anchor is the fixed point that makes tampering detectable even by
+someone with full database access — once yesterday's root is published somewhere
+outside the database, rewriting yesterday's events changes the recomputed root
+and the mismatch is immediate and public.
+</p>
+<p>
+The intended external publication is an <b>RFC 3161</b> trusted timestamp,
+obtained free from a public authority such as freeTSA. This is a signed
+statement from an independent party that this exact root existed at this time.
+</p>
+<div class="note warn">
+<b>State this honestly.</b> The anchor build and the <code>notarised</code> flag
+exist in the schema and the API, but the RFC 3161 client is <em>not</em>
+implemented in this MVP. Anchors are built and stored; they are not yet
+externally timestamped. Say so if asked. Claiming a notarisation you do not
+perform is the kind of thing that ends a review badly.
+</div>
+</section>
+
+<!-- ══════════════════ 6 ══════════════════ -->
+<section class="part">
+<h2>6 &nbsp;Why this is deliberately not a blockchain <span class="lvl a">Advanced</span></h2>
+
+<p class="lede">
+This is recorded as <code>docs/adr/0001-not-a-blockchain.md</code>, and you will
+be asked about it. Have the argument ready, because "why not blockchain" is the
+most predictable question in the room.
+</p>
+
+<h3>6.1 &nbsp;What a blockchain is actually for</h3>
+<p>
+A blockchain solves one specific problem: reaching agreement on an ordered
+history among parties who <b>do not trust each other and have no shared
+authority</b>. Every expensive property — proof of work, mining, tokens,
+distributed consensus — exists to buy Byzantine fault tolerance among mutually
+hostile, permissionless participants.
+</p>
+
+<h3>6.2 &nbsp;Why that problem does not exist here</h3>
+<p>
+An examination board <em>is</em> a shared authority. It is legally constituted,
+statutorily responsible for the examination, and already the party everyone
+defers to. There is no set of mutually hostile peers who must agree on ordering
+without it. Buying Byzantine consensus you do not need means paying for
+throughput limits, latency, operational complexity, and — for a public exam
+board — either a token or a permissioned network that has all the cost and none
+of the decentralisation.
+</p>
+
+<h3>6.3 &nbsp;What we actually needed</h3>
+<table>
+<tr><th>Required property</th><th>Blockchain gives it?</th><th>What Mohar uses instead</th></tr>
+<tr><td>Tamper-evident ordered history</td><td>Yes</td><td>Hash chain — same property, no consensus</td></tr>
+<tr><td>Attributable entries</td><td>Yes</td><td>Ed25519 device signatures</td></tr>
+<tr><td>Third-party verification</td><td>Yes</td><td>RFC 6962 Merkle roots and inclusion proofs</td></tr>
+<tr><td>Proof against the operator</td><td>Yes</td><td>External RFC 3161 timestamp on daily roots</td></tr>
+<tr><td>Trustless consensus among hostile peers</td><td>Yes</td><td><b>Not needed</b> — the board is the authority</td></tr>
+<tr><td>Works offline in a strongroom</td><td>No</td><td>Local signing plus idempotent replay</td></tr>
+<tr><td>Selective disclosure of one custody record</td><td>Awkward</td><td>Inclusion proof reveals exactly one event</td></tr>
+</table>
+
+<h3>6.4 &nbsp;How to say it in the room</h3>
+<div class="note">
+"We use the cryptography blockchains are built from — hash chains, Merkle trees,
+public-key signatures — without the distributed consensus layer, because the
+consensus layer solves a trust problem that does not exist when a statutory
+examination board is the authority. We get tamper-evidence and independent
+verification at a fraction of the operational cost, and we work offline, which a
+chain requiring network consensus cannot."
+</div>
+<p>
+Note that this also constrains the interface. The control room says "Record
+verified ✓ · Entry #190", never "Block #190", because the system has entries in
+a chain, not blocks in a blockchain. Getting the vocabulary right is part of the
+argument being honest.
+</p>
+</section>
+
+<!-- ══════════════════ 7 ══════════════════ -->
+<section class="part">
+<h2>7 &nbsp;The custody model <span class="lvl i">Core</span></h2>
+
+<h3>7.1 &nbsp;The eight stages</h3>
+<p>
+A package's life is divided into eight named stages. Each has an expected role,
+and a custody key is scoped to exactly one of them.
+</p>
+<table>
+<tr><th>#</th><th>Stage</th><th>What happens</th><th>Expected role</th></tr>
+<tr><td>1</td><td><code>seal</code></td><td>Authority seals the bundle and registers the seal serial</td><td>district_officer</td></tr>
+<tr><td>2</td><td><code>dispatch</code></td><td>Package released from the authority to a courier</td><td>district_officer</td></tr>
+<tr><td>3</td><td><code>transit</code></td><td>Courier holds the package on the road</td><td>courier</td></tr>
+<tr><td>4</td><td><code>custodian</code></td><td>Package held in a custodian's strongroom</td><td>custodian</td></tr>
+<tr><td>5</td><td><code>centre</code></td><td>Package received at the examination centre</td><td>superintendent</td></tr>
+<tr><td>6</td><td><code>unlock</code></td><td>Package opened for printing — the highest-value stage</td><td>superintendent</td></tr>
+<tr><td>7</td><td><code>print</code></td><td>Metered printing under way</td><td>superintendent</td></tr>
+<tr><td>8</td><td><code>destroy</code></td><td>Content key zeroisation confirmed</td><td>superintendent</td></tr>
+</table>
+
+<h3>7.2 &nbsp;Projection: state is derived, never stored</h3>
+<p>
+This is the second design decision genuinely worth defending. A package's
+current state — sealed, in transit, at custodian, at centre, opened, returned,
+compromised — is <b>not</b> a column somebody updates. It is computed by
+replaying every event for that package in sequence, in
+<code>services/ledger/src/domain/custody.ts</code>.
+</p>
+<pre><code>projectCustody(events) →
+  { state, holderPersonId, holderRole, sealSerial,
+    hops[], anomalies[], accessGranted, printed, keyDestroyed }</code></pre>
+<p>Why this matters:</p>
+<ul>
+  <li>A stored state column can be wrong, or be made wrong. A derived state cannot disagree with the evidence, because it <em>is</em> the evidence.</li>
+  <li>Adding a new anomaly detector later re-analyses all historical packages for free — no backfill, no migration.</li>
+  <li>Every claim on screen is traceable to the specific events that produced it.</li>
+</ul>
+
+<h3>7.3 &nbsp;Divergence is the point</h3>
+<p>
+Each package carries two states: <code>declaredState</code>, which an operator
+records as the plan, and <code>observedState</code>, which the projection derives
+from events. When they disagree, <code>divergent</code> is true.
+</p>
+<div class="note">
+<b>This is a feature, not an inconsistency to reconcile.</b> A package declared
+"at centre" that events show is still in transit is exactly the situation you
+want surfaced. Most systems overwrite the plan with reality, or reality with the
+plan, and lose the discrepancy. Mohar keeps both and reports the gap between
+them.
+</div>
+
+<h3>7.4 &nbsp;The anomaly detectors</h3>
+<table>
+<tr><th>Code</th><th>Meaning</th></tr>
+<tr><td><code>illegal_transition</code></td><td>The package moved between two states that no legal path connects — e.g. sealed straight to opened.</td></tr>
+<tr><td><code>handoff_holder_mismatch</code></td><td>A handover claims to come from a person who was not the recorded holder. Someone handed over a package they did not have.</td></tr>
+<tr><td><code>seal_serial_changed</code></td><td>The serial read at a checkpoint differs from the one registered at seal time. The strongest single indicator of physical interference.</td></tr>
+<tr><td><code>custody_gap</code></td><td>A stretch longer than six hours <em>while in transit</em> with no recorded holder.</td></tr>
+<tr><td><code>printed_without_grant</code></td><td>Printing events exist with no preceding granted access decision.</td></tr>
+<tr><td><code>opened_before_window</code></td><td>The bundle was opened before the examination window opened.</td></tr>
+<tr><td><code>key_not_destroyed</code></td><td>Printing finished but no key-zeroisation event followed. The content key is still live.</td></tr>
+</table>
+<div class="note">
+<b>A bug worth mentioning as evidence of care.</b> The custody-gap detector
+originally flagged any long silence, which meant a package sitting legitimately
+in a custodian's strongroom overnight was reported as a gap. It now only counts
+silence while the package is <code>in_transit</code>. A detector that fires on
+correct behaviour trains operators to ignore it, which is worse than not having
+it at all.
+</div>
+</section>
+
+<!-- ══════════════════ 8 ══════════════════ -->
+<section class="part">
+<h2>8 &nbsp;Rotating custody keys <span class="lvl a">Advanced</span></h2>
+
+<h3>8.1 &nbsp;The idea</h3>
+<p>
+Every stage of every package requires a <b>custody key</b> — a short code the
+authority at that stage must present. A key is valid for exactly one six-hour
+<b>epoch</b> and is scoped to one package and one stage.
+</p>
+<pre><code>EPOCH_SECONDS       = 6 * 60 * 60   // 21600
+EPOCH_GRACE_SECONDS = 30 * 60       // 1800
+
+epoch = floor( unixSeconds / 21600 )</code></pre>
+<p>
+Four epochs per day, aligned to fixed boundaries. Everyone in the system agrees
+on the current epoch without coordinating, because it is a pure function of the
+clock.
+</p>
+
+<h3>8.2 &nbsp;Expiry by arithmetic, not by a job</h3>
+<p>
+This is recorded as <code>docs/adr/0005-custody-keys-expire-by-arithmetic.md</code>
+and it is the sharpest security argument in the project.
+</p>
+<p>
+The obvious implementation is a scheduled job that marks keys expired. Consider
+its failure mode: the scheduler dies at 02:00, nobody notices, and every key in
+the system stays valid indefinitely. The failure is silent and it
+<b>fails open</b> — the worst possible direction for an access control.
+</p>
+<p>
+Mohar has no expiry job. A key's epoch is compared against the current epoch at
+the moment of the request:
+</p>
+<pre><code>if (keyEpoch !== currentEpoch) → deny, reason key_expired
+   evidence: "presented epoch 76891, current epoch 76894"</code></pre>
+<div class="note">
+<b>The consequence.</b> If every background process in the system dies, keys do
+not stop expiring — because nothing was ever making them expire. Time makes them
+expire. Broken infrastructure denies access rather than granting it. The system
+<b>fails closed</b>.
+</div>
+
+<h3>8.3 &nbsp;The grace window</h3>
+<p>
+A thirty-minute grace at the epoch boundary handles the real case where a
+superintendent receives a key at 05:58 and presents it at 06:02. Without grace
+the system would deny a completely legitimate act because a clock ticked over
+mid-procedure, and the operational response to that would be to widen epochs to
+twenty-four hours, which destroys the whole property.
+</p>
+
+<h3>8.4 &nbsp;The key format</h3>
+<pre><code>MHR-UNLOCK-8K3M-P7QW-2NRT</code></pre>
+<p>
+The random portion uses <b>Crockford base32</b>: the alphabet
+<code>0123456789ABCDEFGHJKMNPQRSTVWXYZ</code>, which deliberately omits
+<b>I</b>, <b>L</b>, <b>O</b> and <b>U</b>.
+</p>
+<ul>
+  <li><b>I</b> and <b>1</b>, <b>O</b> and <b>0</b>, <b>L</b> and <b>1</b> are confusable when read aloud or handwritten. This key gets dictated over a bad phone line from a rural centre.</li>
+  <li><b>U</b> is excluded so no random draw produces an obscene string. This matters in a government deployment.</li>
+  <li>Uppercase only, grouped in fours, so it is transcribable without error.</li>
+</ul>
+<p>
+The random payload is 128 bits, which is far beyond brute force, and the format
+is chosen entirely around a human reading it correctly under stress.
+</p>
+
+<h3>8.5 &nbsp;The key is never stored</h3>
+<pre><code>create table led.access_key (
+  ...
+  key_hash    bytea not null,    -- SHA-256 of the key
+  fingerprint text  not null,    -- short prefix, safe to display
+  unique (package_id, stage, epoch)
+);</code></pre>
+<p>
+The plaintext key is shown exactly once, at issue. After that only its SHA-256
+exists. A full database dump yields no usable keys — handled precisely the way a
+password would be. The <code>fingerprint</code> is a short non-secret prefix so
+the control room can say <em>which</em> key was presented without being able to
+present it.
+</p>
+<p>
+Verification uses a <b>constant-time</b> comparison, so an attacker cannot learn
+the key one character at a time by measuring how long a rejection takes.
+</p>
+<p>
+The <code>unique (package_id, stage, epoch)</code> constraint means issuing is
+idempotent: asking twice in the same epoch returns the same key rather than
+minting a second valid one.
+</p>
+</section>
+
+<!-- ══════════════════ 9 ══════════════════ -->
+<section class="part">
+<h2>9 &nbsp;The access decision engine <span class="lvl a">Advanced</span></h2>
+
+<p class="lede">
+<code>services/ledger/src/domain/policy.ts</code> — the function that decides
+whether a bundle may be opened. If you learn one file in this repository, learn
+this one.
+</p>
+
+<h3>9.1 &nbsp;Deny by default</h3>
+<p>
+A request begins refused. There is no path through <code>decideAccess</code>
+that returns <code>granted</code> without every one of fifteen checks having
+positively passed. Grant is the exception that must be earned, not the default
+that failures subtract from.
+</p>
+
+<h3>9.2 &nbsp;The fifteen checks</h3>
+<table>
+<tr><th>Check</th><th>What it establishes</th></tr>
+<tr><td><code>key_presented</code></td><td>A custody key was supplied at all</td></tr>
+<tr><td><code>key_valid</code></td><td>Its SHA-256 matches an issued, unrevoked key</td></tr>
+<tr><td><code>key_in_window</code></td><td>Its epoch is the current epoch, within grace</td></tr>
+<tr><td><code>key_stage_match</code></td><td>It was issued for this stage and this package</td></tr>
+<tr><td><code>device_enrolled</code></td><td>The signing device is known and not revoked</td></tr>
+<tr><td><code>device_binding</code></td><td>The device is bound to this centre</td></tr>
+<tr><td><code>roster_membership</code></td><td>The person is on the roster for this centre</td></tr>
+<tr><td><code>role_permitted</code></td><td>Their role is the one this stage expects</td></tr>
+<tr><td><code>geofence</code></td><td>Reported position is inside the centre's radius</td></tr>
+<tr><td><code>geo_accuracy</code></td><td>The GPS fix is accurate to within 50 m</td></tr>
+<tr><td><code>custody_window</code></td><td>The request falls inside the permitted time window</td></tr>
+<tr><td><code>clock_skew</code></td><td>Device clock is within two minutes of the server</td></tr>
+<tr><td><code>seal_serial</code></td><td>The serial read matches the one registered at seal</td></tr>
+<tr><td><code>package_state</code></td><td>The package is not compromised or already opened</td></tr>
+<tr><td><code>exam_active</code></td><td>The examination has not been suspended</td></tr>
+</table>
+
+<h3>9.3 &nbsp;Every check runs, always</h3>
+<p>
+The engine never short-circuits on the first failure. This costs a few
+comparisons and is deliberate:
+</p>
+<div class="note">
+An attempt that trips <em>four</em> checks is a different event from one that
+trips a clock skew. A courier at the wrong centre, outside the window, with a
+stale key, presenting the wrong seal serial is a coordinated attempt; a
+superintendent whose phone clock drifted is an operations issue. If you
+short-circuit you record the first failure and lose the shape of the attempt —
+and there is no second chance to observe an attempt that has already happened.
+</div>
+
+<h3>9.4 &nbsp;Evidence, not verdicts</h3>
+<p>Each check records what was <em>observed</em>, not what it concluded:</p>
+<table>
+<tr><th>What a naïve system stores</th><th>What Mohar stores</th></tr>
+<tr><td><code>outside_geofence</code></td><td><code>"412 m from centre boundary; geofence 150 m"</code></td></tr>
+<tr><td><code>key_expired</code></td><td><code>"presented epoch 76891, current epoch 76894"</code></td></tr>
+<tr><td><code>clock_skew_excessive</code></td><td><code>"device clock 4 min 11 s behind server"</code></td></tr>
+<tr><td><code>seal_serial_mismatch</code></td><td><code>"registered MH-4471-A, read MH-4471-B"</code></td></tr>
+</table>
+<p>
+A verdict cannot be re-examined; its inputs are gone. Evidence can be
+re-examined years later under a different policy, and — this is the operative
+point — it can be annexed to a First Information Report. "412 metres from the
+centre" is a fact a court can weigh. "outside_geofence" is a computer's opinion
+about a fact it did not keep.
+</p>
+
+<h3>9.5 &nbsp;The attempt is recorded before the caller is told</h3>
+<p>
+The write to <code>led.access_attempt</code> happens <b>before</b> the response
+is returned. An attacker cannot learn the outcome and then kill the connection
+to prevent the record. And because <code>led.access_attempt</code> carries only
+<code>SELECT</code> and <code>INSERT</code> grants, the attempt cannot be deleted
+afterwards either — not by the application, not by anyone holding its
+credentials.
+</p>
+<p>
+Denied attempts are the most valuable records in the entire system. They are the
+ones that describe someone trying.
+</p>
+
+<h3>9.6 &nbsp;The moment the engine proved it was real</h3>
+<div class="note">
+During development the seed script produced a run in which the engine refused
+<em>every</em> centre, citing <code>person_not_on_roster</code> and
+<code>outside_custody_window</code>. The cause was a bug in the seed data — the
+scenario timeline was set six hours in the future, outside every custody window.
+<br><br>
+This is worth telling in the demo. A simulator that asserts its own outcomes
+cannot catch its author's mistake. Ours did. The engine was evaluating real
+conditions against real reference data and refusing them, which is exactly the
+behaviour you want and exactly what a scripted mock cannot demonstrate.
+</div>
+</section>
+
+<!-- ══════════════════ 10 ══════════════════ -->
+<section class="part">
+<h2>10 &nbsp;Why the severity labels were removed</h2>
+
+<h3>10.1 &nbsp;What was there before</h3>
+<p>
+An earlier build had an alarm queue tagging each event <span class="mono">CRITICAL</span>,
+<span class="mono">HIGH</span>, <span class="mono">MEDIUM</span>,
+<span class="mono">LOW</span>. It looked like a security product. It was
+deleted on purpose.
+</p>
+
+<h3>10.2 &nbsp;Why it was wrong</h3>
+<ul>
+  <li><b>The label is invented.</b> Nothing in the evidence says a seal mismatch is "critical" and a clock skew is "medium". Someone chose that, then the interface presented the choice as though the system had measured it.</li>
+  <li><b>It replaces the facts on screen.</b> Operators read the badge and stop reading. The colour becomes the finding, and the 412 metres never gets looked at.</li>
+  <li><b>It trains people to ignore things.</b> After a week of amber banners that turn out to be nothing, amber means nothing.</li>
+  <li><b>It does not survive scrutiny.</b> In a court or an inquiry, "the system rated it critical" invites the question "on what basis", and there is no answer. "The device was 412 metres outside the geofence at 04:11" needs no defence.</li>
+</ul>
+
+<h3>10.3 &nbsp;What replaced it</h3>
+<p>
+The <b>Activity ledger</b>. Every recorded act appears with its facts — who,
+which device, which key and its fingerprint, epoch presented against epoch
+current, position and distance, clock skew, seal serial read, the verbatim
+payload, and the chain hash.
+</p>
+<p>The only judgement the system retains is two fields:</p>
+<table class="kv">
+<tr><td><code>requiresDecision</code></td><td>A boolean. Does a human still need to act on this? Not how bad it is — whether it is <em>open</em>.</td></tr>
+<tr><td><code>consequence</code></td><td>A sentence from the runbook describing what follows operationally.</td></tr>
+</table>
+<p>
+That is a defensible line. The system says "this is unresolved and here is
+everything known about it." The human, who has context the system does not,
+decides what it means.
+</p>
+</section>
+
+<!-- ══════════════════ 11 ══════════════════ -->
+<section class="part">
+<h2>11 &nbsp;Repository map and how to run it</h2>
+
+<h3>11.1 &nbsp;Layout</h3>
+<pre><code>codeaxis/
+├── apps/
+│   ├── control-room/     React + Vite operator console  ← the demo UI
+│   ├── centre-client/    examination-centre application
+│   ├── field-app/        courier / custodian device app
+│   └── verify-portal/    third-party verification surface
+├── services/
+│   ├── ledger/           Fastify API — the system of record ← the core
+│   │   └── src/domain/   policy.ts · custody.ts · keys.ts · activity.ts
+│   ├── access/  gateway/  notify/  render/  sealkeys/  trace/  unlock/
+├── packages/
+│   ├── crypto-core/      hashing, Ed25519, JCS, custody-key.ts
+│   ├── contracts/        zod schemas — the shared event vocabulary
+│   ├── ledger-client/    typed client
+│   └── ui-kit/
+├── infra/migrations/     001_init.sql · 002_custody_keys.sql
+├── tools/seed/           drives the real engine to produce demo data
+└── docs/                 00–11 design docs + adr/</code></pre>
+
+<h3>11.2 &nbsp;Where each concept lives</h3>
+<table class="kv">
+<tr><td>Hash chain</td><td><code>packages/crypto-core</code> and <code>services/ledger/src/store/</code></td></tr>
+<tr><td>Canonical JSON</td><td><code>packages/crypto-core</code> (<code>canonicalize</code>)</td></tr>
+<tr><td>Custody keys / epochs</td><td><code>packages/crypto-core/src/custody-key.ts</code></td></tr>
+<tr><td>Access decision engine</td><td><code>services/ledger/src/domain/policy.ts</code></td></tr>
+<tr><td>Custody projection</td><td><code>services/ledger/src/domain/custody.ts</code></td></tr>
+<tr><td>Activity ledger</td><td><code>services/ledger/src/domain/activity.ts</code></td></tr>
+<tr><td>Append-only enforcement</td><td><code>infra/migrations/*.sql</code> — the <code>grant</code> statements</td></tr>
+<tr><td>Timeline UI</td><td><code>apps/control-room/src/pages/PackageDetail.tsx</code></td></tr>
+</table>
+
+<h3>11.3 &nbsp;Running it</h3>
+<pre><code># prerequisites: Node 20+, pnpm 9, PostgreSQL 18 running locally
+
+pnpm install
+pnpm build
+
+# schema — run as the migrator role, which alone holds DDL rights
+MIGRATE_DATABASE_URL=postgres://mohar_migrator:dev_only_password@localhost:5432/mohar \
+  pnpm migrate
+
+# ledger API — runs as the app role: INSERT + SELECT only
+DATABASE_URL=postgres://mohar_app:change_me_in_deployment@localhost:5432/mohar \
+  node services/ledger/dist/index.js          # → http://localhost:8081
+
+# demo data — this drives the real engine, it does not assert outcomes
+pnpm --filter @mohar/seed start
+
+# operator console
+cd apps/control-room && npx vite               # → http://localhost:5173</code></pre>
+<div class="note">
+<b>Note on port 8081.</b> Opening it in a browser returns
+<code>{"message":"Route GET:/ not found"}</code>. That is correct — the ledger is
+an API with no root route. Try <code>/health</code> or <code>/summary</code>.
+</div>
+
+<h3>11.4 &nbsp;The five seeded scenarios</h3>
+<p>
+The seed tool issues real keys, calls the real access engine, and emits signed
+events based on whatever the engine actually rules. It does not fabricate
+outcomes.
+</p>
+<table>
+<tr><th>Package</th><th>Scenario</th><th>What to point at</th></tr>
+<tr><td><code>JPR-001</code></td><td>Clean run, but the content key was never zeroised after printing</td><td><code>key_not_destroyed</code> — an unresolved act with no severity attached to it</td></tr>
+<tr><td><code>JPR-002</code></td><td>Eighteen-hour transit gap</td><td><code>custody_gap</code> — nobody is recorded as holding the bundle overnight. The silence is the finding.</td></tr>
+<tr><td><code>JPR-003</code></td><td>Seal serial read differs from the registered serial</td><td>Evidence stored as both serials, not as the word "mismatch"</td></tr>
+<tr><td><code>JPR-004</code></td><td>Key three epochs stale</td><td>Denial evidence reads "presented epoch N, current epoch N+3" — expiry by arithmetic, demonstrated</td></tr>
+<tr><td><code>JPR-005</code></td><td>Unissued key, presented from outside the geofence</td><td>Multiple checks fail in one attempt — the value of never short-circuiting</td></tr>
+</table>
+
+<h3>11.5 &nbsp;A demo that lands in five minutes</h3>
+<ol>
+  <li><b>Overview</b> — what is moving, what was refused, what nobody has resolved.</li>
+  <li><b>Workflow → JPR-002</b> — walk the timeline. Under each event, the full record: actor, device, position, clock skew, body hash, chain hash, verbatim payload. Stop on the gap.</li>
+  <li><b>Activity</b> — show a denied attempt. Read out the evidence, not a label.</li>
+  <li><b>Keys</b> — the epoch bar counting down. "These rotate in 43 minutes. Nothing rotates them — they expire because time passed."</li>
+  <li><b>Integrity</b> — recompute the chain live. Then say what it would mean if it did not verify.</li>
+</ol>
+</section>
+
+<!-- ══════════════════ 12 ══════════════════ -->
+<section class="part">
+<h2>12 &nbsp;Honest gaps and likely questions</h2>
+
+<h3>12.1 &nbsp;What is not built</h3>
+<div class="note warn">
+Know these before a judge finds them. Being first to name your own gaps is
+worth more than any feature you could add tonight.
+</div>
+<table>
+<tr><th>Gap</th><th>Status</th></tr>
+<tr><td>Authentication on the ledger API</td><td>Not implemented. The <code>gateway</code> service is where it belongs and is currently a stub. The API is unauthenticated in this MVP.</td></tr>
+<tr><td>RFC 3161 timestamping client</td><td>Not implemented. Anchors are built and stored; the <code>notarised</code> flag is never set true.</td></tr>
+<tr><td>Device attestation verification</td><td>Devices are enrolled but hardware attestation is not verified. A forged device record would be accepted.</td></tr>
+<tr><td>Rate limiting on <code>/access/request</code></td><td>Absent. Key guessing is infeasible at 128 bits, but the endpoint is trivially floodable.</td></tr>
+<tr><td>Shamir 3-of-4 secret sharing</td><td>Designed in <code>docs/03-crypto-design.md</code>; not wired into the running unlock path.</td></tr>
+<tr><td>drand / tlock time-lock encryption</td><td>Designed — encrypt to a future beacon round so a paper is undecryptable before its time. Not implemented.</td></tr>
+<tr><td>Git history</td><td>The repository has no commits. Every revert so far has been a hand reconstruction. This should be fixed before the presentation.</td></tr>
+</table>
+
+<h3>12.2 &nbsp;Questions you will be asked</h3>
+
+<div class="qa"><p class="q">Why not blockchain?</p>
+<p class="a">Blockchain buys consensus among mutually distrusting peers. An examination board is a statutory authority — that trust problem does not exist. We use the cryptography blockchains are built from, without the consensus layer, and we work offline, which a consensus-dependent chain cannot. See §6.</p></div>
+
+<div class="qa"><p class="q">What stops your own administrator from editing the record?</p>
+<p class="a">Nothing stops them; everything exposes them. The application's database role has no <code>UPDATE</code> or <code>DELETE</code> grant, so a compromised service cannot do it at all. A superuser can — and doing so breaks every chain hash after the edited row and invalidates the daily Merkle root already published outside the database.</p></div>
+
+<div class="qa"><p class="q">Does this prevent leaks?</p>
+<p class="a">No, and we do not claim it. A superintendent with legitimate access can photograph a paper. What we change is the window — days to minutes — and the suspect set — hundreds to a named few, with evidence.</p></div>
+
+<div class="qa"><p class="q">What happens when the network is down?</p>
+<p class="a">Devices sign and queue events locally and upload on reconnection. Every event carries a client UUID and the ledger is idempotent, so retries never duplicate. Access decisions that need server state fail closed — denied, and recorded as denied.</p></div>
+
+<div class="qa"><p class="q">What if your key-rotation service dies?</p>
+<p class="a">There is no rotation service. Keys expire because <code>floor(now / 21600)</code> advances. If every background process in the system dies, keys still expire — broken infrastructure denies access rather than granting it.</p></div>
+
+<div class="qa"><p class="q">Why no severity levels on your alerts?</p>
+<p class="a">Because the severity is invented and the facts are not. We show the distance, the epochs, the skew, the serials, and one boolean — whether a human still needs to act. A label a court can question is worse than a measurement it cannot.</p></div>
+
+<div class="qa"><p class="q">Why store both a declared and an observed state?</p>
+<p class="a">Because the disagreement between plan and reality is the finding. Systems that reconcile the two lose the only signal that mattered.</p></div>
+
+<div class="qa"><p class="q">Is your demo data real or scripted?</p>
+<p class="a">The seed tool issues real keys, calls the real access engine, and emits events based on whatever it actually rules. It caught a genuine bug in our own seed timeline by refusing every centre — a script that asserts its outcomes cannot do that.</p></div>
+
+<div class="qa"><p class="q">What does this cost to run?</p>
+<p class="a">The stack is Node, Postgres, and free public services only — no HSM, no paid API, no cloud dependency. This is recorded as an architecture decision (<code>adr/0004-no-paid-dependencies.md</code>), because a per-centre licence cost is what kills deployment at district scale.</p></div>
+
+<h3>12.3 &nbsp;The three sentences to have ready</h3>
+<div class="note">
+<b>What it is.</b> "Mohar is a tamper-evident custody chain for examination
+papers — every handover is signed by the person who performed it and written
+into an append-only ledger that nobody, including us, can edit without it being
+visible."
+<br><br>
+<b>Why it matters.</b> "Exam-fraud cases are frequently detected and rarely
+convicted. That is not a detection failure — it is an evidence failure. We
+produce custody evidence that survives cross-examination."
+<br><br>
+<b>What it does not do.</b> "It does not make examinations leak-proof. It makes
+leaking expensive, narrow, and attributable."
+</div>
+
+<div class="foot">
+Mohar — study guide. Generated from the working repository; every mechanism
+described here is either implemented in code or explicitly listed in §12.1 as
+unbuilt. Source: <code>docs/learn/mohar-study-guide.html</code>.
+</div>
+</section>
+
+</body>
+</html>

@@ -1,0 +1,8 @@
+packages:
+  - "services/*"
+  - "apps/control-room"
+  - "apps/verify-portal"
+  - "apps/centre-client"
+  - "packages/*"
+  - "tools/*"
+  - "tests/*"

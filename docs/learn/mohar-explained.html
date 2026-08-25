@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mohar Explained</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600;700&display=swap">
+
+<style>
+  :root {
+    --ground: #FFFFFF; --surface: #FAF8F7; --surface-2: #F1EDEC;
+    --ink: #1A1413; --ink-soft: #4A403E; --ink-faint: #7A6E6B;
+    --rule: #DCD4D2; --rule-strong: #BCB1AE;
+    --accent: #8C2318; --accent-wash: #F7ECEA;
+    --signal: #1D5C48; --signal-wash: #E8F1EE;
+    --warn: #6E5310; --warn-wash: #F7F1E2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 11.5pt; line-height: 1.62; -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 40em; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+
+  h1 {
+    font-family: "IBM Plex Serif", Georgia, serif; font-weight: 600;
+    font-size: 2.3rem; line-height: 1.1; letter-spacing: -.02em; margin: 0 0 .6rem;
+  }
+  .sub { font-size: 1.15rem; color: var(--ink-soft); margin: 0 0 1rem; }
+  .who {
+    font: 600 .72rem/1 "IBM Plex Mono", monospace; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 1.2rem;
+  }
+
+  h2 {
+    font-family: "IBM Plex Serif", Georgia, serif; font-weight: 600;
+    font-size: 1.5rem; line-height: 1.2; margin: 2.8rem 0 .3rem;
+    padding-top: 1.2rem; border-top: 2px solid var(--rule-strong);
+  }
+  h2 .n { color: var(--accent); font-family: "IBM Plex Mono", monospace; font-size: 1.1rem; margin-right: .5rem; }
+  h3 {
+    font-family: "IBM Plex Serif", Georgia, serif; font-weight: 600;
+    font-size: 1.12rem; margin: 1.8rem 0 .5rem;
+  }
+
+  p { margin: 0 0 .9rem; }
+  ul, ol { margin: 0 0 1rem; padding-left: 1.25rem; }
+  li { margin-bottom: .5rem; }
+  li::marker { color: var(--ink-faint); }
+  strong { font-weight: 600; }
+  code {
+    font-family: "IBM Plex Mono", monospace; font-size: .87em;
+    background: var(--surface-2); padding: .1em .35em; border-radius: 2px;
+  }
+
+  table { border-collapse: collapse; width: 100%; font-size: .92em; margin: 0 0 1.2rem; }
+  th, td { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th {
+    font: 600 .68rem/1.2 "IBM Plex Mono", monospace; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ink-faint); background: var(--surface-2);
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+
+  .box {
+    margin: 0 0 1.2rem; padding: .85rem 1rem; border-radius: 3px;
+    border-left: 3px solid var(--accent); background: var(--accent-wash);
+  }
+  .box :last-child { margin-bottom: 0; }
+  .box .tag {
+    display: block; font: 600 .68rem/1 "IBM Plex Mono", monospace;
+    letter-spacing: .09em; text-transform: uppercase; color: var(--accent); margin-bottom: .45rem;
+  }
+  .box.warn { border-left-color: var(--warn); background: var(--warn-wash); }
+  .box.warn .tag { color: var(--warn); }
+  .box.good { border-left-color: var(--signal); background: var(--signal-wash); }
+  .box.good .tag { color: var(--signal); }
+
+  .say {
+    margin: 0 0 1.2rem; padding: .9rem 1.1rem; background: var(--surface);
+    border: 1px solid var(--rule); border-radius: 3px;
+    font-family: "IBM Plex Serif", Georgia, serif; font-size: 1.05rem; line-height: 1.5;
+  }
+  .say .tag {
+    display: block; font: 600 .68rem/1 "IBM Plex Mono", monospace;
+    letter-spacing: .09em; text-transform: uppercase; color: var(--ink-faint);
+    margin-bottom: .5rem; font-family: "IBM Plex Mono", monospace;
+  }
+
+  .steps { counter-reset: st; list-style: none; padding: 0; }
+  .steps li {
+    counter-increment: st; position: relative; padding-left: 2.1rem; margin-bottom: .85rem;
+  }
+  .steps li::before {
+    content: counter(st); position: absolute; left: 0; top: .05rem;
+    width: 1.5rem; height: 1.5rem; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    font: 600 .78rem/1.5rem "IBM Plex Mono", monospace; text-align: center;
+  }
+
+  .foot {
+    margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule);
+    font-size: .85rem; color: var(--ink-faint);
+  }
+
+  @page { size: A4; margin: 16mm 15mm; }
+  @media print {
+    body { font-size: 10.5pt; }
+    .page { max-width: none; padding: 0; }
+    h2 { break-before: page; break-after: avoid; }
+    h2:first-of-type { break-before: auto; }
+    h3 { break-after: avoid; }
+    p, li, tr, .box, .say { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <p class="who">Hackathon project · explained simply</p>
+  <h1>Mohar</h1>
+  <p class="sub">
+    A record of who held the exam paper, and when, that nobody can quietly change
+    afterwards — including us.
+  </p>
+
+  <!-- 1 -->
+  <h2><span class="n">1</span>The problem</h2>
+
+  <p>
+    Question papers leak before exams. It happens often enough that most people
+    have stopped being surprised by it.
+  </p>
+
+  <p>
+    Here is the thing most people get wrong about why. Papers do not leak because
+    someone cracked a password or broke the encryption. They leak because a person
+    who was <em>allowed</em> to hold the paper gave it to someone else.
+  </p>
+
+  <p>
+    In the Hazaribagh case, the school principal was authorised to be in the strong
+    room. There was no lock to break. What was missing was any record of who had
+    the package and when. The register was written up afterwards, by hand, and it
+    said whatever was convenient.
+  </p>
+
+  <div class="box">
+    <span class="tag">So the real question is</span>
+    <p>
+      Not "how do we stop a leak" — nothing can promise that. It is: when a leak
+      happens, can we prove who held the paper at every moment? And can that proof
+      survive the people who would most like to change it?
+    </p>
+  </div>
+
+  <!-- 2 -->
+  <h2><span class="n">2</span>Our idea, in one line</h2>
+
+  <p class="say" style="font-size:1.15rem">
+    Every step in the paper's journey is written down as a signed record, in a
+    chain, where nothing can be edited or removed later — not even by us.
+  </p>
+
+  <p>Three plain ideas make that work.</p>
+
+  <h3>Every record is signed</h3>
+  <p>
+    Each device — a phone, a fingerprint reader, a centre computer — has its own
+    secret key. When it records something, it signs it with that key. Anyone can
+    check the signature later and know which device said it. Nobody can forge a
+    record for a device they do not have.
+  </p>
+
+  <h3>Every record is chained to the one before it</h3>
+  <p>
+    Each record carries a fingerprint (a "hash") of the record before it. Change
+    any old record and every record after it stops matching. It is like a
+    numbered register where each page includes a summary of the previous page —
+    tearing one page out is obvious immediately.
+  </p>
+
+  <h3>Nothing is ever deleted</h3>
+  <p>
+    Records are only ever added. The database itself does not give our software
+    permission to update or delete them. That is not a promise we made in code;
+    it is a permission that does not exist.
+  </p>
+
+  <div class="box good">
+    <span class="tag">Why this matters more than it sounds</span>
+    <p>
+      In a normal system, if someone deletes an inconvenient step, what is left
+      looks perfectly normal. In ours, deleting a step leaves a hole — the chain
+      stops adding up. <strong>A missing record is itself evidence.</strong>
+    </p>
+  </div>
+
+  <!-- 3 -->
+  <h2><span class="n">3</span>What we actually built</h2>
+
+  <h3>Hardware</h3>
+  <table>
+    <thead><tr><th>Part</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>ESP32 board</td><td>The small computer in the exam room. It reads the fingerprint reader, signs the record with its own key, and sends it.</td></tr>
+      <tr><td>R307 fingerprint reader</td><td>Reads the officials' fingers. Matching happens inside the reader itself.</td></tr>
+      <tr><td>DS3231 clock</td><td>A battery-backed clock, so the device knows the correct time even with no internet.</td></tr>
+      <tr><td>Laptop</td><td>Runs the record system and the control room, and its camera takes the photo.</td></tr>
+      <tr><td>Phone hotspot</td><td>Connects the ESP32 and the laptop. No internet is needed.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Software</h3>
+  <table>
+    <thead><tr><th>Part</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>The ledger</td><td>Stores the chain of signed records. Refuses anything it cannot verify.</td></tr>
+      <tr><td>The access engine</td><td>Decides whether a package may be opened. Runs 21 separate checks.</td></tr>
+      <tr><td>The control room</td><td>The website. Shows every recorded act, runs the ceremony, manages the reader.</td></tr>
+      <tr><td>The watchdog</td><td>Notices when a device stops reporting and records that as an event.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Designed but not built</h3>
+  <p>
+    We say this openly rather than letting someone find it. A <strong>room
+    monitor</strong> (door sensor, presence sensor, people counter) is designed
+    and its firmware is written, but we did not have those sensors. An
+    <strong>electronic seal lock</strong> is designed but not built — and the
+    system says so on every unlock, instead of quietly skipping that check.
+  </p>
+
+  <!-- 4 -->
+  <h2><span class="n">4</span>How the fingerprint part works</h2>
+
+  <p>
+    This is the part people ask about most, and the answer is better than they
+    expect.
+  </p>
+
+  <div class="box good">
+    <span class="tag">We never store a fingerprint</span>
+    <p>
+      The reader keeps the fingerprint inside its own memory. When someone
+      presses a finger, the reader answers with just two things: a
+      <strong>slot number</strong> and a <strong>match score</strong>.
+    </p>
+    <p>
+      So our record says: <code>slot 3 matched, score 187</code>. That is all. No
+      image, no fingerprint data, ever leaves the reader.
+    </p>
+    <p>
+      If our whole database were stolen tomorrow, no fingerprint could leak from
+      it — because there is no fingerprint in it.
+    </p>
+  </div>
+
+  <p>
+    Who slot 3 <em>is</em> — that is kept in a separate list, like a normal
+    staff register. It can be corrected if someone writes it down wrong. The
+    signed records cannot be corrected, and that is the point of keeping the two
+    apart.
+  </p>
+
+  <!-- 5 -->
+  <h2><span class="n">5</span>The unlock ceremony</h2>
+
+  <p>
+    This is the moment that matters: the sealed packet being opened. Here is what
+    happens, in order.
+  </p>
+
+  <ol class="steps">
+    <li>The <strong>superintendent</strong> presses their finger on the reader.</li>
+    <li>The reader matches it and reports the slot number and score.</li>
+    <li>The ESP32 signs that as a record and sends it.</li>
+    <li>The laptop camera takes <strong>one photo</strong> — only now, never before.</li>
+    <li>The <strong>observer</strong> presses a different finger, within 2 minutes.</li>
+    <li>A second photo is taken and recorded the same way.</li>
+    <li>The system checks that two <em>different</em> fingers were used.</li>
+    <li>All 21 checks run. If every one passes, access is granted.</li>
+    <li>The paper is decrypted, printed, and the key is destroyed.</li>
+  </ol>
+
+  <h3>The photo is handled carefully</h3>
+  <p>
+    The photo itself never goes into the record. Only its fingerprint — its hash
+    — is stored. Later, anyone can hash the photo and compare it to what was
+    recorded at the time. If they match, that is the photo taken at that moment.
+    If someone swaps the photo, the numbers stop matching.
+  </p>
+  <p>
+    This keeps the record small, and it means we are not building a photo
+    archive of officials.
+  </p>
+
+  <div class="box">
+    <span class="tag">The camera only fires on a fingerprint match</span>
+    <p>
+      Never on a timer. Never on movement. Never because an operator asked. That
+      is a handful of photos per exam of two officials doing one job — not hours
+      of footage of a school corridor. Under India's data protection law, that
+      difference is everything.
+    </p>
+  </div>
+
+  <!-- 6 -->
+  <h2><span class="n">6</span>The 21 checks</h2>
+
+  <p>
+    Two fingerprints are not permission. They are 3 of 21 checks. The others ask:
+  </p>
+
+  <table>
+    <thead><tr><th>The system asks</th><th>Example of a refusal</th></tr></thead>
+    <tbody>
+      <tr><td>Was a valid key presented?</td><td>The key expired six hours ago</td></tr>
+      <tr><td>Is this device registered to this centre?</td><td>The device belongs to a different centre</td></tr>
+      <tr><td>Is this person on the staff list?</td><td>This finger is not registered to anyone</td></tr>
+      <tr><td>Is the device at the centre?</td><td>The phone is 3 km away</td></tr>
+      <tr><td>Is this the right time to open it?</td><td>The exam is 18 hours away</td></tr>
+      <tr><td>Does the seal number match?</td><td>A different seal is on the packet</td></tr>
+      <tr><td>Was a photo taken?</td><td>The camera did not work</td></tr>
+    </tbody>
+  </table>
+
+  <div class="box">
+    <span class="tag">Two rules we are proud of</span>
+    <p>
+      <strong>Every check runs, every time.</strong> The system does not stop at
+      the first failure. An attempt that fails four checks is a very different
+      event from one that fails on a clock being slightly wrong, and an
+      investigator needs to see all of it.
+    </p>
+    <p>
+      <strong>The attempt is recorded before the answer is given.</strong> Even a
+      refusal is written into the chain first. There is no way to try and fail
+      without leaving a trace.
+    </p>
+  </div>
+
+  <!-- 7 -->
+  <h2><span class="n">7</span>The key is split four ways</h2>
+
+  <p>
+    The paper is encrypted. But we do not give the key to one person, because
+    then that person is the weak point.
+  </p>
+
+  <p>
+    The key is mathematically split into <strong>four pieces</strong>. Any
+    <strong>three</strong> of them rebuild it. Fewer than three are useless — not
+    "harder to use", genuinely useless.
+  </p>
+
+  <table>
+    <thead><tr><th>Piece</th><th>Who holds it</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>The exam authority</td></tr>
+      <tr><td>2</td><td>A public time-lock service — releases itself at the exam time and not before</td></tr>
+      <tr><td>3</td><td>The superintendent, released by their fingerprint</td></tr>
+      <tr><td>4</td><td>The observer, released by theirs</td></tr>
+    </tbody>
+  </table>
+
+  <p>
+    So no single person can open a packet early, and no single person can stop an
+    exam by refusing. The time-lock piece is the clever part: before the exam
+    time, that piece <em>does not exist yet</em>. It cannot be leaked, stolen or
+    forced out of anyone, because there is nothing to take.
+  </p>
+
+  <!-- 8 -->
+  <h2><span class="n">8</span>What to say in the demo</h2>
+
+  <p>Three sentences that cover it.</p>
+
+  <div class="say">
+    <span class="tag">What it adds</span>
+    The record proves what was written down. The hardware proves a specific human
+    body was physically present at the moment the sealed packet was opened — and
+    puts a photograph of that moment into the same unchangeable record.
+  </div>
+
+  <div class="say">
+    <span class="tag">Why it is limited on purpose</span>
+    The camera fires only during the unlock ceremony, never continuously. We
+    photograph two officials doing one job, not a school corridor. And the
+    fingerprint never leaves the reader — we store a match result, not a
+    biometric.
+  </div>
+
+  <div class="say">
+    <span class="tag">What it does not do</span>
+    Every one of these sensors can be fooled on its own, and we say so in our own
+    documentation. Their value is that several independent witnesses would all
+    have to be corrupted in the same way, at the same moment — and the one thing
+    that cannot be quietly rewritten is the record of what each of them said at
+    the time.
+  </div>
+
+  <!-- 9 -->
+  <h2><span class="n">9</span>What we do not claim</h2>
+
+  <p>
+    Say these before anyone asks. Someone who finds a weakness you did not
+    mention will assume there are others you are hiding.
+  </p>
+
+  <div class="box warn">
+    <span class="tag">Fingerprint readers can be fooled</span>
+    <p>
+      A cheap optical reader can be fooled by a lifted print. Our records prove a
+      body was present — not that it was the right body. A better reader in real
+      deployment, and the photo is the cross-check.
+    </p>
+  </div>
+
+  <div class="box warn">
+    <span class="tag">The device's key can be extracted</span>
+    <p>
+      With the device in your hands and enough patience, its secret key can be
+      read out of the chip. These devices are <strong>tamper-evident, not
+      tamper-proof</strong>. Their value is that going silent is itself an alarm.
+    </p>
+  </div>
+
+  <div class="box warn">
+    <span class="tag">Two fingers is not proof of two people</span>
+    <p>
+      The system checks that two <em>different</em> fingerprints were used. If
+      one person registered two of their own fingers under two names, that check
+      passes. That is a failure of the registration process, not of the system —
+      and the two photos would show the same face to anyone who looked.
+    </p>
+  </div>
+
+  <div class="box warn">
+    <span class="tag">And the one that matters most</span>
+    <p>
+      At Hazaribagh, the principal was <em>allowed</em> to be in that room.
+      Fingerprints and sensors catch people who should not be there. They are
+      close to useless against someone who is supposed to be there and betrays
+      that trust.
+    </p>
+    <p>
+      Which is why the hardware is not the point. <strong>The record is the
+      point.</strong> It cannot stop that person — but it makes it impossible for
+      them to pretend afterwards that they were never there.
+    </p>
+  </div>
+
+
+  <!-- 10 -->
+  <h2><span class="n">10</span>The hardware, in detail</h2>
+
+  <p>
+    Everything from here on is the technical half. The sections above are the
+    whole idea; these are the parts, the wiring and the code.
+  </p>
+
+  <h3>What is on the bench</h3>
+  <table>
+    <thead><tr><th>Part</th><th>Why this one</th></tr></thead>
+    <tbody>
+      <tr><td>ESP32-WROOM-32 devkit</td><td>Wi-Fi and enough GPIO. Dual core at 240 MHz, which matters because signing a record takes real work.</td></tr>
+      <tr><td>R307 fingerprint reader</td><td>Matches on its own chip and returns only a slot and a score. Talks plain serial, so it works with any microcontroller.</td></tr>
+      <tr><td>DS3231 RTC</td><td>Temperature-compensated, battery-backed. The device must timestamp records correctly with no network at all.</td></tr>
+      <tr><td>Laptop</td><td>Runs Postgres, the ledger service and the control room. Its webcam takes the ceremony photo.</td></tr>
+      <tr><td>Phone hotspot</td><td>Puts the ESP32 and the laptop on one network. No internet is used at any point.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Wiring</h3>
+  <table>
+    <thead><tr><th>From</th><th>To</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td>DS3231 <code>VCC</code> / <code>GND</code></td><td><code>3V3</code> / <code>GND</code></td><td>Fit the coin cell first</td></tr>
+      <tr><td>DS3231 <code>SDA</code></td><td><code>GPIO21</code></td><td rowspan="2">The I²C bus</td></tr>
+      <tr><td>DS3231 <code>SCL</code></td><td><code>GPIO22</code></td></tr>
+      <tr><td>R307 <code>V+</code> / <code>GND</code></td><td><code>5V</code> / <code>GND</code></td><td>A true R307 wants 4.2–6 V; AS608 variants want 3.3 V</td></tr>
+      <tr><td>R307 <code>TXD</code></td><td><code>GPIO32</code></td><td>Through a 1 kΩ / 2 kΩ divider if the module runs at 5 V</td></tr>
+      <tr><td>R307 <code>RXD</code></td><td><code>GPIO33</code></td><td>Direct, no divider needed</td></tr>
+    </tbody>
+  </table>
+
+  <div class="box warn">
+    <span class="tag">The mistake that costs the most time</span>
+    <p>
+      Serial lines must cross. The module's transmit pin goes to the pin the
+      ESP32 <em>receives</em> on. Wire transmit to transmit and the module powers
+      up, lights its ring, and never answers a single command — which looks
+      exactly like a dead module.
+    </p>
+    <p>
+      ESP32 pins are not 5 V tolerant. If the reader runs at 5 V, its transmit
+      line needs a divider before it reaches the board.
+    </p>
+  </div>
+
+  <h3>Three firmware rules</h3>
+  <ul>
+    <li>
+      <strong>A heartbeat every 30 seconds.</strong> The absence of one is itself
+      recorded as an event. Unplugging the device is not a way to go dark — it is
+      a way to raise an alarm.
+    </li>
+    <li>
+      <strong>Write the record down before transmitting it.</strong> Cutting the
+      power or jamming the Wi-Fi delays a record; it does not erase one.
+    </li>
+    <li>
+      <strong>A counter that never repeats.</strong> Each record carries a number
+      that only goes up, kept in the chip's own storage. If the ledger holds 41
+      and then 44, two records existed and did not arrive — which is a different
+      fact from two records never having been made.
+    </li>
+  </ul>
+
+  <div class="box warn">
+    <span class="tag">Where our build falls short, and says so</span>
+    <p>
+      No SD card is fitted, so records buffer in memory and do not survive a
+      power cut. No camera is on the board, so the photo comes from the laptop
+      instead. Both conditions are announced into the ledger on every boot rather
+      than quietly absorbed — a device running in a degraded state must be
+      distinguishable in the record from one running properly.
+    </p>
+  </div>
+
+  <!-- 11 -->
+  <h2><span class="n">11</span>The software, in detail</h2>
+
+  <h3>The pieces</h3>
+  <table>
+    <thead><tr><th>Component</th><th>Built with</th><th>Job</th></tr></thead>
+    <tbody>
+      <tr><td><code>packages/contracts</code></td><td>TypeScript, Zod</td><td>The shape of every event. One definition, shared by every service and checked at the boundary.</td></tr>
+      <tr><td><code>packages/crypto-core</code></td><td>noble-curves, noble-hashes</td><td>Signing, hashing, the chain, the key split. Audited libraries only.</td></tr>
+      <tr><td><code>services/ledger</code></td><td>Fastify, PostgreSQL</td><td>The chain itself, plus the access engine and the registry.</td></tr>
+      <tr><td><code>apps/control-room</code></td><td>React, Vite</td><td>The website: activity feed, ceremony page, slot register, chain verification.</td></tr>
+      <tr><td><code>firmware/witness-node</code></td><td>Arduino / ESP32</td><td>Reads the finger, signs the record, serves its own control endpoint.</td></tr>
+      <tr><td><code>tools/</code></td><td>Node</td><td>Device provisioning, the heartbeat watchdog, demo setup.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>How a record is signed</h3>
+  <p>Two hashes are used, and they answer different questions.</p>
+  <table>
+    <thead><tr><th>Value</th><th>What it is</th><th>What it proves</th></tr></thead>
+    <tbody>
+      <tr><td><code>bodyHash</code></td><td>Hash of the record's own contents</td><td>Which device wrote this, and that the contents have not changed</td></tr>
+      <tr><td><code>chainHash</code></td><td>Hash of (previous chainHash + bodyHash)</td><td>That nothing has been reordered, inserted or removed since</td></tr>
+    </tbody>
+  </table>
+  <p>
+    The device signs only the first. It cannot sign the second, because it does
+    not know what came before — the chain is shared, and the device may have been
+    offline for hours. The ledger fixes the record into its position when it
+    accepts it.
+  </p>
+
+  <div class="box">
+    <span class="tag">One detail that took real care</span>
+    <p>
+      Two computers must agree byte-for-byte on what was signed, or every
+      signature fails. Ordinary JSON does not guarantee that — the same data
+      written twice can come out with its fields in a different order, and the
+      signature then no longer matches.
+    </p>
+    <p>
+      So we use a standard called RFC 8785, which fixes the field order and the
+      number formatting. The ESP32 has no library for it, so the firmware builds
+      its records already in that exact form and refuses to send one that came
+      out wrong. Getting this wrong would produce a device that looks perfectly
+      healthy and whose every record is rejected.
+    </p>
+  </div>
+
+  <h3>What gets recorded</h3>
+  <p>Twenty-one kinds of event, each with its own required fields.</p>
+  <table>
+    <thead><tr><th>Group</th><th>Kinds</th></tr></thead>
+    <tbody>
+      <tr><td>Package journey</td><td><code>PACKAGE_SEALED</code>, <code>SEAL_APPLIED</code>, <code>HANDOFF</code>, <code>SCAN_OBSERVED</code></td></tr>
+      <tr><td>Decisions</td><td><code>ACCESS_REQUESTED</code>, <code>ACCESS_GRANTED</code>, <code>ACCESS_DENIED</code>, <code>OVERRIDE_USED</code>, <code>SEAL_MISMATCH</code></td></tr>
+      <tr><td>The room</td><td><code>MONITOR_HEARTBEAT</code>, <code>MONITOR_SILENT</code>, <code>ROOM_ENTRY</code></td></tr>
+      <tr><td>The ceremony</td><td><code>WITNESS_ASSERTED</code>, <code>WITNESS_CEREMONY</code>, <code>WITNESS_FRAME</code></td></tr>
+      <tr><td>The key</td><td><code>SHARE_RELEASED</code>, <code>FALLBACK_INVOKED</code></td></tr>
+      <tr><td>Printing</td><td><code>PRINT_STARTED</code>, <code>PRINT_COMPLETED</code>, <code>KEY_DESTROYED</code></td></tr>
+      <tr><td>Anything else</td><td><code>EXCEPTION_RAISED</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Two rules built into the event types</h3>
+  <p>
+    <strong>Some events only a server may write.</strong> A device cannot record
+    that its own access was granted, and it cannot record its own silence — a
+    device that could declare itself silent could also decline to.
+  </p>
+  <p>
+    <strong>Some events need two signatures.</strong> A handover needs a second
+    signature from a <em>different</em> registered device. Two signatures from one
+    device is one person pressing twice.
+  </p>
+
+  <h3>The path a fingerprint takes</h3>
+  <table>
+    <thead><tr><th>Step</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>Finger read and matched</td><td>Inside the R307</td></tr>
+      <tr><td>Slot and score returned</td><td>R307 → ESP32 over serial</td></tr>
+      <tr><td>Record built and signed</td><td>ESP32, using its key in flash</td></tr>
+      <tr><td>Saved to the buffer</td><td>ESP32 memory — before any radio is used</td></tr>
+      <tr><td>Sent to the ledger</td><td>Wi-Fi, plain HTTP on the local network</td></tr>
+      <tr><td>Signature verified, chained, stored</td><td>Ledger service and PostgreSQL</td></tr>
+      <tr><td>Photo taken and its hash recorded</td><td>Laptop browser, signed with its own key</td></tr>
+      <tr><td>Shown in the control room</td><td>The website, updating every two seconds</td></tr>
+    </tbody>
+  </table>
+
+  <h3>The database enforces the important part</h3>
+  <p>
+    The application's database user has no permission to update or delete rows in
+    the event table. The service refuses to start if it finds a connection that
+    does. The guarantee is a database permission, not a promise made in our code
+    — because code can be changed by whoever deploys it.
+  </p>
+
+  <!-- 12 -->
+  <h2><span class="n">12</span>Running it</h2>
+
+  <p>PostgreSQL is the only thing that must be installed. No Docker, no cloud account, nothing paid.</p>
+
+  <table>
+    <thead><tr><th>Run this</th><th>What it starts</th></tr></thead>
+    <tbody>
+      <tr><td><code>pnpm --filter @mohar/ledger start</code></td><td>The record system, on port 8081</td></tr>
+      <tr><td><code>pnpm --filter @mohar/control-room dev</code></td><td>The website, on port 5173</td></tr>
+      <tr><td><code>tools\monitor-watchdog\run.cmd</code></td><td>The watchdog that notices silence</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Three things that catch people out</h3>
+  <ul>
+    <li>
+      <strong>Open the site on <code>localhost</code>.</strong> Browsers only
+      allow camera access on <code>localhost</code> or over HTTPS.
+    </li>
+    <li>
+      <strong>A phone hotspot changes its network numbering every restart.</strong>
+      The address the ESP32 was told is then wrong. It can be corrected from the
+      website without reprogramming the device.
+    </li>
+    <li>
+      <strong>Restart the ledger after changing the event definitions.</strong>
+      It checks records against the version it started with.
+    </li>
+  </ul>
+
+  <div class="box good">
+    <span class="tag">Why the sample data always refuses</span>
+    <p>
+      The pre-loaded example packages cannot be granted, and that is deliberate,
+      not broken. Their handling windows have closed, and two of the sample
+      centres exist specifically to demonstrate a refusal. A system that granted
+      them would be a system that had stopped checking.
+    </p>
+  </div>
+
+  <p class="foot">
+    Mohar — a hackathon project. Sections 1 to 9 are the whole idea without the
+    jargon. Sections 10 to 12 are the parts, the wiring and the code.
+  </p>
+
+</div>
+</body>
+</html>
