@@ -13,14 +13,13 @@
 [build.environment]
   NODE_VERSION = "24"
 
-# Once the ledger is deployed, uncomment and set its address. This rule must
-# stay above the catch-all below, which would otherwise answer /api too.
-#
-# [[redirects]]
-#   from = "/api/*"
-#   to = "https://YOUR-LEDGER-HOST/:splat"
-#   status = 200
-#   force = true
+# The deployed ledger, on Render. Must stay above the catch-all below, which
+# would otherwise answer /api too — Netlify checks these in file order.
+[[redirects]]
+  from = "/api/*"
+  to = "https://mohar-vc4s.onrender.com/:splat"
+  status = 200
+  force = true
 
 # A single-page app: every path is served index.html and the router takes over.
 # Without this, /signin or /demo opened directly returns Netlify's 404.
