@@ -27,7 +27,24 @@ if (!url) {
   process.exit(1);
 }
 
-const client = new pg.Client({ connectionString: url });
+// Hosted Postgres (Render, Neon, ...) refuses a plaintext connection outright,
+// so TLS has to be requested up front. `rejectUnauthorized: false` accepts the
+// provider's certificate without validating it against Node's CA bundle — the
+// connection is still encrypted; skipped for localhost, which isn't listening
+// for TLS at all.
+const needsSsl = (() => {
+  try {
+    const host = new URL(url).hostname;
+    return host !== "localhost" && host !== "127.0.0.1";
+  } catch {
+    return false;
+  }
+})();
+
+const client = new pg.Client({
+  connectionString: url,
+  ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+});
 await client.connect();
 
 await client.query(`

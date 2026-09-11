@@ -7,12 +7,31 @@ import { Pool } from "pg";
  * production would silently discard the system's central guarantee, so the
  * startup check below refuses to run if the role can mutate the ledger.
  */
+/**
+ * Hosted Postgres (Render, Neon, RDS, ...) refuses a plaintext connection
+ * outright rather than degrading, so TLS has to be requested up front rather
+ * than added after a failure. `rejectUnauthorized: false` accepts the
+ * provider's certificate without validating it against Node's bundled CA
+ * list — the connection is still encrypted, and validation is what would need
+ * the provider's CA bundle wired in, which none of these deployments do.
+ * Skipped for localhost, where Postgres is not listening for TLS at all.
+ */
+function needsSsl(connectionString: string): boolean {
+  try {
+    const host = new URL(connectionString).hostname;
+    return host !== "localhost" && host !== "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
 export function createPool(connectionString: string): Pool {
   return new Pool({
     connectionString,
     max: 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
+    ...(needsSsl(connectionString) ? { ssl: { rejectUnauthorized: false } } : {}),
   });
 }
 
