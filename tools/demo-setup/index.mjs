@@ -44,7 +44,21 @@ if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
   process.exit(1);
 }
 
-const client = new pg.Client({ connectionString: DB });
+// Hosted Postgres (Render, Neon, ...) refuses a plaintext connection outright.
+// rejectUnauthorized: false accepts the provider's certificate without
+// validating it against Node's CA bundle — still encrypted, just not verified.
+const needsSsl = (() => {
+  try {
+    const host = new URL(DB).hostname;
+    return host !== "localhost" && host !== "127.0.0.1";
+  } catch {
+    return false;
+  }
+})();
+const client = new pg.Client({
+  connectionString: DB,
+  ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+});
 await client.connect();
 
 const hash = (s) => createHash("sha256").update(s).digest();
