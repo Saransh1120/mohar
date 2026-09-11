@@ -6,3 +6,4 @@ export * from "./custody-key.js";
 export * from "./drand.js";
 export * from "./shamir.js";
 export * from "./seal.js";
+export * from "./seam.js";

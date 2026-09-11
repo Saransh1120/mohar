@@ -118,7 +118,7 @@ const TRUST = [
   { h: "Append-only by grant", p: "The application's database role holds INSERT and SELECT. There is no UPDATE or DELETE grant, so the service cannot rewrite history even if it is compromised.", c: "grant select, insert" },
   { h: "Published Merkle anchors", p: "A daily RFC 6962 tree lets a third party prove one event was included without being shown any other event.", c: "RFC 6962 inclusion proof" },
   { h: "Keys that expire by arithmetic", p: "A custody key is valid for one six-hour epoch. Nothing rotates them — no scheduler to fail open. If the infrastructure breaks, access is denied.", c: "epoch = ⌊unix / 21600⌋" },
-  { h: "Deny by default", p: "Fifteen checks run on every access request, always, with no short-circuit. The attempt is written to the ledger before the caller is told the outcome.", c: "15 checks · evidence, not verdicts" },
+  { h: "Deny by default", p: "Twenty-two checks run on every access request, always, with no short-circuit. The attempt is written to the ledger before the caller is told the outcome.", c: "22 checks · evidence, not verdicts" },
 ];
 
 const SHOWCASE = [

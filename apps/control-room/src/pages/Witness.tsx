@@ -35,6 +35,7 @@ import {
 } from "../lib/sound";
 import { station, loadStationUrl, normalise } from "../lib/station";
 import { useEvidence } from "../lib/evidence";
+import { FaceStationPanel } from "../components/FaceStationPanel";
 
 /**
  * ── The unlock ceremony, watched live ────────────────────────────────────────
@@ -609,7 +610,12 @@ export default function Witness() {
     setPairing(true);
     setError(null);
     try {
-      setIdentity(await pairThisBrowser());
+      // Bound to the centre of the selected package where one is known. The
+      // engine checks that the requesting device belongs to the centre it is
+      // asking about, and a browser enrolled against no centre is refused for
+      // `device_not_bound_to_centre` — correctly, but for a reason the operator
+      // can only fix by re-enrolling.
+      setIdentity(await pairThisBrowser(centreIdRef.current || undefined));
     } catch (err) {
       setError(err as Error);
     } finally {
@@ -926,6 +932,23 @@ export default function Witness() {
           )}
         </Card>
       </div>
+
+      {/*
+        The face station shares this page's camera rather than opening a second
+        stream: two `getUserMedia` grabs on one device is how you end up with a
+        preview that shows nothing and a recogniser reading a black frame.
+      */}
+      <FaceStationPanel
+        getVideo={() => videoRef.current}
+        cameraOn={cameraOn}
+        identity={identity}
+        getContext={() => ({
+          examId: examIdRef.current,
+          centreId: centreIdRef.current,
+          packageId: packageIdRef.current,
+        })}
+        onError={setError}
+      />
 
       <Card
         title="Fingerprint reader"

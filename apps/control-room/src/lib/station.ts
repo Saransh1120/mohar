@@ -13,6 +13,8 @@
  * every claim the system makes would still stand.
  */
 
+import { USB_BASE, usbRequest } from "./usbStation";
+
 const STORAGE_KEY = "mohar.station.url";
 
 export interface StationStatus {
@@ -34,6 +36,8 @@ export interface StationStatus {
   ip: string;
   pending: number;
   observerSlotMin: number;
+  /** How records are leaving the station right now. Absent on older firmware. */
+  transport?: "usb" | "wifi";
 }
 
 export function loadStationUrl(): string {
@@ -48,6 +52,7 @@ export function saveStationUrl(url: string): void {
 export function normalise(raw: string): string {
   const t = raw.trim().replace(/\/+$/, "");
   if (!t) return "";
+  if (/^usb/i.test(t)) return USB_BASE;
   return /^https?:\/\//i.test(t) ? t : `http://${t}`;
 }
 
@@ -86,7 +91,34 @@ async function call<T>(base: string, path: string, method: "GET" | "POST"): Prom
   return dial<T>(base, path, method);
 }
 
+/**
+ * The same calls, carried over the USB cable instead of HTTP. Every page that
+ * talks to the station goes through `station.*`, so this one switch is all it
+ * takes for the Slots, Ceremony and station panels to work over USB.
+ */
+function usbDial<T>(path: string): Promise<T> {
+  const u = new URL(path, "http://station.local");
+  const slot = u.searchParams.get("slot") ?? "";
+  switch (u.pathname) {
+    case "/status":
+      return usbRequest<T>("status");
+    case "/enrol":
+      return usbRequest<T>(`enrol ${slot}`);
+    case "/enrol/cancel":
+      return usbRequest<T>("cancel");
+    case "/slot/delete":
+      return usbRequest<T>(`delete ${slot}`);
+    case "/config":
+      // Over USB there is no ledger address on the station to set — this page
+      // carries the records itself.
+      return Promise.resolve({ status: "set", ledgerUrl: "carried over USB" } as T);
+    default:
+      return Promise.reject(new Error(`no USB equivalent for ${path}`));
+  }
+}
+
 async function dial<T>(base: string, path: string, method: "GET" | "POST"): Promise<T> {
+  if (base === USB_BASE) return usbDial<T>(path);
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   try {

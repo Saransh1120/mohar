@@ -9,6 +9,7 @@ import {
   enrolInstruction,
   type StationStatus,
 } from "../lib/station";
+import { USB_BASE, connectUsb, usbSupported, useUsbStation } from "../lib/usbStation";
 
 /**
  * Drive the fingerprint reader from here rather than from a serial console.
@@ -125,6 +126,26 @@ export default function StationPanel({ onEnrolled }: { onEnrolled?: () => void }
     void poll();
   };
 
+  const usb = useUsbStation();
+  const onUsb = url === USB_BASE;
+
+  /**
+   * Plug the board in, pick its port, done. No address to find or type: the
+   * browser talks to the station over the cable and carries its records.
+   */
+  const connectOverUsb = async () => {
+    setError(null);
+    try {
+      await connectUsb();
+      saveStationUrl(USB_BASE);
+      setUrl(USB_BASE);
+    } catch (err) {
+      const e = err as Error;
+      // Closing the port picker without choosing is a choice, not a failure.
+      if (e.name !== "NotFoundError") setError(e.message);
+    }
+  };
+
   const beginEnrol = async () => {
     const n = Number(slot);
     if (!Number.isInteger(n) || n < 1 || n > 127) {
@@ -165,7 +186,27 @@ export default function StationPanel({ onEnrolled }: { onEnrolled?: () => void }
         <button className="wit-btn" onClick={connect}>
           Connect
         </button>
+        {usbSupported() && (
+          <button className="wit-btn" onClick={() => void connectOverUsb()}>
+            Connect over USB
+          </button>
+        )}
       </div>
+
+      {onUsb && (
+        <div className="wit-note" style={{ marginTop: 8 }}>
+          {usb.connected
+            ? `Connected over USB${usb.deviceId ? ` · station ${usb.deviceId.slice(0, 8)}…` : ""} · ` +
+              `${usb.relayed} record(s) carried to the ledger` +
+              (usb.rejected ? ` · ${usb.rejected} refused by the ledger` : "")
+            : "USB is selected but not connected — plug the station in and press Connect over USB."}
+          {usb.halted && (
+            <div style={{ color: "var(--critical)", marginTop: 4 }}>
+              The station stopped at boot: {usb.halted}.
+            </div>
+          )}
+        </div>
+      )}
 
       {status && connected && (
         <div className="stn-state">

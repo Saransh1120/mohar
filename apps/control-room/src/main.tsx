@@ -9,6 +9,16 @@ import "leaflet/dist/leaflet.css";
 import "./styles.css";
 import "./auth.css";
 
+// Apply the saved theme before the first paint, so a light-theme user never
+// sees a flash of the dark one while React starts.
+try {
+  if (localStorage.getItem("mohar.theme") === "light") {
+    document.documentElement.dataset["theme"] = "light";
+  }
+} catch {
+  /* storage unavailable — dark, the default */
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>

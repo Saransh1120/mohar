@@ -1,5 +1,5 @@
 import type { PoolClient } from "pg";
-import { digestKey, epochAt, keyMatches } from "@mohar/crypto-core";
+import { digestKey, epochAt, keyMatches, seamTokenMatches } from "@mohar/crypto-core";
 
 /**
  * ── The access decision engine ───────────────────────────────────────────────
@@ -43,6 +43,8 @@ export type DenyReasonCode =
   | "clock_skew_excessive"
   | "seal_serial_mismatch"
   | "seal_serial_not_read"
+  | "seam_token_absent"
+  | "seam_token_mismatch"
   | "package_compromised"
   | "package_already_opened"
   | "package_state_unexpected"
@@ -69,6 +71,7 @@ export type CheckName =
   | "custody_window"
   | "clock_skew"
   | "seal_serial"
+  | "seam_token"
   | "package_state"
   | "exam_active"
   // -- the six the hardware layer adds (docs/12 Part F) --
@@ -87,6 +90,8 @@ export interface AccessRequest {
   deviceId: string;
   personId?: string | undefined;
   sealSerialRead?: string | undefined;
+  /** The flap QR as read, hex. Absent means it could not be read. */
+  seamTokenRead?: string | undefined;
   geo?: { lat: number; lon: number; accuracyM: number } | undefined;
   /** Device clock at the moment of the attempt. */
   occurredAt: string;
@@ -159,7 +164,13 @@ export async function decideAccess(
 
   // ── load everything the decision depends on, once ──
   const { rows: pkgRows } = await tx.query(
-    `select p.id, p.state, p.seal_serial, p.custody_from, p.custody_to,
+    // seam_commitment is read through to_jsonb so this query works whether or not
+    // migration 005 has been applied: a missing column yields null, not an error.
+    // Selecting p.seam_commitment directly took the whole access engine down with
+    // "column does not exist" on a database that had not run the migration yet.
+    `select p.id, p.state, p.seal_serial,
+            to_jsonb(p) ->> 'seam_commitment' as seam_commitment,
+            p.custody_from, p.custody_to,
             p.centre_id, p.exam_id,
             c.code as centre_code, c.lat, c.lon, c.geofence_m,
             e.suspended_at, e.starts_at
@@ -495,6 +506,53 @@ export async function decideAccess(
     );
   } else {
     add("seal_serial", true, `serial "${req.sealSerialRead}" matches the registered seal`);
+  }
+
+  // ── 6b. the seam seal ──
+  //
+  // The inversion this check rests on: tamper is established by the station
+  // being unable to produce a committed preimage, not by a scanner reporting
+  // damage. A scanner's failure is evidence submitted to the ledger; it is never
+  // itself the decision. See `docs/13`.
+  //
+  // Absent and mismatched stay distinct on purpose. A token that could not be
+  // read is ambiguous — an opened flap looks exactly like a rain-ruined label —
+  // and routes to a witnessed manual ceremony. A token that read cleanly and did
+  // not match is not ambiguous at all.
+  //
+  // Only at the unlock stage. The seam code is read once, at the opening centre;
+  // every earlier checkpoint reads the transit code on the top face, which
+  // carries the serial and authorises nothing. Evaluating the seam at a transit
+  // stage would refuse every handover for failing to read a code nobody is
+  // supposed to scan there.
+  if (req.stage !== "unlock") {
+    add("seam_token", false, "not evaluated — the seam code is read only at opening");
+  } else if (!pkg) {
+    add("seam_token", false, "not evaluated — unknown package");
+  } else if (!pkg.seam_commitment) {
+    add(
+      "seam_token",
+      false,
+      "not evaluated — this package was sealed without a seam label (docs/13)",
+    );
+  } else if (!req.seamTokenRead) {
+    add(
+      "seam_token",
+      false,
+      "the flap code could not be read — an opened flap and a destroyed label are " +
+        "indistinguishable here, so this needs a witnessed opening rather than a refusal",
+      "seam_token_absent",
+    );
+  } else if (!seamTokenMatches(req.seamTokenRead, pkg.id as string, pkg.seam_commitment as string)) {
+    add(
+      "seam_token",
+      false,
+      "the flap code read cleanly but does not open the commitment made at sealing — " +
+        "treat the package as compromised",
+      "seam_token_mismatch",
+    );
+  } else {
+    add("seam_token", true, "the flap code opens the commitment made at sealing");
   }
 
   // ── 7. package and exam state ──

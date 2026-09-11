@@ -7,7 +7,10 @@ import {
   DEMO_PAPER,
   buildCeremony,
   buildFrameEvent,
+  buildJourney,
   buildSealEvent,
+  buildSealMismatch,
+  digestOf,
   ensureDemoIdentity,
   openDemoPaper,
   sealDemoPaper,
@@ -16,9 +19,12 @@ import {
   tryRecover,
   type DemoIdentity,
   type RecoveryAttempt,
+  type JourneyHop,
   type SealedPackage,
   type SignedEvent,
 } from "../lib/liveDemo";
+import { startDemoRun, useDemoRun } from "../lib/demoRunner";
+import { startTour } from "../components/DemoTour";
 
 /**
  * ── The whole system, in one screen and about three minutes ──────────────────
@@ -31,7 +37,7 @@ import {
  * the rest of the system uses; the shares come from the same audited Shamir
  * implementation; the events are signed with real Ed25519 over real RFC 8785
  * canonical bytes and are rejected by the real ledger if they are malformed; and
- * the twenty-one checks are whatever the real engine returned, pass or fail.
+ * the twenty-two checks are whatever the real engine returned, pass or fail.
  *
  * One thing is fabricated, and it is fabricated in the open: with no fingerprint
  * reader on the desk there is no finger to read, so the witness assertions are
@@ -98,11 +104,16 @@ export default function LiveDemo() {
   const [sealedPkg, setSealedPkg] = useState<SealedPackage | null>(null);
   const [sealEvent, setSealEvent] = useState<SignedEvent | null>(null);
   const [ceremonyEvents, setCeremonyEvents] = useState<SignedEvent[]>([]);
+  const [journey, setJourney] = useState<JourneyHop[]>([]);
+  const [mismatch, setMismatch] = useState<SignedEvent | null>(null);
   const [recovery, setRecovery] = useState<RecoveryAttempt | null>(null);
   const [decision, setDecision] = useState<AccessDecisionResult | null>(null);
   const [deniedDemo, setDeniedDemo] = useState<AccessDecisionResult | null>(null);
   const [plaintext, setPlaintext] = useState<string | null>(null);
   const [chain, setChain] = useState<{ seq: string; kind: string; prev: string; hash: string }[]>([]);
+  // The run lives outside this page so it can walk through every screen; this
+  // page just shows its progress when the room is looking at it.
+  const run = useDemoRun();
 
   const [sealSerial, setSealSerial] = useState("");
   const [custodyKey, setCustodyKey] = useState("");
@@ -168,6 +179,11 @@ export default function LiveDemo() {
     { key: "encrypt", title: "Content encrypted", state: sealedPkg ? "done" : "idle" },
     { key: "split", title: "Key split 3-of-4", state: sealedPkg ? "done" : "idle" },
     { key: "seal", title: "Seal committed to chain", state: sealEvent?.seq ? "done" : "idle" },
+    {
+      key: "journey",
+      title: "Transported to the centre",
+      state: journey.some((h) => h.event.seq) ? "done" : "idle",
+    },
     {
       key: "ceremony",
       title: "Ceremony attested",
@@ -327,6 +343,106 @@ export default function LiveDemo() {
     }
   };
 
+  /**
+   * Carry the package from the press to the centre.
+   *
+   * Six records: the seal applied, three handovers and two checkpoint scans.
+   * Each handover is co-signed by two devices because the ledger refuses a
+   * `HANDOFF` that carries one signature — a handover attested by one party is
+   * one person's word, which is the thing being replaced.
+   *
+   * Photographs come from the camera when it is on. When it is not, the digest
+   * is taken over bytes that genuinely exist rather than a fabricated hash: the
+   * record then says a photograph was committed, which stays true.
+   */
+  const doJourney = async () => {
+    if (!pkg || !superintendent || !observer) return;
+    setBusy("carrying the package to the centre");
+    setError(null);
+    try {
+      const id = identity ?? (await ensureDemoIdentity(pkg.centreId));
+      setIdentity(id);
+
+      const officer = roster.find((r) => r.role === "district_officer") ?? superintendent;
+      const courier = roster.find((r) => r.role === "courier") ?? observer;
+      const custodian = roster.find((r) => r.role === "custodian") ?? observer;
+
+      // One digest per hop, resolved before the builder runs so the builder can
+      // stay synchronous and the hop order stays obvious.
+      const digests = new Map<string, string>();
+      const labels = [
+        "Seal applied at the press",
+        "Dispatched to the courier",
+        "Received into overnight custody",
+        "Delivered to the centre",
+      ];
+      for (const label of labels) {
+        if (cameraOn && videoRef.current) {
+          digests.set(label, (await captureFrame(videoRef.current)).sha256);
+        } else {
+          digests.set(label, await digestOf(new TextEncoder().encode(`${pkg.id}:${label}`)));
+        }
+      }
+
+      const hops = buildJourney(
+        pkg.examId,
+        pkg.centreId,
+        pkg.id,
+        sealSerial.trim() || pkg.sealSerial || "SEAL-UNKNOWN",
+        id,
+        {
+          districtOfficer: officer,
+          courier,
+          custodian,
+          superintendent,
+        },
+        (label) => ({ sha256: digests.get(label) ?? "" }),
+      );
+
+      const sent: JourneyHop[] = [];
+      for (const hop of hops) sent.push({ ...hop, event: await deliver(hop.event) });
+      setJourney(sent);
+    } catch (err) {
+      setError(err as Error);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /**
+   * Arrive with the wrong seal.
+   *
+   * The serial read at the centre is deliberately not the one committed at the
+   * press, and the ledger takes the record anyway — a mismatch is a finding to
+   * be preserved, not an error to be rejected. What follows is that the access
+   * engine refuses `seal_serial` on the next request, which is the point.
+   */
+  const doMismatch = async () => {
+    if (!pkg) return;
+    setBusy("recording a seal mismatch");
+    setError(null);
+    try {
+      const id = identity ?? (await ensureDemoIdentity(pkg.centreId));
+      setIdentity(id);
+      const expected = pkg.sealSerial ?? sealSerial.trim();
+      const observed = `${expected}-TAMPERED`;
+      const photo =
+        cameraOn && videoRef.current
+          ? (await captureFrame(videoRef.current)).sha256
+          : await digestOf(new TextEncoder().encode(`${pkg.id}:mismatch`));
+      setMismatch(
+        await deliver(
+          buildSealMismatch(pkg.examId, pkg.centreId, pkg.id, id, expected, observed, photo),
+        ),
+      );
+      setSealSerial(observed);
+    } catch (err) {
+      setError(err as Error);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const locate = () => {
     setError(null);
     navigator.geolocation.getCurrentPosition(
@@ -406,6 +522,15 @@ export default function LiveDemo() {
     }
   };
 
+  const runFullDemo = () => {
+    if (!pkg) {
+      setError(new Error("Choose a package first."));
+      return;
+    }
+    setError(null);
+    void startDemoRun({ pkg, roster });
+  };
+
   if (pkgError) return <ErrorNote error={pkgError} />;
 
   const granted = decision?.outcome === "granted";
@@ -414,12 +539,75 @@ export default function LiveDemo() {
     <div className="ld">
       <div className="note">
         <strong>Everything on this page is real except one thing.</strong> The encryption, the
-        key split, the signatures, the chain and the twenty-one checks are the system's own
+        key split, the signatures, the chain and the twenty-two checks are the system's own
         implementations, and the ledger refuses anything malformed. What is simulated is the
         <em> fingerprint reader</em>: with no R307 on the desk, the witness assertions are
         signed by a station device this page enrolled. The events are genuine; the hardware
         input behind them is not, and it is labelled wherever it appears.
       </div>
+
+      {/* ── one click ────────────────────────────────────────────────────── */}
+      <Card title="Run the whole demonstration" hint="one click · every step runs on the real engine">
+        <div style={{ display: "grid", gap: 12 }}>
+          <button
+            className="wit-btn"
+            onClick={runFullDemo}
+            disabled={!pkg || run.active || !!busy}
+            style={{ fontSize: 17, padding: "14px 20px", fontWeight: 600 }}
+          >
+            {run.active
+              ? "Running…"
+              : run.steps.length
+                ? "Run it again"
+                : "Run full demo"}
+          </button>
+          <button
+            className="wit-btn ghost"
+            onClick={() => startTour(pkg?.id)}
+            disabled={!!busy || run.active}
+            style={{ justifySelf: "start" }}
+          >
+            Tour every screen (6 s each)
+          </button>
+          {!pkg && <div style={{ fontSize: 13 }}>Choose a package in the next box first.</div>}
+          {run.steps.length > 0 && (
+            <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
+              {run.steps.map((s, i) => (
+                <li key={i} style={{ display: "grid", gridTemplateColumns: "22px 1fr", gap: 8 }}>
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      color:
+                        s.state === "done"
+                          ? "var(--ok, #2e9d5b)"
+                          : s.state === "failed"
+                            ? "var(--critical, #d33)"
+                            : "inherit",
+                    }}
+                  >
+                    {s.state === "done" ? "✓" : s.state === "failed" ? "✗" : "…"}
+                  </span>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{s.label}</div>
+                    {s.detail && (
+                      <div
+                        style={{
+                          fontSize: 12.5,
+                          opacity: s.state === "failed" ? 1 : 0.75,
+                          color: s.state === "failed" ? "var(--critical, #d33)" : "inherit",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {s.detail}
+                      </div>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      </Card>
 
       {error && <ErrorNote error={error} />}
 
@@ -444,6 +632,8 @@ export default function LiveDemo() {
               setSealedPkg(null);
               setSealEvent(null);
               setCeremonyEvents([]);
+              setJourney([]);
+              setMismatch(null);
               setDecision(null);
               setPlaintext(null);
               setRecovery(null);
@@ -618,10 +808,86 @@ export default function LiveDemo() {
         </Card>
       )}
 
-      {/* ── 5. ceremony ──────────────────────────────────────────────────── */}
+      {/* ── 5. the journey: press to centre ──────────────────────────────── */}
       {sealEvent && (
         <Card
-          title="5 · Unlock ceremony"
+          title="5 · Press to centre"
+          hint="the hours that actually carry the risk — three handovers, two checkpoints"
+        >
+          <p className="wit-note" style={{ marginTop: 0 }}>
+            Each handover is <strong>co-signed by two different devices</strong>. The ledger
+            refuses a handover carrying one signature, because a handover attested by one
+            party is one person&apos;s word — which is the thing being replaced.
+          </p>
+
+          <div className="ld-row">
+            <button
+              className="wit-btn"
+              onClick={() => void doJourney()}
+              disabled={!!busy || !superintendent || !observer}
+            >
+              Carry the package to the centre
+            </button>
+            <button
+              className="wit-btn ghost"
+              onClick={() => void doMismatch()}
+              disabled={!!busy}
+              title="Records a seal serial that does not match the one committed at the press."
+            >
+              Arrive with a tampered seal
+            </button>
+          </div>
+
+          {journey.length > 0 && (
+            <div className="ld-chain" style={{ marginTop: 14 }}>
+              {journey.map((h) => (
+                <div key={String(h.event.body["id"])} className="ld-link">
+                  <div className="ld-link-h">
+                    {h.label} <span className="mono">· {h.stage}</span>
+                  </div>
+                  <div className="ld-link-r">
+                    <span className="ld-lbl">kind</span>
+                    <span className="mono">{String(h.event.body["kind"])}</span>
+                  </div>
+                  <div className="ld-link-r">
+                    <span className="ld-lbl">seq</span>
+                    <span className="mono">{h.event.seq ?? "spooled — not yet delivered"}</span>
+                  </div>
+                  <div className="ld-link-r">
+                    <span className="ld-lbl">sig</span>
+                    <span className="mono ld-hash">
+                      {short(h.event.deviceSig, 28)}
+                      {h.event.cosignSig && (
+                        <span style={{ color: "var(--ok)" }}> + co-signed</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {mismatch && (
+            <div className="ld-banner bad" style={{ marginTop: 14 }}>
+              <strong>Seal mismatch recorded</strong>
+              <div>
+                Expected{" "}
+                <code>{String((mismatch.body["payload"] as Record<string, unknown>)["expectedSerial"])}</code>,
+                read{" "}
+                <code>{String((mismatch.body["payload"] as Record<string, unknown>)["observedSerial"])}</code>.
+                The ledger accepted the record — a mismatch is a finding to preserve, not an
+                error to reject. The serial field below has been set to what was read, so the
+                engine now refuses <code>seal_serial</code> on the next request.
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* ── 6. ceremony ──────────────────────────────────────────────────── */}
+      {sealEvent && (
+        <Card
+          title="6 · Unlock ceremony"
           hint="two officials, distinct slots, inside a 120-second window"
         >
           <div className="ld-sim">
@@ -686,9 +952,9 @@ export default function LiveDemo() {
         </Card>
       )}
 
-      {/* ── 6. the engine ────────────────────────────────────────────────── */}
+      {/* ── 7. the engine ────────────────────────────────────────────────── */}
       {ceremonyEvents.length > 0 && (
-        <Card title="6 · The twenty-one checks" hint="deny by default; every check evaluated">
+        <Card title="7 · The twenty-two checks" hint="deny by default; every check evaluated">
           <div className="ld-form">
             <label>
               <span>Seal serial</span>
@@ -765,9 +1031,9 @@ export default function LiveDemo() {
         </Card>
       )}
 
-      {/* ── 7. open it ───────────────────────────────────────────────────── */}
+      {/* ── 8. open it ───────────────────────────────────────────────────── */}
       {granted && (
-        <Card title="7 · Reconstruct and decrypt" hint="only reachable once the engine has granted">
+        <Card title="8 · Reconstruct and decrypt" hint="only reachable once the engine has granted">
           <div className="ld-flow">
             <span>Encrypted package</span>
             <span className="ld-arrow">↓</span>
@@ -792,8 +1058,8 @@ export default function LiveDemo() {
         </Card>
       )}
 
-      {/* ── 8. chain proof ───────────────────────────────────────────────── */}
-      <Card title="8 · The chain" hint="each record carries the hash of the one before it">
+      {/* ── 9. chain proof ───────────────────────────────────────────────── */}
+      <Card title="9 · The chain" hint="each record carries the hash of the one before it">
         <button className="wit-btn ghost" onClick={() => void loadChain()} disabled={!!busy}>
           Show the last three records
         </button>

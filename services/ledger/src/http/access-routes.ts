@@ -30,6 +30,20 @@ const RequestBody = z.object({
   deviceId: z.string().uuid(),
   personId: z.string().uuid().optional(),
   sealSerialRead: z.string().optional(),
+  /**
+   * The flap QR as read, hex.
+   *
+   * Shape-checked at the boundary before anything else touches it, because it
+   * arrives from a camera pointed at a surface anyone could have printed on.
+   * The regex is the whole validation: 64 lowercase hex characters, no prefix,
+   * no encoding to unwrap, nothing that could be interpolated into a query, a
+   * log line, or a prompt. A payload that is not exactly this is rejected here
+   * and never reaches the engine.
+   */
+  seamTokenRead: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/, "seam token must be 64 lowercase hex characters")
+    .optional(),
   geo: z
     .object({
       lat: z.number().min(-90).max(90),

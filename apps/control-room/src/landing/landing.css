@@ -974,3 +974,105 @@ body:has(.mohar-landing) {
   .l-btn-auth { padding: 9px 15px; font-size: 11px; letter-spacing: 0.1em; }
   .l-nav-actions { gap: 8px; }
 }
+
+/* ── Calm pass ────────────────────────────────────────────────────────────────
+ *
+ * The page above was built for effect: three accent hues, aurora glows, glass
+ * panels, gradient type. It read as a template rather than as a custody system
+ * for examination boards, and it did not match the control room it leads into,
+ * which runs on one desaturated accent and no shadows at all.
+ *
+ * This block brings it into line without touching layout, type or content. The
+ * three accents collapse to the control room's single accent, so every gradient
+ * built from them resolves to one flat colour; the glows, blur and aurora go.
+ * Delete this block and the page is exactly what it was.
+ */
+.mohar-landing {
+  --l-cyan: #5b8db8;
+  --l-blue: #5b8db8;
+  --l-violet: #5b8db8;
+  --l-glow-cyan: transparent;
+  --l-glow-blue: transparent;
+  --l-glow-violet: transparent;
+}
+
+.mohar-landing .l-aurora { display: none; }
+
+.mohar-landing *,
+.mohar-landing *::before,
+.mohar-landing *::after {
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+.mohar-landing .l-glass,
+.mohar-landing .l-btn-ghost,
+.mohar-landing .l-live,
+.mohar-landing .l-eyebrow,
+.mohar-landing .l-btn-auth,
+.mohar-landing .l-nav.scrolled {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.mohar-landing .l-glass,
+.mohar-landing .l-btn-auth {
+  background: var(--l-surface);
+}
+
+.mohar-landing .l-nav.scrolled { background: var(--l-bg); }
+
+/* Solid type. The white-to-grey fill on every heading is the chrome finish
+ * that marks a template page; plain colour reads as a document. */
+.mohar-landing .l-hero h1 .word,
+.mohar-landing .l-h2,
+.mohar-landing .l-show-copy h3,
+.mohar-landing .l-final h2,
+.mohar-landing .l-stat .n {
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--l-text);
+}
+.mohar-landing .l-hero h1 .word.accent,
+.mohar-landing .l-stat .n {
+  color: var(--l-cyan);
+}
+
+/* The halo behind the accent word. */
+.mohar-landing .l-hero h1 .word.accent { filter: none; }
+
+/* The cyan that was written out by value rather than taken from a token, so
+ * the remap above could not reach it. Same accent, by value. */
+.mohar-landing ::selection { background: rgba(91, 141, 184, 0.3); }
+
+.mohar-landing .l-wordmark .seal::after,
+.mohar-landing .l-nav-brand .seal::after { border-color: rgba(91, 141, 184, 0.6); }
+
+.mohar-landing .l-btn-ghost:hover,
+.mohar-landing .l-feat:hover,
+.mohar-landing .l-top:hover,
+.mohar-landing .l-btn-auth:hover,
+.mohar-landing .l-btn-signup:hover { border-color: rgba(91, 141, 184, 0.6); }
+
+.mohar-landing .l-verdict {
+  background: linear-gradient(90deg, rgba(91, 141, 184, 0.07), transparent);
+}
+.mohar-landing .l-feat::before {
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 0%), rgba(91, 141, 184, 0.1), transparent 62%);
+}
+.mohar-landing .vis-radar .sweep {
+  background: conic-gradient(from 0deg, transparent 0deg, rgba(91, 141, 184, 0.22) 42deg, transparent 62deg);
+}
+.mohar-landing .l-trust-item code {
+  background: rgba(91, 141, 184, 0.08);
+  border-color: rgba(91, 141, 184, 0.22);
+}
+.mohar-landing .l-btn-signup {
+  border-color: rgba(91, 141, 184, 0.45);
+  background: rgba(91, 141, 184, 0.1);
+}
+
+@keyframes l-chain-in {
+  0%, 100% { border-color: var(--l-line-strong); }
+  50% { border-color: rgba(91, 141, 184, 0.5); }
+}

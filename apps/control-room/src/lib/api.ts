@@ -249,6 +249,8 @@ export interface CustodyHop {
 }
 
 export interface PackageDetail extends PackageSummary {
+  /** A seam-seal commitment is on file for this package. */
+  seamProtected: boolean;
   projection: {
     state: PackageState;
     holderPersonId?: string;
@@ -539,6 +541,9 @@ export const api = {
     deviceId: string;
     personId?: string;
     sealSerialRead?: string;
+    /** The flap code as decoded, 64 lowercase hex. Omit when it would not read —
+     *  the engine treats absence as its own outcome, so never send a placeholder. */
+    seamTokenRead?: string;
     geo?: { lat: number; lon: number; accuracyM: number };
   }) => post<AccessDecisionResult>("/access/request", input),
   packages: (examId?: string) =>
@@ -546,6 +551,14 @@ export const api = {
   package: (id: string) => get<PackageDetail>(`/packages/${id}`),
   setDeclaredState: (id: string, state: PackageState) =>
     post<{ status: string }>(`/packages/${id}/declared-state`, { state }),
+  /** Only the commitment is sent. The token stays in the browser and on the label. */
+  fitSeamSeal: (id: string, commitment: string) =>
+    post<{ status: string }>(`/packages/${id}/seam-seal`, { commitment }),
+  testSeamToken: (id: string, token: string) =>
+    post<{ result: "match" | "mismatch" | "not_fitted" | "unknown_package" }>(
+      `/packages/${id}/seam-test`,
+      { token },
+    ),
   devices: () => get<{ devices: Device[] }>("/devices"),
   revokeDevice: (id: string) => post<{ status: string }>(`/devices/${id}/revoke`),
   exams: () => get<{ exams: Exam[] }>("/exams"),

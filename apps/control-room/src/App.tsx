@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api } from "./lib/api";
 import { useAuth } from "./lib/auth";
@@ -15,6 +16,8 @@ import Integrity from "./pages/Integrity";
 import FailedAttempts from "./pages/FailedAttempts";
 import LiveDemo from "./pages/LiveDemo";
 import { EvidenceProvider } from "./lib/evidence";
+import { DemoTour } from "./components/DemoTour";
+import { DemoRunOverlay } from "./components/DemoRun";
 
 const PAGES: Record<string, { title: string; sub: string }> = {
   "/": {
@@ -72,6 +75,9 @@ export default function App() {
   const { data: health } = useAsync(() => api.health(), [], { pollMs: 10_000 });
   const { data: summary } = useAsync(() => api.summary(), [], { pollMs: 10_000 });
   const { data: epoch } = useAsync(() => api.epoch(), [], { pollMs: 30_000 });
+  const [theme, setTheme] = useState<"light" | "dark">(() =>
+    document.documentElement.dataset["theme"] === "light" ? "light" : "dark",
+  );
 
   const page =
     PAGES[pathname] ??
@@ -145,6 +151,24 @@ export default function App() {
         )}
 
         <div className="sidebar-foot">
+          <button
+            className="who-out"
+            style={{ marginBottom: 10 }}
+            onClick={() => {
+              const next = theme === "light" ? "dark" : "light";
+              if (next === "light") document.documentElement.dataset["theme"] = "light";
+              else delete document.documentElement.dataset["theme"];
+              try {
+                localStorage.setItem("mohar.theme", next);
+              } catch {
+                /* the choice just won't survive a reload */
+              }
+              setTheme(next);
+            }}
+            aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
+          >
+            {theme === "light" ? "Dark theme" : "Light theme"}
+          </button>
           {epoch && (
             <div style={{ marginBottom: 8 }}>
               epoch {epoch.epoch}
@@ -200,6 +224,8 @@ export default function App() {
         </main>
       </div>
       </div>
+      <DemoTour />
+      <DemoRunOverlay />
     </EvidenceProvider>
   );
 }

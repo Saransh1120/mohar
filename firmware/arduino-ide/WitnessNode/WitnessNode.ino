@@ -397,6 +397,8 @@ static void onMatch(uint16_t slot, uint16_t score) {
 }
 
 #if REQUEST_ACCESS_AFTER_CEREMONY
+static bool usbHostActive();
+
 /**
  * Ask whether this package may be opened, and say the answer out loud.
  *
@@ -409,6 +411,13 @@ static void onMatch(uint16_t slot, uint16_t score) {
 static void requestUnlock() {
   if (!PACKAGE_ID[0]) {
     show("no package configured — not asking for a decision");
+    return;
+  }
+  // Over USB this board has no network to ask with. The control room on the
+  // other end of the cable asks the engine itself, so the station says so
+  // rather than recording an "engine unreachable" exception every ceremony.
+  if (usbHostActive()) {
+    show("connected over USB — the control room asks the access engine");
     return;
   }
 
@@ -600,7 +609,7 @@ static void sendJson(int code, const String &json) {
   g_http.send(code, "application/json", json);
 }
 
-static void handleStatus() {
+static String statusJson() {
   String j = "{";
   j += "\"deviceId\":\"" DEVICE_ID "\",";
   j += "\"reader\":" + String(g_fingerOk ? "true" : "false") + ",";
@@ -623,10 +632,13 @@ static void handleStatus() {
   j += "\"packageId\":\"" PACKAGE_ID "\",";
   j += "\"centreId\":\"" CENTRE_ID "\",";
   j += "\"pending\":" + String(g_spool.pending()) + ",";
-  j += "\"observerSlotMin\":" + String(OBSERVER_SLOT_MIN);
+  j += "\"observerSlotMin\":" + String(OBSERVER_SLOT_MIN) + ",";
+  j += "\"transport\":\"" + String(usbHostActive() ? "usb" : "wifi") + "\"";
   j += "}";
-  sendJson(200, j);
+  return j;
 }
+
+static void handleStatus() { sendJson(200, statusJson()); }
 
 static void handleEnrol() {
   long slot = g_http.hasArg("slot") ? g_http.arg("slot").toInt() : 0;
@@ -729,10 +741,128 @@ static void startControlSurfaceIfReady() {
                 WiFi.localIP().toString().c_str());
 }
 
-static void pollSerialCommand() {
-  if (!Serial.available()) return;
-  char c = Serial.read();
-  while (Serial.available()) Serial.read();
+// ── USB link ────────────────────────────────────────────────────────────────
+//
+// The same station, with the cable as its network. The control room opens this
+// serial port from the browser (Web Serial), and from then on the station hands
+// its signed records over the cable instead of over Wi-Fi; the browser posts
+// each one to the ledger and says back whether it was taken.
+//
+// Nothing about trust changes. Every record is still signed here with the key
+// in flash and verified by the ledger exactly as a Wi-Fi post would be — the
+// browser is a courier that cannot alter what it carries without the signature
+// failing. What goes away is every address: no SSID, no hotspot subnet, no
+// station IP, no ledger IP.
+//
+// Protocol lines start with '@' so they share the port with the human console.
+//   host -> station   @hello    @<id> status | enrol N | cancel | delete N
+//                     @ack <n>  @retry <n>
+//   station -> host   @HELLO {..}   @R <id> {..}   @E <id> {..}
+//                     @EVT <n> <signed record>     @HALT {..}
+
+static bool g_usbHost = false;
+static uint32_t g_usbLastSeen = 0;
+static uint32_t g_usbEvtSeq = 0;
+static uint32_t g_usbAwait = 0;       // record number on the wire, not yet answered
+static uint32_t g_usbAwaitSince = 0;
+static bool g_usbAnnounced = false;
+static uint32_t g_lastWifiTryMs = 0;
+static String g_serialLine;
+
+static const uint32_t USB_HOST_TIMEOUT_MS = 15000;  // the host says @hello every few seconds
+static const uint32_t USB_RESEND_MS = 10000;        // no answer: offer the record again
+
+static bool usbHostActive() {
+  return g_usbHost && millis() - g_usbLastSeen < USB_HOST_TIMEOUT_MS;
+}
+
+static void usbReply(bool ok, const String &id, const String &json) {
+  Serial.print(ok ? "@R " : "@E ");
+  Serial.print(id);
+  Serial.print(' ');
+  Serial.println(json);
+}
+
+static void usbCommand(const String &line) {
+  g_usbHost = true;
+  g_usbLastSeen = millis();
+
+  if (line == "@hello") {
+    Serial.println("@HELLO {\"deviceId\":\"" DEVICE_ID "\"}");
+    if (!g_usbAnnounced) {
+      g_usbAnnounced = true;
+      emitException("station_online",
+                    "station connected to the control room over USB; records are "
+                    "carried by the cable and still signed on this device");
+    }
+    return;
+  }
+
+  if (line.startsWith("@ack ") || line.startsWith("@retry ")) {
+    bool ack = line.startsWith("@ack ");
+    uint32_t n = static_cast<uint32_t>(line.substring(ack ? 5 : 7).toInt());
+    if (n != 0 && n == g_usbAwait) {
+      // The answers the Wi-Fi drain honours: appended, duplicate and rejected
+      // all move on; only a failure to deliver keeps the record for another go.
+      if (ack) g_spool.commit();
+      g_usbAwait = 0;
+    }
+    return;
+  }
+
+  // "@<id> <command> [argument]"
+  int sp = line.indexOf(' ');
+  if (sp < 2) return;
+  String id = line.substring(1, sp);
+  String rest = line.substring(sp + 1);
+  rest.trim();
+
+  if (rest == "status") {
+    usbReply(true, id, statusJson());
+  } else if (rest.startsWith("enrol ")) {
+    long slot = rest.substring(6).toInt();
+    if (slot < 1 || slot > 127) {
+      usbReply(false, id, "{\"error\":\"slot must be between 1 and 127\"}");
+    } else if (!startEnrol(static_cast<uint16_t>(slot))) {
+      usbReply(false, id, "{\"error\":\"an enrolment is already running on this reader\"}");
+    } else {
+      usbReply(true, id, "{\"status\":\"started\",\"slot\":" + String(slot) + "}");
+    }
+  } else if (rest == "cancel") {
+    g_enrolState = EnrolState::Idle;
+    g_enrolMessage = "cancelled";
+    usbReply(true, id, "{\"status\":\"cancelled\"}");
+  } else if (rest.startsWith("delete ")) {
+    long slot = rest.substring(7).toInt();
+    if (slot < 1 || slot > 127) {
+      usbReply(false, id, "{\"error\":\"slot must be between 1 and 127\"}");
+    } else if (deleteSlot(static_cast<uint16_t>(slot))) {
+      usbReply(true, id, "{\"status\":\"deleted\"}");
+    } else {
+      usbReply(false, id, "{\"error\":\"no template in that slot\"}");
+    }
+  } else {
+    usbReply(false, id, "{\"error\":\"unknown command\"}");
+  }
+}
+
+/** One record at a time over the cable, in spool order, as the Wi-Fi drain does. */
+static void usbPump() {
+  if (g_usbAwait != 0) {
+    if (millis() - g_usbAwaitSince < USB_RESEND_MS) return;
+    g_usbAwait = 0;  // the answer was lost; resend — the ledger dedupes by event id
+  }
+  String rec = g_spool.peek();
+  if (rec.length() == 0) return;
+  g_usbAwait = ++g_usbEvtSeq;
+  g_usbAwaitSince = millis();
+  Serial.print("@EVT ");
+  Serial.print(g_usbAwait);
+  Serial.print(' ');
+  Serial.println(rec);
+}
+
+static void humanCommand(char c) {
   switch (c) {
     // The console drives the same state machine the HTTP endpoints do. Two
     // routes into one implementation, so the serial monitor and the control
@@ -748,6 +878,30 @@ static void pollSerialCommand() {
       Serial.println("or drive it from the control room's Ceremony page");
       break;
     default: break;
+  }
+}
+
+static void pollSerialCommand() {
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\r') continue;
+    if (c != '\n') {
+      if (g_serialLine.length() < 200) g_serialLine += c;
+      continue;
+    }
+    String line = g_serialLine;
+    g_serialLine = "";
+    line.trim();
+    if (line.length() == 0) continue;
+    if (line[0] == '@') usbCommand(line);
+    else humanCommand(line[0]);
+  }
+  // The Arduino monitor set to "No line ending" sends a bare character with no
+  // newline; take one lone non-protocol character as a command, as before.
+  if (g_serialLine.length() == 1 && g_serialLine[0] != '@') {
+    char c = g_serialLine[0];
+    g_serialLine = "";
+    humanCommand(c);
   }
 }
 
@@ -839,8 +993,15 @@ static void pollCeremonyWindow() {
 
 static void halt(const char *why, uint32_t blinkMs) {
   Serial.printf("[witness] HALTED: %s\n", why);
+  uint32_t lastSaid = 0;
   while (true) {
     digitalWrite(PIN_LED, !digitalRead(PIN_LED));
+    // Said over and over, not once: a control room that opens the port after
+    // boot would otherwise meet a silent device and blame the cable.
+    if (millis() - lastSaid > 2000) {
+      lastSaid = millis();
+      Serial.printf("@HALT {\"reason\":\"%s\"}\n", why);
+    }
     delay(blinkMs);
   }
 }
@@ -880,7 +1041,9 @@ void setup() {
   loadLedgerUrl();
   g_ledger.begin(g_ledgerUrl.c_str());
   Serial.printf("[witness] ledger address: %s\n", g_ledgerUrl.c_str());
-  bool online = wifiConnect(WIFI_SSID, WIFI_PASSWORD);
+  // Short, because over USB there may be no network at all and the station
+  // should be answering the cable within seconds of being plugged in.
+  bool online = wifiConnect(WIFI_SSID, WIFI_PASSWORD, 6000);
 
   emitException("camera_not_on_this_device",
                 "this node has no camera; every assertion it signs carries a zero "
@@ -937,8 +1100,19 @@ void loop() {
     g_lastHeartbeatMs = millis();
   }
 
-  if (WiFi.status() != WL_CONNECTED) wifiConnect(WIFI_SSID, WIFI_PASSWORD, 4000);
-  g_ledger.drain(g_spool, 5);
+  // With a host on the cable, the cable is the network. The Wi-Fi drain would
+  // race the USB pump for the same spool record, and a reconnect attempt blocks
+  // the loop for seconds, so both stand down while USB is carrying records.
+  if (usbHostActive()) {
+    usbPump();
+  } else {
+    g_usbAwait = 0;
+    if (WiFi.status() != WL_CONNECTED && millis() - g_lastWifiTryMs > 30000UL) {
+      g_lastWifiTryMs = millis();
+      wifiConnect(WIFI_SSID, WIFI_PASSWORD, 4000);
+    }
+    g_ledger.drain(g_spool, 5);
+  }
 
   digitalWrite(PIN_LED, g_spool.pending() == 0 ? HIGH : LOW);
   delay(50);

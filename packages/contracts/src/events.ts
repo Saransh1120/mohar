@@ -80,6 +80,16 @@ export const PackageSealedPayload = z.object({
   drandRound: z.number().int().positive(),
   /** One commitment per Shamir share, so share release can be audited later. */
   shareCommitments: z.array(Sha256Hex).length(4),
+  /**
+   * sha256(seamToken ‖ packageId) for the QR printed across the opening flap.
+   *
+   * Optional because packages sealed before the seam label existed have no such
+   * commitment and their events must keep validating — an optional field that is
+   * omitted, never null, so the canonical bytes of an old event are unchanged.
+   * A package without this commitment reports the seam check as not evaluated
+   * rather than passing it. See `docs/13`.
+   */
+  seamCommitment: Sha256Hex.optional(),
 });
 
 export const SealAppliedPayload = z.object({
@@ -108,6 +118,16 @@ export const AccessRequestedPayload = z.object({
   sessionId: Uuid,
   sealSerialRead: ShortText.optional(),
   photoSha256: Sha256Hex.optional(),
+  /**
+   * The seam token as read from the flap QR, hex.
+   *
+   * Hostile input: it arrives from a camera pointed at a surface anyone could
+   * have printed, so it is shape-checked here and never interpolated anywhere.
+   * Absent means the code could not be read — which is the expected state for a
+   * package that was opened in transit, and also for one left out in the rain.
+   * The engine distinguishes those two; this field does not.
+   */
+  seamTokenRead: z.string().regex(/^[0-9a-f]{64}$/).optional(),
 });
 
 export const AccessGrantedPayload = z.object({

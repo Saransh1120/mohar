@@ -307,6 +307,43 @@ export function buildFrameEvent(
 }
 
 /**
+ * A photograph of whoever was at the terminal when a request was refused.
+ *
+ * Signed as the laptop, because the camera is the laptop's, and bound to the
+ * recorded attempt so the frame answers exactly one question later: who was
+ * standing here when this refusal happened. Only the digest is committed.
+ */
+export function buildAccessFrameEvent(
+  examId: string,
+  centreId: string,
+  packageId: string,
+  identity: DemoIdentity,
+  attemptId: string,
+  shot: { sha256: string; bytes: number; width: number; height: number },
+): SignedEvent {
+  return buildSigned(
+    {
+      v: 1,
+      id: crypto.randomUUID(),
+      examId,
+      centreId,
+      packageId,
+      kind: "ACCESS_FRAME",
+      occurredAt: nowTimestamp(),
+      actorDeviceId: identity.terminalDeviceId,
+      payload: {
+        attemptId,
+        frameSha256: shot.sha256,
+        frameBytes: shot.bytes,
+        width: shot.width,
+        height: shot.height,
+      },
+    },
+    identity.terminalPrivateKeyHex,
+  );
+}
+
+/**
  * Two assertions and an outcome, as the station would have signed them.
  *
  * `frameSha256` is the digest of the frame the station captured. There is no
@@ -509,6 +546,55 @@ export function buildJourney(
     handoff("Received into overnight custody", "custodian", cast.courier, cast.custodian, "at_custodian"),
     handoff("Delivered to the centre", "centre", cast.custodian, cast.superintendent, "at_centre"),
   ];
+}
+
+/**
+ * The seal that does not match the one recorded at the press.
+ *
+ * This is the event the whole transport half exists to make possible. A courier
+ * can lose a package and say nothing; what a courier cannot do is arrive with a
+ * different seal and have the record agree. The serial read at the centre is
+ * compared against the serial committed when the package was sealed, and a
+ * mismatch is its own kind rather than a note on a handoff — because it is the
+ * one finding that must never be buried in another record's payload.
+ */
+export function buildSealMismatch(
+  examId: string,
+  centreId: string,
+  packageId: string,
+  identity: DemoIdentity,
+  expectedSerial: string,
+  observedSerial: string,
+  photoSha256: string,
+): SignedEvent {
+  return buildSigned(
+    {
+      v: 1,
+      id: crypto.randomUUID(),
+      examId,
+      centreId,
+      packageId,
+      kind: "SEAL_MISMATCH",
+      occurredAt: nowTimestamp(),
+      actorDeviceId: identity.stationDeviceId,
+      payload: { expectedSerial, observedSerial, photoSha256 },
+    },
+    identity.stationPrivateKeyHex,
+  );
+}
+
+/**
+ * A digest of real bytes, for the demo's photographs.
+ *
+ * Where a camera frame is available the caller passes its hash. Where one is
+ * not, this hashes bytes that genuinely exist rather than inventing a
+ * plausible-looking digest — the record then says a photograph of *something*
+ * was committed, which is true, instead of implying a photograph that was never
+ * taken.
+ */
+export async function digestOf(bytes: Uint8Array): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 // ── stage 3: recovery and opening ───────────────────────────────────────────

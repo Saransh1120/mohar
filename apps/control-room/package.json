@@ -11,15 +11,19 @@
   },
   "dependencies": {
     "@mohar/contracts": "workspace:*",
+    "@mohar/crypto-core": "workspace:*",
+    "face-api.js": "^0.22.2",
     "gsap": "^3.15.0",
+    "jsqr": "^1.4.0",
     "leaflet": "^1.9.4",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.2",
-    "@mohar/crypto-core": "workspace:*"
+    "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
     "@types/leaflet": "^1.9.12",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.10",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.2",

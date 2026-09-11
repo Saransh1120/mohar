@@ -9,6 +9,8 @@ import {
   listPackages,
   getPackage,
   setPackageDeclaredState,
+  fitSeamSeal,
+  testSeamToken,
   listExams,
   listCentres,
   listPersons,
@@ -123,6 +125,34 @@ export function registerRegistryRoutes(app: FastifyInstance, pool: Pool): void {
       const result = await setPackageDeclaredState(pool, req.params.id, parsed.data);
       if (!result.ok) return reply.code(409).send({ error: result.reason });
       return reply.send({ status: "updated", state: parsed.data });
+    },
+  );
+
+  // ── the seam seal ─────────────────────────────────────────────────────────
+  //
+  // Both bodies are validated by exact shape: 64 lowercase hex characters and
+  // nothing else. Scanned content is hostile input, and a string that passes
+  // this regex has no room left in it to carry anything but a digest.
+
+  const Hex64 = z.string().regex(/^[0-9a-f]{64}$/, "expected 64 lowercase hex characters");
+
+  app.post<{ Params: { id: string }; Body: { commitment?: string } }>(
+    "/packages/:id/seam-seal",
+    async (req, reply) => {
+      const parsed = Hex64.safeParse(req.body?.commitment);
+      if (!parsed.success) return reply.code(400).send({ error: "invalid commitment" });
+      const result = await fitSeamSeal(pool, req.params.id, parsed.data);
+      if (!result.ok) return reply.code(result.status).send({ error: result.reason });
+      return reply.send({ status: "fitted" });
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: { token?: string } }>(
+    "/packages/:id/seam-test",
+    async (req, reply) => {
+      const parsed = Hex64.safeParse(req.body?.token);
+      if (!parsed.success) return reply.code(400).send({ error: "invalid token" });
+      return reply.send({ result: await testSeamToken(pool, req.params.id, parsed.data) });
     },
   );
 

@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import { canTransition, type EventBody, type PackageState } from "@mohar/contracts";
 import { projectCustody, custodyRiskScore, type CustodyProjection } from "../domain/custody.js";
+import { seamTokenMatches } from "@mohar/crypto-core";
 
 /**
  * Reads over reference data, plus the joins that turn a package into something
@@ -170,6 +171,9 @@ export async function listPackages(
 }
 
 export interface PackageDetail extends PackageSummary {
+  /** Whether a seam-seal commitment is on file. The commitment itself is not
+   *  returned: it is useless to a reader and there is no reason to hand it out. */
+  seamProtected: boolean;
   projection: CustodyProjection;
   timeline: TimelineEvent[];
 }
@@ -207,7 +211,9 @@ export async function getPackage(
   const { rows } = await pool.query(
     `select p.id, p.exam_id, p.centre_id, p.copies, p.seal_serial, p.state,
             p.custody_from, p.custody_to,
-            e.name as exam_name, c.code as centre_code
+            e.name as exam_name, c.code as centre_code,
+            -- through to_jsonb so the page still loads before migration 005 runs
+            to_jsonb(p) ->> 'seam_commitment' as seam_commitment
        from ref.package p
        join ref.exam   e on e.id = p.exam_id
        join ref.centre c on c.id = p.centre_id
@@ -261,6 +267,7 @@ export async function getPackage(
     lastEventAt: projection.lastEventAt ?? null,
     custodyFrom: r.custody_from ? (r.custody_from as Date).toISOString() : null,
     custodyTo: r.custody_to ? (r.custody_to as Date).toISOString() : null,
+    seamProtected: Boolean(r.seam_commitment),
     projection,
     timeline: detailed.rows.map(
       (e): TimelineEvent => ({
@@ -314,6 +321,71 @@ export async function setPackageDeclaredState(
     [packageId, to],
   );
   return { ok: true };
+}
+
+/**
+ * Record the commitment for a seam seal fitted to this package. Set once.
+ *
+ * The token itself never reaches the server — the caller generates it, prints
+ * it, and sends only sha256(token ‖ packageId). A second fitting is refused
+ * rather than overwriting, because a commitment that can be replaced after the
+ * fact is a commitment to nothing.
+ *
+ * Honest limit: this writes to `ref.package`, which `mohar_app` can update, and
+ * not to the chain. In the full design the commitment travels inside a
+ * service-signed `PACKAGE_SEALED` (docs/14 §2); `sealkeys` would do that, and it
+ * is not built. Until it is, the record of *when* a seal was fitted lives here.
+ */
+export async function fitSeamSeal(
+  pool: Pool,
+  packageId: string,
+  commitment: string,
+): Promise<{ ok: true } | { ok: false; status: 404 | 409 | 503; reason: string }> {
+  try {
+    const { rowCount } = await pool.query(
+      `update ref.package set seam_commitment = $2, updated_at = now()
+        where id = $1 and seam_commitment is null`,
+      [packageId, commitment],
+    );
+    if (rowCount === 1) return { ok: true };
+
+    const { rows } = await pool.query("select 1 from ref.package where id = $1", [packageId]);
+    return rows.length === 0
+      ? { ok: false, status: 404, reason: "unknown package" }
+      : { ok: false, status: 409, reason: "a seam seal is already fitted to this package" };
+  } catch (err) {
+    if ((err as { code?: string }).code === "42703") {
+      return {
+        ok: false,
+        status: 503,
+        reason: "migration 005_seam_seal.sql has not been applied — run it as mohar_migrator",
+      };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Test a scanned token against the package's commitment, and nothing more.
+ *
+ * This authorises nothing and records nothing. It exists so an operator can
+ * see whether a label reads before a ceremony; the check that counts is the
+ * one the access engine runs at unlock.
+ */
+export async function testSeamToken(
+  pool: Pool,
+  packageId: string,
+  tokenHex: string,
+): Promise<"match" | "mismatch" | "not_fitted" | "unknown_package"> {
+  const { rows } = await pool.query<{ seam_commitment: string | null }>(
+    `select to_jsonb(p) ->> 'seam_commitment' as seam_commitment
+       from ref.package p where p.id = $1`,
+    [packageId],
+  );
+  const row = rows[0];
+  if (!row) return "unknown_package";
+  if (!row.seam_commitment) return "not_fitted";
+  return seamTokenMatches(tokenHex, packageId, row.seam_commitment) ? "match" : "mismatch";
 }
 
 /** Exams and centres, for populating selectors and the map. */

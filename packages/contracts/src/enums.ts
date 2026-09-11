@@ -75,6 +75,12 @@ export const DenyReason = z.enum([
   "clock_skew_excessive",
   "seal_serial_mismatch",
   "seal_photo_missing",
+  // The seam seal. Absent and mismatched are deliberately separate: a token that
+  // could not be read is ambiguous and routes to a witnessed manual ceremony,
+  // while a token that read cleanly and did not match is evidence. Collapsing
+  // them would make a rain-damaged label indistinguishable from a forged one.
+  "seam_token_absent",
+  "seam_token_mismatch",
   "package_state_unexpected",
   "package_already_opened",
   "package_compromised",

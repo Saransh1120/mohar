@@ -42,6 +42,50 @@
   --radius: 6px;
 }
 
+/*
+ * Light — the same system on paper. A printed register and a government
+ * circular are black on white, and some rooms project better that way.
+ *
+ * Only the tokens change; every rule above reads them, so nothing else has to
+ * know which theme it is in. The accent is deepened rather than reused: the
+ * dark theme's #5b8db8 falls under reading contrast on white. Status colours
+ * keep their meaning and their restraint — alarm is still the only saturated
+ * hue on the screen.
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #dde1e7;
+  --border-strong: #c3c9d3;
+
+  --text: #1b2230;
+  --text-dim: #4a5466;
+  --text-faint: #6f7888;
+
+  --accent: #2f5f8a;
+  --accent-dim: #e4edf5;
+
+  --critical: #b3372f;
+  --critical-bg: #fbeceb;
+  --high: #8a5a1c;
+  --high-bg: #fbf1e3;
+  --medium: #6e6634;
+  --medium-bg: #f5f3e4;
+  --ok: #2f6f4e;
+  --ok-bg: #e7f3ec;
+  --info: #5a6477;
+}
+
+/* The few places that darken by value rather than by token. A black wash at a
+ * quarter opacity is a shade on navy and a smudge on white. */
+:root[data-theme="light"] .nav a.active .nav-count,
+:root[data-theme="light"] .keybadge-extra {
+  background: rgba(0, 0, 0, 0.07);
+}
+
 * { box-sizing: border-box; }
 
 html, body, #root { height: 100%; }
