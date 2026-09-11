@@ -38,11 +38,19 @@ async function main(): Promise<void> {
     throw err;
   }
 
-  // Dev-only. The control room normally reaches this through Vite's /api proxy
-  // and is therefore same-origin; this grant is the escape hatch for calling the
-  // API straight from a browser tab while debugging. It must not survive into a
-  // deployment, where `gateway` terminates all browser traffic.
-  await app.register(cors, { origin: ["http://localhost:5173"] });
+  // The control room normally reaches this through Vite's /api proxy and is
+  // therefore same-origin; this grant is for calling the API straight from a
+  // browser tab, which is what a Netlify (or any other) frontend does. CORS
+  // is not an access-control boundary — it stops another site's JavaScript
+  // from riding a visitor's browser to this API, nothing more. A direct HTTP
+  // client (curl, Postman, another server) ignores it entirely. Every route
+  // here stays unauthenticated until `gateway` exists — that is what actually
+  // needs fixing before this runs publicly for longer than a demo.
+  const origins = (process.env["CORS_ORIGINS"] ?? "http://localhost:5173")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  await app.register(cors, { origin: origins });
 
   registerAuthRoutes(app, pool);
   registerRoutes(app, pool);
