@@ -280,6 +280,17 @@ export function registerRoutes(app: FastifyInstance, pool: Pool): void {
     return reply.code(201).send(result);
   });
 
+  /**
+   * Liveness only: answers without touching the database.
+   *
+   * For an uptime pinger that keeps a sleeping host awake. `/health` reads the
+   * chain tip, so pinging it every few minutes also keeps a serverless database
+   * from ever scaling to zero — and on a free plan that spends the month's
+   * compute allowance on nothing. This proves the process is up; `/health`
+   * still proves the ledger can reach its chain.
+   */
+  app.get("/ping", async (_req, reply) => reply.send({ ok: true }));
+
   app.get("/health", async (_req, reply) => {
     const { rows } = await pool.query<{ seq: string; hash: Buffer }>(
       "select seq, hash from led.event order by seq desc limit 1",
