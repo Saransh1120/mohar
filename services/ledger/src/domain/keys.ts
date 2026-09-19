@@ -228,6 +228,27 @@ export async function recordAttempt(
   meta: { examId: string | null; centreId: string | null; eventId?: string | null },
 ): Promise<{ seq: string; id: string }> {
   const c = decision.context;
+
+  // Keep only references that resolve. A request naming a package, device,
+  // person or stage that does not exist is exactly the probing this table
+  // exists to keep — and it used to be lost to a foreign-key violation and a
+  // 500, after the engine had already refused it. The unknown reference is
+  // stored as null; the engine's deny reasons (device_unknown,
+  // person_not_on_roster, package_state_unexpected) already say what was wrong.
+  const { rows: known } = await tx.query<{
+    package_id: string | null;
+    device_id: string | null;
+    person_id: string | null;
+    stage: string | null;
+  }>(
+    `select (select id    from ref.package        where id    = $1::uuid) as package_id,
+            (select id    from ref.device         where id    = $2::uuid) as device_id,
+            (select id    from ref.person         where id    = $3::uuid) as person_id,
+            (select stage from led.custody_stage  where stage = $4)       as stage`,
+    [req.packageId, req.deviceId, req.personId ?? null, req.stage],
+  );
+  const ref = known[0];
+
   const { rows } = await tx.query(
     `insert into led.access_attempt (
        package_id, centre_id, exam_id, stage,
@@ -247,16 +268,16 @@ export async function recordAttempt(
        $23,$24
      ) returning seq, id`,
     [
-      req.packageId,
+      ref?.package_id ?? null,
       meta.centreId,
       meta.examId,
-      req.stage,
+      ref?.stage ?? null,
       c.presentedFingerprint,
       c.keyId,
       c.keyEpoch,
       c.currentEpoch,
-      req.deviceId,
-      req.personId ?? null,
+      ref?.device_id ?? null,
+      ref?.person_id ?? null,
       c.actorRole,
       decision.outcome,
       decision.denyReasons,
