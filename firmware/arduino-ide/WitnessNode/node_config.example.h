@@ -14,22 +14,22 @@
  */
 
 // ── network ────────────────────────────────────────────────────────────────
-#define WIFI_SSID       "Hello"
-#define WIFI_PASSWORD   "12345678"
+#define WIFI_SSID       "CHANGE_ME"
+#define WIFI_PASSWORD   "CHANGE_ME"
 // The LAN address of the machine running the ledger. NOT localhost — the ESP32
 // resolves this on its own network.
-#define LEDGER_BASE_URL "http://10.103.145.116:8081"
+#define LEDGER_BASE_URL "http://CHANGE_ME:8081"
 
 // ── identity (from tools/provision-device) ─────────────────────────────────
-#define DEVICE_ID       "0eb2b187-5bb3-481b-add1-73da9c643433"
-#define DEVICE_PRIVKEY  "fa1ebaad844dd3af19ed5953ebc1a66b304570a662f9d53c574ff9e0ae43d066"
-#define DEVICE_PUBKEY   "3d7f850a4a622abd3fcb1441c3b7461f73c89cf08975892199a86996067d01ec"
+#define DEVICE_ID       "CHANGE_ME"
+#define DEVICE_PRIVKEY  "CHANGE_ME"
+#define DEVICE_PUBKEY   "CHANGE_ME"
 
 // ── what this node is witnessing ───────────────────────────────────────────
-#define EXAM_ID         "51e90a5f-6ab3-48d3-b41b-eed90dddb703"
-#define CENTRE_ID       "5bcbf9fd-0bf7-41e8-9818-d95da2d3bc99"
+#define EXAM_ID         "166a2cd5-b4d7-48d4-9f31-cc55967244ad"
+#define CENTRE_ID       "3a790600-c3f4-45bb-b400-675f699d24e0"
 // Leave "" to omit packageId from the signed body — omitted, never null.
-#define PACKAGE_ID      "3f5d8bd1-c37c-4957-a10b-a873bf2fd257"
+#define PACKAGE_ID      "43699841-8d9f-4f2f-b50b-848623896066"
 
 // ── asking for the unlock decision ─────────────────────────────────────────
 // After a two-person window closes successfully the node asks the access engine
@@ -41,7 +41,7 @@
 // The custody key for this stage and epoch, from POST /keys/issue. Leave empty
 // and the engine will refuse for `key_not_presented` — which is the correct
 // refusal, and a perfectly good thing to demonstrate.
-#define CUSTODY_KEY     ""
+#define CUSTODY_KEY     "CHANGE_ME"
 
 // ── the two-person rule ────────────────────────────────────────────────────
 // Both assertions must fall inside this window for two_person_copresence.

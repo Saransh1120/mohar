@@ -14,22 +14,34 @@
  */
 
 // ── network ────────────────────────────────────────────────────────────────
-#define WIFI_SSID       "Hello"
-#define WIFI_PASSWORD   "12345678"
+#define WIFI_SSID       "CHANGE_ME"
+#define WIFI_PASSWORD   "CHANGE_ME"
 // The LAN address of the machine running the ledger. NOT localhost — the ESP32
 // resolves this on its own network.
-#define LEDGER_BASE_URL "http://10.91.155.116:8081"
+#define LEDGER_BASE_URL "http://CHANGE_ME:8081"
 
 // ── identity (from tools/provision-device) ─────────────────────────────────
-#define DEVICE_ID       "f5f3d5ad-905f-494f-8d2a-33a391645a90"
-#define DEVICE_PRIVKEY  "135a6ebe4e2f57d198d1c4666cf7cc1c3babf6d322b1a21b4c63fb1d143c0719"
-#define DEVICE_PUBKEY   "a593acbd8e8868b304fce8f7cfa0774d043e266f9b5f59d2de518e2b2cd766eb"
+#define DEVICE_ID       "CHANGE_ME"
+#define DEVICE_PRIVKEY  "CHANGE_ME"
+#define DEVICE_PUBKEY   "CHANGE_ME"
 
 // ── what this node is witnessing ───────────────────────────────────────────
-#define EXAM_ID         "3596046e-f003-4e4b-bce3-dfa1564d7459"
-#define CENTRE_ID       "10adf6d5-735d-4bf3-bfc1-b54a97e520be"
+#define EXAM_ID         "51e90a5f-6ab3-48d3-b41b-eed90dddb703"
+#define CENTRE_ID       "5bcbf9fd-0bf7-41e8-9818-d95da2d3bc99"
 // Leave "" to omit packageId from the signed body — omitted, never null.
-#define PACKAGE_ID      ""
+#define PACKAGE_ID      "3f5d8bd1-c37c-4957-a10b-a873bf2fd257"
+
+// ── asking for the unlock decision ─────────────────────────────────────────
+// After a two-person window closes successfully the node asks the access engine
+// whether this package may be opened, and signals the answer on the buzzer.
+// The engine records the attempt before it answers, so the request itself is
+// evidence whether it is granted or refused.
+#define REQUEST_ACCESS_AFTER_CEREMONY 0
+#define ACCESS_STAGE "unlock"
+// The custody key for this stage and epoch, from POST /keys/issue. Leave empty
+// and the engine will refuse for `key_not_presented` — which is the correct
+// refusal, and a perfectly good thing to demonstrate.
+#define CUSTODY_KEY     "CHANGE_ME"
 
 // ── the two-person rule ────────────────────────────────────────────────────
 // Both assertions must fall inside this window for two_person_copresence.

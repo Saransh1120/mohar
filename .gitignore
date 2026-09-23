@@ -21,3 +21,12 @@ secrets/
 __pycache__/
 
 .claude/settings.local.json
+
+# Firmware config headers hold a board's own signing key, the centre's Wi-Fi
+# credentials and the ledger's address on that LAN. Only the templates are
+# tracked; each board's real header is written by tools/provision-device.
+firmware/*/src/node_config.h
+firmware/*/src/monitor_config.h
+firmware/arduino-ide/*/node_config.h
+firmware/arduino-ide/*/monitor_config.h
+firmware/arduino-ide/*/*.exe

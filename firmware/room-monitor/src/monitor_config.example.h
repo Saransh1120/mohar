@@ -21,12 +21,12 @@
 // ── network ────────────────────────────────────────────────────────────────
 #define WIFI_SSID       "CHANGE_ME"
 #define WIFI_PASSWORD   "CHANGE_ME"
-#define LEDGER_BASE_URL "http://192.168.1.10:8081"
+#define LEDGER_BASE_URL "http://CHANGE_ME:8081"
 
 // ── identity (from tools/provision-device) ─────────────────────────────────
-#define DEVICE_ID       "00000000-0000-4000-8000-000000000000"
-#define DEVICE_PRIVKEY  "0000000000000000000000000000000000000000000000000000000000000000"
-#define DEVICE_PUBKEY   "0000000000000000000000000000000000000000000000000000000000000000"
+#define DEVICE_ID       "CHANGE_ME"
+#define DEVICE_PRIVKEY  "CHANGE_ME"
+#define DEVICE_PUBKEY   "CHANGE_ME"
 
 // ── what this monitor is watching ──────────────────────────────────────────
 #define EXAM_ID         "00000000-0000-4000-8000-000000000000"
