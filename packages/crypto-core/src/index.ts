@@ -10,3 +10,4 @@ export * from "./seam.js";
 export * from "./seam-label.js";
 export * from "./opening-key.js";
 export * from "./timelock.js";
+export * from "./transfer-key.js";
