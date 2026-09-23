@@ -39,21 +39,49 @@ export class LedgerPrivilegeError extends Error {
   override readonly name = "LedgerPrivilegeError";
 }
 
+/**
+ * Two tables in `led` are writable by design, and both say why where they are
+ * defined: `led.anchor` has its RFC 3161 token filled in after the root is
+ * submitted, and `led.access_key` is marked used or revoked in place.
+ *
+ * They are listed here rather than skipped by a pattern so that a new table
+ * arriving with an UPDATE grant is a boot failure. Someone adding a table and
+ * granting it write access has to come here and argue for it in writing.
+ */
+const WRITABLE_BY_DESIGN: ReadonlySet<string> = new Set(["anchor", "access_key"]);
+
 /** Fail fast if this connection could rewrite history. */
 export async function assertAppendOnly(pool: Pool): Promise<void> {
-  const { rows } = await pool.query<{ priv: string }>(
-    `select privilege_type as priv
+  const { rows } = await pool.query<{ table_name: string; priv: string }>(
+    `select table_name, privilege_type as priv
        from information_schema.table_privileges
       where table_schema = 'led'
-        and table_name   = 'event'
         and grantee      = current_user
-        and privilege_type in ('UPDATE', 'DELETE')`,
+        and privilege_type in ('UPDATE', 'DELETE', 'TRUNCATE')
+      order by table_name, privilege_type`,
   );
-  if (rows.length > 0) {
+
+  const offending = rows.filter((r) => !WRITABLE_BY_DESIGN.has(r.table_name));
+  if (offending.length > 0) {
+    const detail = offending.map((r) => `${r.priv} on led.${r.table_name}`).join(", ");
     throw new LedgerPrivilegeError(
-      `connected role holds ${rows.map((r) => r.priv).join(" and ")} on led.event. ` +
-        "The append-only guarantee depends on this grant being absent. " +
-        "Connect as mohar_app, not as the migration owner or a superuser.",
+      `connected role holds ${detail}. The append-only guarantee depends on those ` +
+        "grants being absent. Connect as mohar_app, not as the migration owner " +
+        "or a superuser.",
+    );
+  }
+
+  // led.event is the chain itself. If the grant query returned nothing at all
+  // the role may simply not see this schema, and a check that passes because it
+  // looked at nothing is worse than no check.
+  const visible = await pool.query<{ n: string }>(
+    `select count(*) as n from information_schema.table_privileges
+      where table_schema = 'led' and table_name = 'event' and grantee = current_user`,
+  );
+  if (Number(visible.rows[0]?.n ?? 0) === 0) {
+    throw new LedgerPrivilegeError(
+      "the connected role holds no privileges on led.event at all, so the " +
+        "append-only check could not be evaluated. Check the database and role.",
     );
   }
 
