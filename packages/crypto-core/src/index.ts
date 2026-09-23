@@ -7,3 +7,6 @@ export * from "./drand.js";
 export * from "./shamir.js";
 export * from "./seal.js";
 export * from "./seam.js";
+export * from "./seam-label.js";
+export * from "./opening-key.js";
+export * from "./timelock.js";
