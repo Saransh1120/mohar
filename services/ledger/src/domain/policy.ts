@@ -1,4 +1,5 @@
 import type { PoolClient } from "pg";
+import type { DenyReason } from "@mohar/contracts";
 import { digestKey, epochAt, keyMatches, seamTokenMatches } from "@mohar/crypto-core";
 
 /**
@@ -23,38 +24,16 @@ import { digestKey, epochAt, keyMatches, seamTokenMatches } from "@mohar/crypto-
  *     this record has to stand up as an FIR annexure.
  */
 
-export type DenyReasonCode =
-  | "key_not_presented"
-  | "key_unknown"
-  | "key_wrong_stage"
-  | "key_wrong_package"
-  | "key_expired"
-  | "key_not_yet_valid"
-  | "key_revoked"
-  | "device_unknown"
-  | "device_revoked"
-  | "device_not_bound_to_centre"
-  | "person_not_on_roster"
-  | "person_role_not_permitted"
-  | "outside_geofence"
-  | "geo_missing"
-  | "geo_accuracy_insufficient"
-  | "outside_custody_window"
-  | "clock_skew_excessive"
-  | "seal_serial_mismatch"
-  | "seal_serial_not_read"
-  | "seam_token_absent"
-  | "seam_token_mismatch"
-  | "package_compromised"
-  | "package_already_opened"
-  | "package_state_unexpected"
-  | "exam_suspended"
-  // -- hardware, evaluated only at the unlock stage --
-  | "biometric_primary_missing"
-  | "biometric_secondary_missing"
-  | "two_person_window_not_met"
-  | "occupancy_contradicts_two_person"
-  | "witness_frame_missing";
+/**
+ * The engine's deny reasons are the contract's deny reasons.
+ *
+ * They were two lists for a while and they drifted: the engine emitted seven
+ * codes the contract had never heard of, and the contract declared five nobody
+ * emitted. A refusal that names a code the rest of the system cannot parse is
+ * worse than no code at all, so there is now one list, in `@mohar/contracts`,
+ * and this alias only keeps the name the service already uses.
+ */
+export type DenyReasonCode = DenyReason;
 
 /** Every check the engine runs, so a granted decision can list what it verified. */
 export type CheckName =
