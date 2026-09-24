@@ -56,6 +56,7 @@ interface World {
   priorLegClosed: boolean;
   refusedAttempts: number;
   issuedKey: { key: string; keyHashHex: string; expiresAt: Date } | null;
+  dispatched: boolean;
 }
 
 function world(over: Partial<World> = {}): World {
@@ -87,6 +88,7 @@ function world(over: Partial<World> = {}): World {
     priorLegClosed: true,
     refusedAttempts: 0,
     issuedKey: null,
+    dispatched: true,
     ...over,
   };
 }
@@ -121,7 +123,7 @@ function fakeClient(w: World): PoolClient {
       if (w.leg && wanted === w.leg["id"]) return { rows: [w.leg] };
       return { rows: [] };
     }
-    if (sql.includes("HANDOVER_COMPLETED")) {
+    if (sql.includes("as closed")) {
       return { rows: [{ closed: w.priorLegClosed }] };
     }
     if (sql.includes("from ref.package p") && sql.includes("ref.seal_label")) {
@@ -164,8 +166,11 @@ function fakeClient(w: World): PoolClient {
         ],
       };
     }
+    if (sql.includes("as dispatched")) {
+      return { rows: [{ dispatched: w.dispatched }] };
+    }
     if (sql.includes("count(*) as refused")) {
-      return { rows: [{ refused: String(w.refusedAttempts) }] };
+      return { rows: [{ refused: String(w.refusedAttempts), guesses: String(w.refusedAttempts) }] };
     }
     throw new Error(`fake client has no answer for: ${sql.slice(0, 120)}`);
   };
@@ -199,8 +204,7 @@ test("a hand-off in order is granted, and nothing is left unevaluated by acciden
   assert.equal(decision.outcome, "granted", JSON.stringify(decision.denyReasons));
   assert.deepEqual(decision.denyReasons, []);
   const notEvaluated = decision.checks.filter((c) => c.passed === undefined).map((c) => c.check);
-  // At the receive step the key has not been presented yet. Everything else ran.
-  assert.deepEqual(notEvaluated, ["transfer_key"]);
+  assert.deepEqual(notEvaluated, []);
 });
 
 test("every check records evidence whether it passed or failed", async () => {
@@ -268,6 +272,22 @@ test("the receiver must type the packet's own serial", async () => {
 
   const caseAndSpace = await run(world(), { packetSerialTyped: `  ${SERIAL.toLowerCase()} ` });
   assert.equal(check(caseAndSpace, "packet_serial").passed, true);
+});
+
+test("a serial that was not typed is refused as unread, not counted as a guess", async () => {
+  const decision = await run(world({ refusedAttempts: 2 }), { packetSerialTyped: undefined });
+  assert.equal(check(decision, "packet_serial").passed, false);
+  assert.ok(decision.denyReasons.includes("seal_serial_not_read"));
+  assert.ok(!decision.denyReasons.includes("packet_serial_mismatch"));
+  assert.equal(decision.raisesAlert, false);
+});
+
+test("the closing step does not ask for the serial again", async () => {
+  const w = world();
+  w.issuedKey = generateTransferKey(w.label!.seamId, LEG, ahead(H));
+  const decision = await run(w, { step: "confirm", transferKey: w.issuedKey.key, packetSerialTyped: undefined });
+  assert.equal(check(decision, "packet_serial").passed, undefined);
+  assert.equal(decision.outcome, "granted");
 });
 
 test("the sender is not asked for a serial they cannot see", async () => {
@@ -416,9 +436,16 @@ test("an attempt naming a leg that does not exist is refused and still evaluated
 
 // ── the transfer key ────────────────────────────────────────────────────────
 
-test("the key is not asked for before the closing step", async () => {
-  const decision = await run(world(), { step: "receive" });
+test("the sender is not asked for a key, because none exists yet", async () => {
+  const decision = await run(world(), { step: "dispatch", personId: undefined });
   assert.equal(check(decision, "transfer_key").passed, undefined);
+});
+
+test("accepting a packet nobody dispatched is refused", async () => {
+  const decision = await run(world({ dispatched: false }), { step: "receive" });
+  assert.equal(check(decision, "transfer_key").passed, false);
+  assert.match(check(decision, "transfer_key").evidence, /has not dispatched/);
+  assert.equal(decision.outcome, "refused");
 });
 
 test("the key issued for this leg closes it", async () => {
@@ -469,6 +496,14 @@ test("the third refusal on one leg raises an alert rather than refusing quietly"
 test("a hand-off that succeeds at the third attempt raises no alert", async () => {
   const decision = await run(world({ refusedAttempts: 2 }));
   assert.equal(decision.outcome, "granted");
+  assert.equal(decision.raisesAlert, false);
+});
+
+test("a refusal that is not a guess does not raise the guessing alert", async () => {
+  const decision = await run(world({ refusedAttempts: 2 }), {
+    geo: { lat: 28.6139, lon: 77.209, accuracyM: 9 },
+  });
+  assert.equal(decision.outcome, "refused");
   assert.equal(decision.raisesAlert, false);
 });
 

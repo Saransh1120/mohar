@@ -223,12 +223,15 @@ export async function decideTransfer(
   } else if (leg.leg_no === 1) {
     add("leg_sequence", true, "first leg of the journey; nothing precedes it");
   } else {
+    // A leg closes when its confirm step is granted. That is recorded in
+    // led.transfer_attempt, which is append-only, so a closure cannot be
+    // manufactured after the fact any more than a chain event could.
     const { rows } = await tx.query<{ closed: boolean }>(
       `select exists (
-         select 1 from led.event e
-          where e.kind = 'HANDOVER_COMPLETED'
-            and (e.body -> 'payload' ->> 'legNo')::int = $2
-            and e.package_id = $1::uuid
+         select 1 from led.transfer_attempt a
+           join ref.route_leg r on r.id = a.leg_id
+          where r.package_id = $1::uuid and r.leg_no = $2
+            and a.outcome = 'granted' and a.checks ->> 'step' = 'confirm'
        ) as closed`,
       [leg.package_id, leg.leg_no - 1],
     );
@@ -341,8 +344,16 @@ export async function decideTransfer(
         undefined,
         "not evaluated: the serial is typed by the receiver, not the sender",
       );
+    } else if (req.step === "confirm") {
+      add(
+        "packet_serial",
+        undefined,
+        "not evaluated: the serial was typed and checked at receive; confirm carries the key",
+      );
     } else if (!req.packetSerialTyped) {
-      add("packet_serial", false, "no packet serial was typed", "packet_serial_mismatch");
+      // Absent is not wrong. Nobody guessed anything, so this does not count
+      // toward the three-wrong-entries alert.
+      add("packet_serial", false, "no packet serial was typed", "seal_serial_not_read");
     } else if (!pkg?.seal_serial) {
       add(
         "packet_serial",
@@ -491,11 +502,32 @@ export async function decideTransfer(
 
   // ── the transfer key, only at the closing step ──
   let attemptNo = 1;
-  if (req.step !== "confirm") {
+  if (req.step === "dispatch") {
     add(
       "transfer_key",
       undefined,
-      `not evaluated: a key is presented at confirm, not at ${req.step}`,
+      "not evaluated: the sender opens the leg; no key exists yet",
+    );
+  } else if (req.step === "receive") {
+    // The key is created at the moment the receiver passes, so what this step
+    // checks is that there is a dispatch for it to link to. An acceptance with
+    // no dispatch is a packet arriving that nobody sent.
+    const { rows } = await tx.query<{ dispatched: boolean }>(
+      `select exists (
+         select 1 from led.transfer_attempt
+          where leg_id = $1::uuid and outcome = 'granted'
+            and checks ->> 'step' = 'dispatch'
+       ) as dispatched`,
+      [req.legId],
+    );
+    const dispatched = rows[0]?.dispatched === true;
+    add(
+      "transfer_key",
+      dispatched,
+      dispatched
+        ? "the sender dispatched this leg; a key will be issued to this device if every check passes"
+        : "the sender has not dispatched this leg, so there is no hand-off to accept",
+      "transfer_key_not_presented",
     );
   } else {
     const { rows } = await tx.query<{
@@ -544,19 +576,31 @@ export async function decideTransfer(
     }
   }
 
-  // ── how many times this leg has already been refused ──
-  const { rows: attemptRows } = await tx.query<{ refused: string }>(
-    `select count(*) as refused from led.transfer_attempt
-      where leg_id = $1::uuid and outcome = 'refused'`,
+  // ── guessing ──
+  //
+  // What the limit counts is wrong answers to the two things only the person
+  // at the packet can know: the printed serial and the transfer key. A refusal
+  // for a vague GPS fix or a leg that was not dispatched yet is not a guess,
+  // and counting it would lock out the real receiver because of a courier's
+  // bad signal an hour earlier.
+  const { rows: attemptRows } = await tx.query<{ refused: string; guesses: string }>(
+    `select count(*) as refused,
+            count(*) filter (where exists (
+              select 1 from jsonb_array_elements(a.checks -> 'checks') c
+               where c ->> 'passed' = 'false'
+                 and c ->> 'reason' in ('packet_serial_mismatch', 'transfer_key_mismatch')
+            )) as guesses
+       from led.transfer_attempt a
+      where a.leg_id = $1::uuid and a.outcome = 'refused'`,
     [req.legId],
   );
   const priorRefusals = Number(attemptRows[0]?.refused ?? 0);
+  const priorGuesses = Number(attemptRows[0]?.guesses ?? 0);
   attemptNo = priorRefusals + 1;
   add(
     "attempt_rate",
-    priorRefusals < TRANSFER_KEY_ATTEMPT_LIMIT,
-    `${priorRefusals} refused attempt(s) on this leg before this one ` +
-      `(alert at ${TRANSFER_KEY_ATTEMPT_LIMIT})`,
+    priorGuesses < TRANSFER_KEY_ATTEMPT_LIMIT,
+    `${priorGuesses} wrong serial or key entr${priorGuesses === 1 ? "y" : "ies"} on this leg before this one (limit ${TRANSFER_KEY_ATTEMPT_LIMIT}); ${priorRefusals} refusal(s) in all`,
     "duplicate_session",
   );
 
@@ -564,15 +608,21 @@ export async function decideTransfer(
     ...new Set(checks.filter((c) => c.passed === false && c.reason).map((c) => c.reason!)),
   ];
   const granted = checks.every((c) => c.passed !== false);
+  const thisIsAGuess = checks.some(
+    (c) =>
+      c.passed === false &&
+      (c.reason === "packet_serial_mismatch" || c.reason === "transfer_key_mismatch"),
+  );
 
   return {
     outcome: granted ? "granted" : "refused",
     checks,
     denyReasons,
     attemptNo,
-    // The alert fires on the attempt that reaches the limit, not after it, so
-    // nobody gets three free guesses and a silent fourth.
-    raisesAlert: !granted && attemptNo >= TRANSFER_KEY_ATTEMPT_LIMIT,
+    // The alert fires on the wrong answer that reaches the limit, not after it,
+    // so nobody gets three free guesses and a silent fourth. Once, not on every
+    // refusal after: the leg is locked by then and the control room already knows.
+    raisesAlert: thisIsAGuess && priorGuesses + 1 === TRANSFER_KEY_ATTEMPT_LIMIT,
     context,
   };
 }
