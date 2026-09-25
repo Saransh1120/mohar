@@ -472,6 +472,8 @@ select:focus, input:focus { outline: 1px solid var(--accent); border-color: var(
 }
 .check.pass { background: var(--ok-bg); }
 .check.fail { background: var(--critical-bg); }
+.check.skip { background: var(--surface-2); }
+.check.skip .check-name { color: var(--text-faint); }
 .check-name { flex-shrink: 0; width: 128px; font-family: var(--mono); }
 .check.pass .check-name { color: var(--ok); }
 .check.fail .check-name { color: var(--critical); }

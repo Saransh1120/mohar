@@ -6,6 +6,7 @@ import { registerRegistryRoutes } from "./http/registry-routes.js";
 import { registerAccessRoutes } from "./http/access-routes.js";
 import { registerAuthRoutes } from "./http/auth-routes.js";
 import { registerTransferRoutes } from "./http/transfer-routes.js";
+import { registerDemoRoutes } from "./http/demo-routes.js";
 
 const PORT = Number(process.env["PORT"] ?? 8081);
 const DATABASE_URL = process.env["DATABASE_URL"];
@@ -58,6 +59,7 @@ async function main(): Promise<void> {
   registerRegistryRoutes(app, pool);
   registerAccessRoutes(app, pool);
   registerTransferRoutes(app, pool);
+  registerDemoRoutes(app, pool);
   await app.listen({ port: PORT, host: "0.0.0.0" });
   app.log.info({ port: PORT }, "ledger listening");
 }

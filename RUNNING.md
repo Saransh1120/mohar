@@ -188,6 +188,13 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
 - **No integration tests.** The Merkle suite is the only automated test. The
   decision engine is exercised by the seed tool but not asserted on.
 - **`verify-portal`, `centre-client`, `field-app`** are unstarted.
+- **No sealing service, so hand-offs start from `POST /demo/journey`.** The
+  Transfers page calls it to seal a packet, print its label (returned once, never
+  stored) and plan two legs. It writes reference data only; every dispatch,
+  receive and confirm after that goes through the hand-off engine. Set
+  `DISABLE_DEMO_ROUTES=1` to leave it unregistered. The hand-off routes check a
+  device id but no device signature, and the Transfers console simulates the
+  fingerprint reader — it says so on the page.
 
 The natural next steps are rate limiting on the decision endpoint, real
 attestation verification at enrolment, and moving the engine into `services/access`.

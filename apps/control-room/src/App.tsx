@@ -15,6 +15,7 @@ import Devices from "./pages/Devices";
 import Integrity from "./pages/Integrity";
 import FailedAttempts from "./pages/FailedAttempts";
 import LiveDemo from "./pages/LiveDemo";
+import Transfers from "./pages/Transfers";
 import { EvidenceProvider } from "./lib/evidence";
 import { DemoTour } from "./components/DemoTour";
 import { DemoRunOverlay } from "./components/DemoRun";
@@ -53,6 +54,10 @@ const PAGES: Record<string, { title: string; sub: string }> = {
   "/keys": {
     title: "Custody keys",
     sub: "Stage-scoped keys, valid for one six-hour epoch and no longer",
+  },
+  "/transfers": {
+    title: "Hand-offs",
+    sub: "Every leg of every packet's journey, and every attempt the hand-off engine ruled on",
   },
   "/devices": {
     title: "Devices",
@@ -113,6 +118,7 @@ export default function App() {
             Packages
             {packageCount > 0 && <span className="nav-count">{packageCount}</span>}
           </NavLink>
+          <NavLink to="/transfers">Transfers</NavLink>
           <NavLink to="/witness">Ceremony</NavLink>
           <NavLink to="/slots">Slots</NavLink>
           <NavLink to="/activity">
@@ -208,6 +214,7 @@ export default function App() {
             <Route path="/workflow/:id" element={<PackageDetail />} />
             <Route path="/packages" element={<Packages />} />
             <Route path="/packages/:id" element={<PackageDetail />} />
+            <Route path="/transfers" element={<Transfers />} />
             <Route path="/witness" element={<Witness />} />
             <Route path="/slots" element={<SlotRegistry />} />
             <Route path="/activity" element={<Activity />} />

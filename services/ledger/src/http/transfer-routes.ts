@@ -129,6 +129,7 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
     const { rows } = await pool.query(
       `select r.id, r.package_id, r.leg_no, r.from_role, r.to_role, r.from_place, r.to_place,
               r.window_start, r.window_end, r.expected_by,
+              p.seal_serial, p.state as package_state, c.code as centre_code,
               exists (select 1 from led.transfer_attempt a
                        where a.leg_id = r.id and a.outcome = 'granted'
                          and a.checks ->> 'step' = 'dispatch') as dispatched,
@@ -139,9 +140,11 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
               (select count(*) from led.transfer_attempt a
                 where a.leg_id = r.id and a.outcome = 'refused')::int as refused_attempts
          from ref.route_leg r
+         join ref.package p on p.id = r.package_id
+         join ref.centre c on c.id = p.centre_id
          left join led.transfer_key k on k.leg_id = r.id
         where ($1::uuid is null or r.package_id = $1::uuid)
-        order by r.package_id, r.leg_no`,
+        order by max(r.created_at) over (partition by r.package_id) desc, r.package_id, r.leg_no`,
       [req.query.packageId ?? null],
     );
     const now = Date.now();
@@ -151,6 +154,25 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
         overdue: !r.completed && new Date(r.expected_by).getTime() < now,
       })),
     });
+  });
+
+  // Every attempt on one leg, newest first, with the checks exactly as the
+  // engine recorded them. The key itself was never stored, so it cannot appear.
+  app.get<{ Params: { legId: string } }>("/legs/:legId/attempts", async (req, reply) => {
+    if (!z.string().uuid().safeParse(req.params.legId).success) {
+      return reply.code(400).send({ error: "leg id must be a uuid" });
+    }
+    const { rows } = await pool.query(
+      `select a.id, a.attempt_no, a.outcome, a.recorded_at, a.serial_typed, a.seam_id_seen,
+              a.checks ->> 'step' as step, a.checks -> 'checks' as checks,
+              a.person_id, p.display_name as person_name, p.role as person_role, a.device_id
+         from led.transfer_attempt a
+         left join ref.person p on p.id = a.person_id
+        where a.leg_id = $1::uuid
+        order by a.recorded_at desc`,
+      [req.params.legId],
+    );
+    return reply.send({ attempts: rows });
   });
 
   for (const step of ["dispatch", "receive", "confirm"] as const) {

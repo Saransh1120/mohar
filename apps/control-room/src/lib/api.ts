@@ -450,6 +450,87 @@ export interface AuthConfig {
   sessionHours: number;
 }
 
+
+// ── hand-offs ───────────────────────────────────────────────────────────────
+
+export type TransferStep = "dispatch" | "receive" | "confirm";
+
+export interface Leg {
+  id: string;
+  package_id: string;
+  leg_no: number;
+  from_role: string;
+  to_role: string;
+  from_place: string;
+  to_place: string;
+  window_start: string;
+  window_end: string;
+  expected_by: string;
+  seal_serial: string | null;
+  package_state: string;
+  centre_code: string;
+  dispatched: boolean;
+  key_issued_at: string | null;
+  completed: boolean;
+  refused_attempts: number;
+  overdue: boolean;
+}
+
+/** passed is absent where the step does not evaluate that check at all. */
+export interface TransferCheck {
+  check: string;
+  passed?: boolean;
+  evidence: string;
+  reason?: string;
+}
+
+export interface TransferAttempt {
+  id: string;
+  attempt_no: number;
+  outcome: "granted" | "refused";
+  recorded_at: string;
+  serial_typed: string | null;
+  seam_id_seen: string | null;
+  step: TransferStep;
+  checks: TransferCheck[];
+  person_id: string | null;
+  person_name: string | null;
+  person_role: string | null;
+  device_id: string | null;
+}
+
+export interface TransferStepInput {
+  deviceId: string;
+  personId?: string;
+  seamSecretHex?: string;
+  seamIdRead?: string;
+  packetSerialTyped?: string;
+  biometricSlot?: number;
+  biometricScore?: number;
+  transferKey?: string;
+  occurredAt?: string;
+}
+
+export interface TransferStepResult {
+  outcome: "granted" | "refused";
+  step: TransferStep;
+  denyReasons: string[];
+  checks: TransferCheck[];
+  attemptNo: number;
+  alertRaised: boolean;
+  transferKey?: string;
+  keyFingerprint?: string;
+}
+
+export interface DemoJourney {
+  packageId: string;
+  serial: string;
+  deviceId: string;
+  people: Record<"press" | "courier" | "custodian", { id: string; name: string; role: string }>;
+  legIds: string[];
+  label: { seamId: string; shareAHex: string; shareBHex: string };
+}
+
 export const api = {
   authConfig: () => get<AuthConfig>("/auth/config"),
 
@@ -602,4 +683,11 @@ export const api = {
   anchors: () => get<{ anchors: Anchor[] }>("/anchors"),
   buildAnchor: (day?: string) =>
     post<{ day: string; treeSize: number }>("/anchors/build", day ? { day } : {}),
+  legs: (packageId?: string) =>
+    get<{ legs: Leg[] }>(`/legs${packageId ? `?packageId=${packageId}` : ""}`),
+  legAttempts: (legId: string) =>
+    get<{ attempts: TransferAttempt[] }>(`/legs/${legId}/attempts`),
+  transferStep: (legId: string, step: TransferStep, input: TransferStepInput) =>
+    post<TransferStepResult>(`/legs/${legId}/${step}`, input),
+  demoJourney: () => post<DemoJourney>("/demo/journey"),
 };
