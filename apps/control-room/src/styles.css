@@ -407,6 +407,30 @@ select:focus, input:focus { outline: 1px solid var(--accent); border-color: var(
 .act-ref { font-size: 10.5px; color: var(--text-faint); }
 
 .act-detail { padding: 4px 16px 18px 19px; border-top: 1px dashed var(--border); }
+
+/* ── alerts ──────────────────────────────────────────────────────────────── */
+
+/*
+ * An acknowledged alert keeps its consequence box: acknowledging records who
+ * looked, it does not make what happened less true. Only the left edge changes.
+ */
+.act.acked { border-left-color: var(--ok); }
+.alert-since { margin-top: 8px; font-size: 12px; color: var(--text-dim); }
+.alert-acks { margin-top: 10px; display: grid; gap: 6px; }
+.alert-ack {
+  font-size: 12px; color: var(--text-faint);
+  border-left: 2px solid var(--ok); padding: 2px 0 2px 10px;
+}
+.alert-ack .who { color: var(--text); font-weight: 600; }
+.alert-ack-note { color: var(--text-dim); margin-top: 2px; white-space: pre-wrap; }
+.alert-ack-form { margin-top: 10px; display: flex; gap: 8px; align-items: flex-start; }
+.alert-ack-form textarea {
+  flex: 1; min-width: 0; resize: vertical;
+  font-family: inherit; font-size: 12px; padding: 6px 9px;
+  border-radius: var(--radius); border: 1px solid var(--border-strong);
+  background: var(--bg); color: var(--text);
+}
+.alert-ack-form textarea:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
 .detail-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
   gap: 18px; margin-top: 14px;

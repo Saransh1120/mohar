@@ -195,6 +195,15 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   `DISABLE_DEMO_ROUTES=1` to leave it unregistered. The hand-off routes check a
   device id but no device signature, and the Transfers console simulates the
   fingerprint reader — it says so on the page.
+- **The `LEG_OVERDUE` watchdog runs inside the ledger process**, not in
+  `services/watchdog`, which does not exist yet. It sweeps every 30 s
+  (`LEG_WATCHDOG_MS`, `0` turns it off) and writes one row per late leg to
+  `led.alert`, not a signed chain event. `PACKET_UNOPENED_OVERDUE` is not built.
+  Alerts appear on the control room's Alerts page by polling; there is no
+  `notify` service, so no email, Telegram or buzzer.
+- **Acknowledging an alert needs migration 007** (`007_alert_ack_by_account.sql`).
+  Without it the Alerts page still lists alerts but the Acknowledge button
+  returns 503.
 
 The natural next steps are rate limiting on the decision endpoint, real
 attestation verification at enrolment, and moving the engine into `services/access`.

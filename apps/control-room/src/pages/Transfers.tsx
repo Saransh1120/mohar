@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { combineSeamShares, generateSeamLabel } from "@mohar/crypto-core";
 import {
   api,
@@ -94,6 +95,10 @@ export default function Transfers() {
   const [journeys, setJourneys] = useState<DemoJourney[]>(loadJourneys);
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  // How soon the new packet's first leg is expected to close. One minute is
+  // for showing the Delayed Transfer Alert: plan it tight, leave it, and the
+  // watchdog finds it late on its own.
+  const [dueIn, setDueIn] = useState(30);
   const [err, setErr] = useState<string | null>(null);
   const [, setTick] = useState(0);
   const [recorded, setRecorded] = useState(0);
@@ -111,7 +116,7 @@ export default function Transfers() {
     setCreating(true);
     setErr(null);
     try {
-      const j = await api.demoJourney();
+      const j = await api.demoJourney(dueIn);
       const next = [j, ...journeys];
       setJourneys(next);
       saveJourneys(next);
@@ -136,7 +141,8 @@ export default function Transfers() {
         fingerprint, the receiver scans the label, types the serial printed on the packet and gives
         a fingerprint, and only then does the receiver's phone get a one-time key that closes the
         leg. <strong>The sender never sees that key.</strong> Every attempt is recorded before the
-        answer comes back, refused ones included.
+        answer comes back, refused ones included. A leg still open past its expected time is
+        raised on the <Link to="/alerts">Alerts</Link> page by the watchdog within a minute.
       </div>
 
       {err && <div className="banner">{err}</div>}
@@ -147,6 +153,11 @@ export default function Transfers() {
         </span>
         <div className="spacer" />
         <button onClick={() => void legs.refresh()}>Refresh</button>
+        <label htmlFor="due-in">Leg 1 due in</label>
+        <select id="due-in" value={dueIn} onChange={(e) => setDueIn(Number(e.target.value))}>
+          <option value={30}>30 minutes</option>
+          <option value={1}>1 minute</option>
+        </select>
         <button className="primary" disabled={creating} onClick={() => void newJourney()}>
           {creating ? "Sealing…" : "New packet to hand off"}
         </button>

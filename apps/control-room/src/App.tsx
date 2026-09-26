@@ -16,6 +16,7 @@ import Integrity from "./pages/Integrity";
 import FailedAttempts from "./pages/FailedAttempts";
 import LiveDemo from "./pages/LiveDemo";
 import Transfers from "./pages/Transfers";
+import Alerts from "./pages/Alerts";
 import { EvidenceProvider } from "./lib/evidence";
 import { DemoTour } from "./components/DemoTour";
 import { DemoRunOverlay } from "./components/DemoRun";
@@ -59,6 +60,10 @@ const PAGES: Record<string, { title: string; sub: string }> = {
     title: "Hand-offs",
     sub: "Every leg of every packet's journey, and every attempt the hand-off engine ruled on",
   },
+  "/alerts": {
+    title: "Alerts",
+    sub: "What happened, what was known when it was raised, and who has acknowledged it",
+  },
   "/devices": {
     title: "Devices",
     sub: "Enrolled signing keys. Revoking one invalidates nothing it already signed",
@@ -80,6 +85,7 @@ export default function App() {
   const { data: health } = useAsync(() => api.health(), [], { pollMs: 10_000 });
   const { data: summary } = useAsync(() => api.summary(), [], { pollMs: 10_000 });
   const { data: epoch } = useAsync(() => api.epoch(), [], { pollMs: 30_000 });
+  const { data: alertSummary } = useAsync(() => api.alertSummary(), [], { pollMs: 10_000 });
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     document.documentElement.dataset["theme"] === "light" ? "light" : "dark",
   );
@@ -119,6 +125,12 @@ export default function App() {
             {packageCount > 0 && <span className="nav-count">{packageCount}</span>}
           </NavLink>
           <NavLink to="/transfers">Transfers</NavLink>
+          <NavLink to="/alerts">
+            Alerts
+            {(alertSummary?.unacknowledged ?? 0) > 0 && (
+              <span className="nav-count alert">{alertSummary?.unacknowledged}</span>
+            )}
+          </NavLink>
           <NavLink to="/witness">Ceremony</NavLink>
           <NavLink to="/slots">Slots</NavLink>
           <NavLink to="/activity">
@@ -215,6 +227,7 @@ export default function App() {
             <Route path="/packages" element={<Packages />} />
             <Route path="/packages/:id" element={<PackageDetail />} />
             <Route path="/transfers" element={<Transfers />} />
+            <Route path="/alerts" element={<Alerts />} />
             <Route path="/witness" element={<Witness />} />
             <Route path="/slots" element={<SlotRegistry />} />
             <Route path="/activity" element={<Activity />} />

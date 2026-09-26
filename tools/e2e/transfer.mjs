@@ -9,7 +9,9 @@
  * seeds a packet with a two-code label and two legs, then drives dispatch,
  * receive and confirm over HTTP — the clean path to closure, and the refusals:
  * receive before dispatch, wrong serial, swapped label, a key issued twice,
- * three wrong keys, and the app role trying to rewrite what it recorded.
+ * three wrong keys, and the app role trying to rewrite what it recorded. Leg 2
+ * is planned already late, so the ledger's watchdog must raise LEG_OVERDUE for
+ * it on its own, exactly once, and an operator acknowledges that alert.
  *
  * Build first (`pnpm build`); it runs services/ledger/dist.
  */
@@ -64,7 +66,8 @@ await q(`insert into ref.seal_label (package_id, seam_id, commitment_hex) values
 // ── ledger ──
 const ledger = spawn("node", ["dist/index.js"], {
   cwd: join(root, "services", "ledger"),
-  env: { ...process.env, PORT: String(PORT), DATABASE_URL: appUrl },
+  // A fast sweep so the test does not wait the production 30 seconds.
+  env: { ...process.env, PORT: String(PORT), DATABASE_URL: appUrl, LEG_WATCHDOG_MS: "500" },
   stdio: ["ignore", "ignore", "pipe"],
 });
 let stderr = "";
@@ -74,9 +77,13 @@ for (let i = 0; i < 40; i++) {
   await new Promise((r) => setTimeout(r, 500));
 }
 
-const post = (path, body) =>
-  fetch(`${BASE}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-    .then(async (r) => ({ status: r.status, body: await r.json() }));
+const post = (path, body, token) =>
+  fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+  }).then(async (r) => ({ status: r.status, body: await r.json() }));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const results = [];
 const expect = (name, ok, detail = "") => results.push({ name, ok, detail });
@@ -163,8 +170,43 @@ try {
 
   const [attempts] = await q(`select count(*)::int as n from led.transfer_attempt`);
   expect("every attempt was recorded, refusals and the 409 included", attempts.n === 13, `${attempts.n} rows`);
-  const [alerts] = await q(`select count(*)::int as n, min(consequence) as c from led.alert`);
-  expect("one alert, with a consequence and no severity", alerts.n === 1 && alerts.c.length > 20, `${alerts.n} alert(s)`);
+  const [alerts] = await q(
+    `select count(*)::int as n, min(consequence) as c from led.alert where kind = 'TRANSFER_ATTEMPTS_EXHAUSTED'`);
+  expect("one attempts alert, with a consequence and no severity", alerts.n === 1 && alerts.c.length > 20, `${alerts.n} alert(s)`);
+
+  // ── the watchdog: leg 2 was planned already late and is still open ──
+  await sleep(1500);
+  const overdue = await q(`select leg_id, evidence, consequence from led.alert where kind = 'LEG_OVERDUE'`);
+  expect("the watchdog raised LEG_OVERDUE for the late leg on its own",
+    overdue.length === 1 && overdue[0].leg_id === leg2, `${overdue.length} alert(s)`);
+  expect("LEG_OVERDUE carries how late and a consequence",
+    overdue[0]?.evidence?.overdueBySeconds > 0 && overdue[0]?.consequence.length > 20);
+  expect("the leg that is not late raised nothing",
+    (await q(`select 1 from led.alert where kind = 'LEG_OVERDUE' and leg_id = $1`, [leg1])).length === 0);
+  await sleep(1500);
+  const [again2] = await q(`select count(*)::int as n from led.alert where kind = 'LEG_OVERDUE'`);
+  expect("a leg that stays late is raised once, not on every sweep", again2.n === 1, `${again2.n} alert(s)`);
+
+  // ── acknowledging it ──
+  const [overdueRow] = await q(`select id from led.alert where kind = 'LEG_OVERDUE'`);
+  const anon = await post(`/alerts/${overdueRow.id}/ack`, { note: "seen" });
+  expect("an anonymous caller cannot acknowledge an alert", anon.status === 401);
+  const signup = await post("/auth/signup", {
+    username: "e2e-operator", password: randomBytes(18).toString("base64url"),
+    displayName: "E2E Operator", role: "control_room",
+  });
+  const token = signup.body.token;
+  const blank = await post(`/alerts/${overdueRow.id}/ack`, { note: "" }, token);
+  expect("an acknowledgement without a note is refused", blank.status === 400);
+  const ack = await post(`/alerts/${overdueRow.id}/ack`, { note: "Called the courier; vehicle delayed at the toll." }, token);
+  expect("a signed-in operator acknowledges it", ack.status === 201, JSON.stringify(ack.body));
+  const openList = await fetch(`${BASE}/alerts?open=true`).then((r) => r.json());
+  expect("an acknowledged alert leaves the open list",
+    !openList.alerts.some((a) => a.id === overdueRow.id));
+  const allList = await fetch(`${BASE}/alerts`).then((r) => r.json());
+  const listed = allList.alerts.find((a) => a.id === overdueRow.id);
+  expect("the acknowledgement names the operator and keeps the note",
+    listed?.acks?.[0]?.accountUsername === "e2e-operator" && /toll/.test(listed?.acks?.[0]?.note ?? ""));
   const keys = await q(`select key_hash_hex from led.transfer_key`);
   expect("only hashes are stored", keys.length === 2 && keys.every((k) =>
     !k.key_hash_hex.toUpperCase().includes(receive.body.transferKey) && !k.key_hash_hex.toUpperCase().includes(r2.body.transferKey)));
@@ -174,8 +216,10 @@ try {
   catch (e) { blocked = /permission denied/.test(e.message); }
   try { await appPool.query("delete from led.alert"); blocked = false; }
   catch (e) { blocked = blocked && /permission denied/.test(e.message); }
+  try { await appPool.query("update led.alert_ack set note = 'nothing happened'"); blocked = false; }
+  catch (e) { blocked = blocked && /permission denied/.test(e.message); }
   await appPool.end();
-  expect("the app role cannot rewrite attempts or delete alerts", blocked);
+  expect("the app role cannot rewrite attempts, delete alerts or edit acknowledgements", blocked);
 } finally {
   ledger.kill();
   await owner.end();

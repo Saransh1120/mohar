@@ -7,9 +7,13 @@ import { registerAccessRoutes } from "./http/access-routes.js";
 import { registerAuthRoutes } from "./http/auth-routes.js";
 import { registerTransferRoutes } from "./http/transfer-routes.js";
 import { registerDemoRoutes } from "./http/demo-routes.js";
+import { registerAlertRoutes } from "./http/alert-routes.js";
+import { startLegWatchdog } from "./domain/watchdog.js";
 
 const PORT = Number(process.env["PORT"] ?? 8081);
 const DATABASE_URL = process.env["DATABASE_URL"];
+/** How often to look for late legs. 0 turns the sweep off in this process. */
+const LEG_WATCHDOG_MS = Number(process.env["LEG_WATCHDOG_MS"] ?? 30_000);
 
 if (!DATABASE_URL) {
   console.error("DATABASE_URL is required. Copy .env.example and set it.");
@@ -25,6 +29,7 @@ const app = Fastify({
 });
 
 const pool = createPool(DATABASE_URL);
+let stopWatchdog: (() => void) | null = null;
 
 async function main(): Promise<void> {
   // Refuse to start if this connection could rewrite history. The append-only
@@ -60,13 +65,20 @@ async function main(): Promise<void> {
   registerAccessRoutes(app, pool);
   registerTransferRoutes(app, pool);
   registerDemoRoutes(app, pool);
+  registerAlertRoutes(app, pool);
   await app.listen({ port: PORT, host: "0.0.0.0" });
   app.log.info({ port: PORT }, "ledger listening");
+
+  if (LEG_WATCHDOG_MS > 0) {
+    stopWatchdog = startLegWatchdog(pool, app.log, LEG_WATCHDOG_MS);
+    app.log.info({ intervalMs: LEG_WATCHDOG_MS }, "leg watchdog sweeping for LEG_OVERDUE");
+  }
 }
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     app.log.info({ signal }, "shutting down");
+    stopWatchdog?.();
     void app.close().then(() => pool.end()).then(() => process.exit(0));
   });
 }

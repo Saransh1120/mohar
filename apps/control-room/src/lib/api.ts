@@ -531,6 +531,50 @@ export interface DemoJourney {
   label: { seamId: string; shareAHex: string; shareBHex: string };
 }
 
+// ── alerts ──────────────────────────────────────────────────────────────────
+
+export interface AlertAck {
+  id: string;
+  note: string | null;
+  ackedAt: string;
+  personName: string | null;
+  personRole: string | null;
+  accountName: string | null;
+  accountUsername: string | null;
+}
+
+/**
+ * One raised alert. `evidence` is what was known when it was raised and is
+ * never rewritten; `leg_closed_at` is read live, so the page can say what has
+ * happened since without touching what was recorded.
+ */
+export interface Alert {
+  id: string;
+  kind: string;
+  package_id: string | null;
+  leg_id: string | null;
+  device_id: string | null;
+  evidence: Record<string, unknown>;
+  requires_decision: boolean;
+  consequence: string;
+  raised_at: string;
+  seal_serial: string | null;
+  centre_code: string | null;
+  leg_no: number | null;
+  from_place: string | null;
+  to_place: string | null;
+  from_role: string | null;
+  to_role: string | null;
+  expected_by: string | null;
+  leg_closed_at: string | null;
+  acks: AlertAck[];
+}
+
+export interface AlertSummary {
+  total: number;
+  unacknowledged: number;
+}
+
 export const api = {
   authConfig: () => get<AuthConfig>("/auth/config"),
 
@@ -689,5 +733,11 @@ export const api = {
     get<{ attempts: TransferAttempt[] }>(`/legs/${legId}/attempts`),
   transferStep: (legId: string, step: TransferStep, input: TransferStepInput) =>
     post<TransferStepResult>(`/legs/${legId}/${step}`, input),
-  demoJourney: () => post<DemoJourney>("/demo/journey"),
+  demoJourney: (dueInMinutes?: number) =>
+    post<DemoJourney>("/demo/journey", dueInMinutes ? { dueInMinutes } : {}),
+  alerts: (opts: { open?: boolean } = {}) =>
+    get<{ alerts: Alert[] }>(`/alerts${opts.open ? "?open=true" : ""}`),
+  alertSummary: () => get<AlertSummary>("/alerts/summary"),
+  ackAlert: (id: string, note: string) =>
+    post<{ id: string; ackedAt: string }>(`/alerts/${id}/ack`, { note }),
 };
