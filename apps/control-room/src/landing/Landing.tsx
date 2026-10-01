@@ -158,18 +158,10 @@ export default function Landing() {
     let alive = true;
     (async () => {
       try {
-        const s = await api.summary();
-        if (!alive) return;
-        const packages = Object.values(s.packagesByState).reduce<number>(
-          (a, b) => a + (b ?? 0),
-          0,
-        );
-        setStats({
-          events: s.totals.events,
-          packages,
-          devices: s.totals.active_devices,
-          centres: s.totals.centres,
-        });
+        // The public totals: the full summary takes a session, and a visitor
+        // to this page has none.
+        const s = await api.counters();
+        if (alive) setStats(s);
       } catch {
         /* ledger not running — the strip stays hidden */
       }

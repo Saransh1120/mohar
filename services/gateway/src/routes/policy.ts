@@ -27,9 +27,16 @@ export type Access =
   /** A signed-in account whose role is control_room. */
   | "control_room"
   /**
-   * An act done in the field: a request signed by an enrolled device, or a
-   * signed-in account (the control room standing in for the device, which is
-   * how the Transfers and Ceremony pages work).
+   * An act a device does: a request signed by an enrolled device, with that
+   * device's key. A session does not stand in for it. The engine behind the
+   * route is handed a `deviceId`, and this is what makes that id the device
+   * that sent the request rather than a number somebody typed.
+   */
+  | "device"
+  /**
+   * A request signed by an enrolled device, or a signed-in account. Only the
+   * access engine's decision route is left here: the Unlock page asks it on
+   * behalf of an ESP32 station whose key the browser does not hold.
    */
   | "field"
   /** The body is an event signed by an enrolled device. */
@@ -85,6 +92,7 @@ export const RULES: readonly Rule[] = Object.freeze([
 
   // ── the transparency surface: what the public verify portal reads ──
   r("GET", "/anchors", "public", "anon"),
+  r("GET", "/counters", "public", "anon"),
   r("GET", "/verify/inclusion/:eventId", "public", "anon"),
 
   // ── the chain ──
@@ -112,27 +120,27 @@ export const RULES: readonly Rule[] = Object.freeze([
 
   // ── hand-offs ──
   r("POST", "/legs", "control_room", "write"),
-  r("POST", "/legs/:legId/dispatch", "field", "field"),
-  r("POST", "/legs/:legId/receive", "field", "field"),
-  r("POST", "/legs/:legId/confirm", "field", "field"),
-  r("POST", "/legs/:legId/override", "field", "field"),
+  r("POST", "/legs/:legId/dispatch", "device", "field"),
+  r("POST", "/legs/:legId/receive", "device", "field"),
+  r("POST", "/legs/:legId/confirm", "device", "field"),
+  r("POST", "/legs/:legId/override", "device", "field"),
   r("POST", "/overrides/:id/decision", "control_room", "write"),
 
   // ── the strong room door ──
   r("POST", "/rooms", "control_room", "write"),
-  r("POST", "/rooms/:roomId/entry", "field", "field"),
-  r("POST", "/rooms/:roomId/exit", "field", "field"),
+  r("POST", "/rooms/:roomId/entry", "device", "field"),
+  r("POST", "/rooms/:roomId/exit", "device", "field"),
 
   // ── rosters and the opening ceremony ──
   r("PUT", "/rosters/:centreId/:session", "control_room", "write"),
   r("POST", "/rosters/:centreId/:session/lock", "control_room", "write"),
-  r("POST", "/stations/:deviceId/wrap-key", "field", "field"),
-  r("GET", "/stations/:deviceId/envelopes", "field", "read"),
-  r("POST", "/ceremonies", "field", "field"),
-  r("POST", "/ceremonies/:id/official", "field", "field"),
-  r("POST", "/ceremonies/:id/confirm", "field", "field"),
-  r("POST", "/ceremonies/:id/release", "field", "field"),
-  r("POST", "/ceremonies/:id/opened", "field", "field"),
+  r("POST", "/stations/:deviceId/wrap-key", "device", "field"),
+  r("GET", "/stations/:deviceId/envelopes", "device", "read"),
+  r("POST", "/ceremonies", "device", "field"),
+  r("POST", "/ceremonies/:id/official", "device", "field"),
+  r("POST", "/ceremonies/:id/confirm", "device", "field"),
+  r("POST", "/ceremonies/:id/release", "device", "field"),
+  r("POST", "/ceremonies/:id/opened", "device", "field"),
 
   // ── alerts, anchors, demo set-up ──
   r("POST", "/alerts/:id/ack", "account", "write"),

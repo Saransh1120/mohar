@@ -411,7 +411,7 @@ function StationConsole({ run, station, onDone }: { run: DemoOpening; station: S
         finger === "wrong"
           ? run.officials.find((o) => o.id !== personId)?.slot ?? person.slot
           : person.slot;
-      const res: OfficialResult = await api.ceremonyOfficial(start.ceremonyId, {
+      const res: OfficialResult = await api.ceremonyOfficial(station.deviceId, start.ceremonyId, {
         personId,
         ...(finger === "none" ? {} : { biometricSlot: slot, biometricScore: finger === "weak" ? 40 : 181 }),
       });
@@ -438,7 +438,7 @@ function StationConsole({ run, station, onDone }: { run: DemoOpening; station: S
   const doConfirm = () =>
     act(async () => {
       if (!start) return null;
-      const res = await api.ceremonyConfirm(start.ceremonyId, serial);
+      const res = await api.ceremonyConfirm(station.deviceId, start.ceremonyId, serial);
       setConfirmed(res);
       return {
         title: res.outcome === "passed" ? "SERIAL CONFIRMED" : "SERIAL REFUSED",
@@ -473,7 +473,7 @@ function StationConsole({ run, station, onDone }: { run: DemoOpening; station: S
         }
         throw e;
       }
-      const res = await api.ceremonyRelease(start.ceremonyId, keyHex);
+      const res = await api.ceremonyRelease(station.deviceId, start.ceremonyId, keyHex);
       if (res.outcome === "granted") {
         setReleased(true);
         shares.current.forEach((s) => s.share.fill(0));
@@ -490,7 +490,7 @@ function StationConsole({ run, station, onDone }: { run: DemoOpening; station: S
   const doOpened = () =>
     act(async () => {
       if (!start || !photo) return null;
-      const res = await api.ceremonyOpened(start.ceremonyId, await sha256OfFile(photo), 2);
+      const res = await api.ceremonyOpened(station.deviceId, start.ceremonyId, await sha256OfFile(photo), 2);
       if (res.outcome === "opened") setOpened(true);
       return {
         title: res.outcome === "opened" ? "OPENING RECORDED" : "OPENING NOT RECORDED",

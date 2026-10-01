@@ -14,7 +14,7 @@ test("the three routes that were open to anyone now need a credential", () => {
   assert.equal(rule("POST", "/events").rule.access, "event");
 });
 
-test("the engines' decision routes take a device or an account, and are limited as such", () => {
+test("the door, the hand-off and the ceremony take a device's signature, not a session", () => {
   for (const path of [
     "/legs/4d1e/dispatch",
     "/legs/4d1e/receive",
@@ -24,9 +24,11 @@ test("the engines' decision routes take a device or an account, and are limited 
     "/ceremonies/77/official",
   ]) {
     const m = rule("POST", path);
-    assert.equal(m.rule.access, "field", path);
+    assert.equal(m.rule.access, "device", path);
     assert.equal(m.rule.limit, "field", path);
   }
+  assert.equal(rule("POST", "/ceremonies").rule.access, "device");
+  assert.equal(rule("POST", "/stations/abc/wrap-key").rule.access, "device");
   const access = rule("POST", "/access/request");
   assert.equal(access.rule.access, "field");
   assert.equal(access.rule.limit, "access", "key guesses have their own, tighter limit");
@@ -46,6 +48,7 @@ test("only liveness, sign-in and the transparency surface are public", () => {
     "GET /anchors",
     "GET /auth/config",
     "GET /auth/me",
+    "GET /counters",
     "GET /health",
     "GET /ping",
     "GET /verify/inclusion/:eventId",

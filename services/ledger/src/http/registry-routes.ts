@@ -202,6 +202,28 @@ export function registerRegistryRoutes(app: FastifyInstance, pool: Pool): void {
     return reply.send(await operationalSummary(pool, req.query.examId));
   });
 
+  /**
+   * Four totals, for the public landing page.
+   *
+   * `/summary` also counts refusals, key denials and acts awaiting a decision,
+   * which is the control room's business and stays behind a session. This is
+   * the part with nothing in it to act on: how much the system holds.
+   */
+  app.get("/counters", async (_req, reply) => {
+    const { rows } = await pool.query<{
+      events: number;
+      packages: number;
+      devices: number;
+      centres: number;
+    }>(
+      `select (select count(*) from led.event)::int as events,
+              (select count(*) from ref.package)::int as packages,
+              (select count(*) from ref.device where revoked_at is null)::int as devices,
+              (select count(*) from ref.centre)::int as centres`,
+    );
+    return reply.send(rows[0]);
+  });
+
   // ── fingerprint enrolments ────────────────────────────────────────────────
 
   /**

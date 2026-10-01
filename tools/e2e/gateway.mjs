@@ -261,8 +261,9 @@ try {
     body: other });
   expect("a device signing a request that names another device is refused",
     asOther.status === 403 && asOther.body?.reason === "device_mismatch", show(asOther));
-  const unsigned = await call("POST", legPath, { body: step });
-  expect("the same step with no signature and no session is refused", unsigned.status === 401, show(unsigned));
+  const unsigned = await call("POST", legPath, { token: op, body: step });
+  expect("the same step with an operator's session and no device signature is refused",
+    unsigned.status === 401 && unsigned.body?.reason === "device_signature_required", show(unsigned));
   const [attempts] = await q(
     `select count(*)::int as n from led.transfer_attempt where serial_typed = $1`, [`PKT-GW-${tag}`]);
   expect("only the one request that was let through is on the engine's record",
@@ -306,7 +307,7 @@ try {
   expect("the operator can read what was refused, by reason, with the evidence",
     status.status === 200 &&
       ["not_signed_in", "role_not_permitted", "signature_invalid", "nonce_replayed", "device_mismatch",
-        "device_revoked", "ticket_invalid", "rate_limited"].every((r) => reasons.includes(r)),
+        "device_revoked", "device_signature_required", "ticket_invalid", "rate_limited"].every((r) => reasons.includes(r)),
     reasons.join(","));
   expect("an observer cannot", (await call("GET", "/gateway/status", { token: obs })).status === 403);
 } catch (err) {

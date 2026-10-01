@@ -319,7 +319,24 @@ export async function buildGateway(opts: GatewayOptions): Promise<FastifyInstanc
       return { principal: { kind: "account", account, via: "ticket" } };
     }
 
-    if (access === "field" && hasSignatureHeaders(req.headers)) {
+    if (access === "device" && !hasSignatureHeaders(req.headers)) {
+      // A session is not what this route takes, however good it is: the engine
+      // behind it is told which device is asking, and only that device's key
+      // can say so.
+      return {
+        refused: refuse(
+          req,
+          reply,
+          path,
+          401,
+          "device_signature_required",
+          "This is done by a device: the request must be signed with the device's enrolled key.",
+          { expected: "x-mohar-device, x-mohar-timestamp, x-mohar-nonce, x-mohar-signature" },
+        ),
+      };
+    }
+
+    if ((access === "field" || access === "device") && hasSignatureHeaders(req.headers)) {
       const stopped = guessingStopped(req, reply, path);
       if (stopped) return stopped;
       const verdict = await verifySignedRequest(

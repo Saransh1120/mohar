@@ -352,11 +352,41 @@ test("a device cannot sign a request that names another device", async () => {
   });
 });
 
-test("a field route also takes a signed-in account, with no device signature", async () => {
+test("a session does not open a door or hand a packet over: those take the device's signature", async () => {
   await gateway(async (base) => {
-    const path = "/legs/77777777-7777-4777-8777-777777777777/confirm";
-    assert.equal((await call(base, "POST", path, jsonHeaders, "{}")).status, 401);
-    assert.equal((await call(base, "POST", path, { ...jsonHeaders, ...bearer(OBSERVER) }, "{}")).status, 200);
+    for (const path of [
+      "/legs/77777777-7777-4777-8777-777777777777/confirm",
+      "/rooms/88888888-8888-4888-8888-888888888888/entry",
+      "/ceremonies",
+    ]) {
+      const body = JSON.stringify({ deviceId: DEVICE });
+      const bySession = await call(base, "POST", path, { ...jsonHeaders, ...bearer(OPERATOR) }, body);
+      assert.equal(bySession.status, 401, path);
+      assert.equal(bySession.json["reason"], "device_signature_required", path);
+      assert.equal(reached("POST", path).length, 0, path);
+
+      const signed = await call(
+        base,
+        "POST",
+        path,
+        { ...jsonHeaders, ...signedRequestHeaders(DEVICE, enrolled.privateKeyHex, { method: "POST", path, body }) },
+        body,
+      );
+      assert.equal(signed.status, 200, path);
+    }
+  });
+});
+
+test("the access engine's decision route takes a device or a signed-in account", async () => {
+  await gateway(async (base) => {
+    const body = JSON.stringify({ packageId: "p", stage: "unlock", deviceId: DEVICE });
+    assert.equal((await call(base, "POST", "/access/request", jsonHeaders, body)).status, 401);
+    assert.equal(
+      (await call(base, "POST", "/access/request", { ...jsonHeaders, ...bearer(OBSERVER) }, body)).status,
+      200,
+    );
+    const signed = signedRequestHeaders(DEVICE, enrolled.privateKeyHex, { method: "POST", path: "/access/request", body });
+    assert.equal((await call(base, "POST", "/access/request", { ...jsonHeaders, ...signed }, body)).status, 200);
   });
 });
 

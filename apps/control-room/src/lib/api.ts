@@ -13,6 +13,8 @@
  * page also signs, as devices it enrols for itself and labels as its own.
  */
 
+import { deviceSignatureHeaders, newDeviceKey } from "./deviceKeys";
+
 const BASE = "/api";
 
 export class ApiError extends Error {
@@ -91,6 +93,32 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
     method: "POST",
     headers: { "content-type": "application/json", ...authHeaders() },
     body: JSON.stringify(body ?? {}),
+  });
+  const json = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (!res.ok) throw new ApiError(res.status, json.error ?? `POST ${path} → ${res.status}`);
+  return json;
+}
+
+/**
+ * A request a device makes: signed with the device's own key, which this
+ * browser holds for the devices its consoles stand in for (`deviceKeys.ts`).
+ * The gateway takes that signature, not the session, for a door, a hand-off
+ * step or a ceremony step, and refuses a body that names any other device.
+ *
+ * The signature is over the path the gateway receives (no `/api`) and over the
+ * exact text sent, so the body is serialised once and that string is both
+ * signed and posted.
+ */
+async function postAsDevice<T>(deviceId: string, path: string, body?: unknown): Promise<T> {
+  const text = JSON.stringify(body ?? {});
+  const res = await fetch(BASE + path, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...authHeaders(),
+      ...(await deviceSignatureHeaders(deviceId, "POST", path, text)),
+    },
+    body: text,
   });
   const json = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) throw new ApiError(res.status, json.error ?? `POST ${path} → ${res.status}`);
@@ -973,6 +1001,9 @@ export const api = {
   gatewayStatus: () => get<GatewayStatus>("/gateway/status"),
 
   health: () => get<Health>("/health"),
+  /** Four totals anyone may read. Everything else in `/summary` takes a session. */
+  counters: () =>
+    get<{ events: number; packages: number; devices: number; centres: number }>("/counters"),
   summary: (examId?: string) =>
     get<Summary>(`/summary${examId ? `?examId=${examId}` : ""}`),
   activity: (
@@ -1086,9 +1117,20 @@ export const api = {
   legAttempts: (legId: string) =>
     get<{ attempts: TransferAttempt[] }>(`/legs/${legId}/attempts`),
   transferStep: (legId: string, step: TransferStep, input: TransferStepInput) =>
-    post<TransferStepResult>(`/legs/${legId}/${step}`, input),
-  demoJourney: (dueInMinutes?: number) =>
-    post<DemoJourney>("/demo/journey", dueInMinutes ? { dueInMinutes } : {}),
+    postAsDevice<TransferStepResult>(input.deviceId, `/legs/${legId}/${step}`, input),
+  /**
+   * The courier's handheld in this journey is given a key this browser made,
+   * so the console can sign each step as that device.
+   */
+  demoJourney: async (dueInMinutes?: number) => {
+    const key = await newDeviceKey();
+    const j = await post<DemoJourney>("/demo/journey", {
+      devicePubkeyHex: key.publicKeyHex,
+      ...(dueInMinutes ? { dueInMinutes } : {}),
+    });
+    await key.keepAs(j.deviceId);
+    return j;
+  },
   alerts: (opts: { open?: boolean } = {}) =>
     get<{ alerts: Alert[] }>(`/alerts${opts.open ? "?open=true" : ""}`),
   alertSummary: () => get<AlertSummary>("/alerts/summary"),
@@ -1102,12 +1144,18 @@ export const api = {
   roomEntry: (
     roomId: string,
     input: { deviceId: string; entrants: DoorEntrant[]; task: string; expectedMinutes: number },
-  ) => post<DoorResult>(`/rooms/${roomId}/entry`, input),
+  ) => postAsDevice<DoorResult>(input.deviceId, `/rooms/${roomId}/entry`, input),
   roomExit: (
     roomId: string,
     input: { deviceId: string; visitId: string; packagesTouched: number },
-  ) => post<DoorResult>(`/rooms/${roomId}/exit`, input),
-  demoStrongRoom: () => post<DemoStrongRoom>("/demo/strongroom"),
+  ) => postAsDevice<DoorResult>(input.deviceId, `/rooms/${roomId}/exit`, input),
+  /** The door device is given a key this browser made, so the console signs as the door. */
+  demoStrongRoom: async () => {
+    const key = await newDeviceKey();
+    const d = await post<DemoStrongRoom>("/demo/strongroom", { devicePubkeyHex: key.publicKeyHex });
+    await key.keepAs(d.deviceId);
+    return d;
+  },
 
   // ── the damaged-label override ──
   overrides: () => get<{ overrides: OverrideRequest[] }>("/overrides"),
@@ -1123,7 +1171,12 @@ export const api = {
       whichCodes: "A" | "B" | "both";
       photoSha256: string;
     },
-  ) => post<{ overrideId: string; standing: OverrideStanding }>(`/legs/${legId}/override`, input),
+  ) =>
+    postAsDevice<{ overrideId: string; standing: OverrideStanding }>(
+      input.deviceId,
+      `/legs/${legId}/override`,
+      input,
+    ),
   decideOverride: (
     id: string,
     input: {
@@ -1145,7 +1198,7 @@ export const api = {
   lockRoster: (centreId: string, session: string, stationDeviceId: string) =>
     post<LockResult>(`/rosters/${centreId}/${session}/lock`, { stationDeviceId }),
   registerWrapKey: (deviceId: string, x25519PubHex: string) =>
-    post<{ status: string }>(`/stations/${deviceId}/wrap-key`, { x25519PubHex }),
+    postAsDevice<{ status: string }>(deviceId, `/stations/${deviceId}/wrap-key`, { x25519PubHex }),
   ceremonies: (packageId?: string) =>
     get<{ ceremonies: Ceremony[] }>(`/ceremonies${packageId ? `?packageId=${packageId}` : ""}`),
   startCeremony: (input: {
@@ -1153,8 +1206,10 @@ export const api = {
     deviceId: string;
     seamIdRead?: string;
     seamSecretHex?: string;
-  }) => post<CeremonyStart>("/ceremonies", input),
+  }) => postAsDevice<CeremonyStart>(input.deviceId, "/ceremonies", input),
+  // Every step of a ceremony is the station's, signed with the station's key.
   ceremonyOfficial: (
+    stationDeviceId: string,
     id: string,
     input: {
       personId: string;
@@ -1162,16 +1217,22 @@ export const api = {
       biometricScore?: number;
       faceMatched?: boolean;
     },
-  ) => post<OfficialResult>(`/ceremonies/${id}/official`, input),
-  ceremonyConfirm: (id: string, packetSerialTyped: string) =>
-    post<ConfirmResult>(`/ceremonies/${id}/confirm`, { packetSerialTyped }),
-  ceremonyRelease: (id: string, openingKeyHex: string) =>
-    post<{ outcome: "granted" | "refused"; denyReasons: string[]; checks: EngineCheck[] }>(
+  ) => postAsDevice<OfficialResult>(stationDeviceId, `/ceremonies/${id}/official`, input),
+  ceremonyConfirm: (stationDeviceId: string, id: string, packetSerialTyped: string) =>
+    postAsDevice<ConfirmResult>(stationDeviceId, `/ceremonies/${id}/confirm`, { packetSerialTyped }),
+  ceremonyRelease: (stationDeviceId: string, id: string, openingKeyHex: string) =>
+    postAsDevice<{ outcome: "granted" | "refused"; denyReasons: string[]; checks: EngineCheck[] }>(
+      stationDeviceId,
       `/ceremonies/${id}/release`,
       { openingKeyHex },
     ),
-  ceremonyOpened: (id: string, photoSha256: string, candidateWitnesses: number) =>
-    post<{ outcome: "opened" | "refused" }>(`/ceremonies/${id}/opened`, {
+  ceremonyOpened: (
+    stationDeviceId: string,
+    id: string,
+    photoSha256: string,
+    candidateWitnesses: number,
+  ) =>
+    postAsDevice<{ outcome: "opened" | "refused" }>(stationDeviceId, `/ceremonies/${id}/opened`, {
       photoSha256,
       candidateWitnesses,
     }),

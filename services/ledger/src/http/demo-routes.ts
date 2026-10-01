@@ -40,9 +40,25 @@ const PEOPLE = [
   { key: "custodian", name: "C. Rathore", role: "custodian" },
 ] as const;
 
+/**
+ * The public half of a key the caller holds, for the device a demonstration
+ * makes. With it, the page that asked can sign requests as that device, which
+ * is what the gateway requires of a door or a hand-off step. Without it the
+ * device gets a key nobody holds, and can be named but never act.
+ */
+const DevicePubkey = z
+  .string()
+  .regex(/^[0-9a-f]{64}$/, "expected a 32-byte hex Ed25519 public key")
+  .optional();
+
+const deviceKey = (hex: string | undefined) => (hex ? Buffer.from(hex, "hex") : randomBytes(32));
+
 const JourneyBody = z.object({
   dueInMinutes: z.number().int().min(1).max(60).optional(),
+  devicePubkeyHex: DevicePubkey,
 });
+
+const StrongroomBody = z.object({ devicePubkeyHex: DevicePubkey });
 
 const LAT = 26.9124;
 const LON = 75.7873;
@@ -53,7 +69,9 @@ export function registerDemoRoutes(app: FastifyInstance, pool: Pool): void {
   app.post("/demo/journey", async (req, reply) => {
     const parsed = JourneyBody.safeParse(req.body ?? {});
     if (!parsed.success) {
-      return reply.code(400).send({ error: "dueInMinutes must be a whole number from 1 to 60" });
+      return reply.code(400).send({
+        error: "dueInMinutes must be a whole number from 1 to 60; devicePubkeyHex, if given, 64 hex",
+      });
     }
     const dueMs = (parsed.data.dueInMinutes ?? 30) * 60_000;
     const label = generateSeamLabel();
@@ -107,7 +125,7 @@ export function registerDemoRoutes(app: FastifyInstance, pool: Pool): void {
       // A courier's handheld: unbound to any centre, since it travels the route.
       const { rows: device } = await tx.query<{ id: string }>(
         `insert into ref.device (kind, pubkey) values ('field', $1) returning id`,
-        [randomBytes(32)],
+        [deviceKey(parsed.data.devicePubkeyHex)],
       );
 
       const legs: string[] = [];
@@ -167,7 +185,11 @@ export function registerDemoRoutes(app: FastifyInstance, pool: Pool): void {
    * it signs and nothing here can sign as one. The footfall check on these
    * visits therefore reports that it was not evaluated.
    */
-  app.post("/demo/strongroom", async (_req, reply) => {
+  app.post("/demo/strongroom", async (req, reply) => {
+    const parsed = StrongroomBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "devicePubkeyHex, if given, is 64 hex characters" });
+    }
     const tag = randomBytes(2).toString("hex").toUpperCase();
     const out = await withTransaction(pool, async (tx) => {
       const { rows: room } = await tx.query<{ id: string }>(
@@ -176,7 +198,7 @@ export function registerDemoRoutes(app: FastifyInstance, pool: Pool): void {
       );
       const { rows: device } = await tx.query<{ id: string }>(
         `insert into ref.device (kind, pubkey) values ('centre_pc', $1) returning id`,
-        [randomBytes(32)],
+        [deviceKey(parsed.data.devicePubkeyHex)],
       );
       const people = [];
       const cast = [

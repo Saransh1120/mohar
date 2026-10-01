@@ -211,9 +211,10 @@ attempt either way. The whole policy is one table,
 
 | What is asked | Who may ask |
 | --- | --- |
-| `GET /ping`, `/health`, `/auth/config`, `/auth/me`; `POST /auth/signin`, `/auth/signup`, `/auth/signout`; `GET /anchors`, `/verify/inclusion/:id` | anyone |
+| `GET /ping`, `/health`, `/auth/config`, `/auth/me`; `POST /auth/signin`, `/auth/signup`, `/auth/signout`; `GET /anchors`, `/counters`, `/verify/inclusion/:id` | anyone |
 | `POST /events`, `/events/batch`, `/packages/:id/seal` | the body is an event signed by an enrolled, unrevoked device |
-| `POST /access/request`, a hand-off step, a strong room entry or exit, a ceremony step, a station's unwrap key | a request signed by an enrolled device, or a signed-in account |
+| a hand-off step, a strong room entry or exit, a ceremony step, a station's unwrap key | a request signed by the enrolled device. A session does not stand in for it |
+| `POST /access/request` | a request signed by an enrolled device, or a signed-in account |
 | `POST /keys/issue`, `/keys/rotate`, `/devices`, `/fingerprints`, `/legs`, `/rooms`, `/overrides/:id/decision`, `/auth/accounts`, `/demo/*`, … | a signed-in account whose role is `control_room` |
 | every other `GET` | a signed-in account |
 | anything not listed | a read needs an account, anything else needs `control_room` |
@@ -401,12 +402,23 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   two processes there is no mTLS: loopback, or a shared `GATEWAY_SECRET` over
   plain HTTP. `pnpm start` does not start the access service, and the gateway
   secret is not checked by it.
-- **Nothing signs a request yet except the tests.** The gateway verifies a
-  device's request signature, and `tools/e2e/gateway.mjs` drives a signed
-  hand-off step through it to the engine. But the room monitor only posts
-  events, and the control room's Transfers, Strong rooms and Ceremonies consoles
-  call the engines with an operator's session and a device id typed into the
-  body, which nothing checks against that session.
+- **A console signs as its device with a key the browser holds.** The
+  Transfers, Strong rooms and Ceremonies consoles sign every step with the
+  device's own Ed25519 key, and the gateway takes nothing else for those
+  routes: an operator's session alone is refused, and so is a request naming
+  another device. The key is generated non-extractable in the browser of
+  whoever is signed in, when "New packet", "New strong room" or "New packet due
+  to open" makes the device. That is a browser standing in for a handheld, not
+  a handheld: a device in the field would hold its key in its own hardware. A
+  demonstration device made before this, or in another browser, has a key
+  nobody holds and its console can no longer act; make a new one.
+- **The engines are not told that the gateway verified the device.** The
+  gateway refuses a request it cannot tie to the device, so what reaches an
+  engine did come from it, but the engine's own record still shows only
+  `device_enrolled`, as it would for a ledger reached directly.
+- **`POST /access/request` still takes a session.** The Unlock page asks the
+  access engine on behalf of an ESP32 station whose key the browser does not
+  hold, so on that route a signed-in account can name any device.
 - **A role decides what an account may change, not what it may see.** Any
   signed-in account reads everything and may drive any engine's console. There
   is no scoping to a centre or a district, and a session is a password only:
@@ -423,8 +435,7 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   posts its own key to `POST /devices` with no session, which the gateway
   refuses: enrolment is an operator's. Its signed events pass once an operator
   has enrolled the key. Nothing in the app asks an operator to.
-- **The landing page's live counters need a session.** `GET /summary` is not a
-  public route, so a signed-out visitor sees the page without the strip.
+
 - **The deployed ledger is not behind the gateway until its start command is
   changed** to `node tools/run-gated/index.mjs`. Until then the deployment is
   the ledger alone, open, and it now closes sign-up once an account exists
@@ -454,11 +465,9 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
 - **The Transfers page still seals through `POST /demo/journey`**, which writes
   the label's commitment as reference data without a signed event, so that the
   page can show a hand-off without a press device. Set `DISABLE_DEMO_ROUTES=1`
-  to leave it unregistered. A hand-off request that a device signs must name
-  the device that signed it, and the gateway checks that; one sent with an
-  operator's session, which is how the Transfers console sends it, names a
-  device in its body that nothing verifies. The console also simulates the
-  fingerprint reader — it says so on the page.
+  to leave it unregistered. The console signs each step as the courier's
+  handheld, with a key the browser made when the packet was made. It simulates
+  the fingerprint reader — it says so on the page.
 - **The watchdog runs inside the ledger process**, not in `services/watchdog`,
   which does not exist yet. It sweeps every 30 s (`LEG_WATCHDOG_MS`, `0` turns
   it off) and writes to `led.alert`, not a signed chain event.
@@ -490,11 +499,14 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   Without 007 the Acknowledge button returns 503; without 008 the notifier logs
   an error each round and sends nothing; without 009 the Strong rooms, Rosters,
   Ceremonies and Override approval pages get errors from the ledger.
-- **The four newer pages have not been looked at in a browser.** They build and
-  typecheck, the routes behind them pass `doors.mjs` and `opening.mjs`, and the
-  station's cryptography (the X25519 unwrap and the drand time lock) was run in
-  a real browser against this code. But the control room needs a sign-in, and
-  the pages themselves were not opened and clicked through.
+- **The newer pages have been opened through the gateway, not all clicked
+  through.** On Strong rooms an entry was granted, a courier alone was refused
+  and the exit was recorded; on Transfers a packet was dispatched; on
+  Ceremonies this browser was paired as a station and registered its unwrap
+  key. Each of those was a device-signed request. The rest of a ceremony (the
+  officials, the wait for the drand round, the release), Rosters and Override
+  approval were not clicked through in a browser; `doors.mjs` and `opening.mjs`
+  cover their routes.
 - **The opening is the live path only.** A station opening from a cached
   envelope with no network (`envelope-authorized`), an opening outside its
   window with all three officials and the control room's approval, and a
@@ -509,11 +521,10 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   day ahead; here both happen at the lock, so nothing holds role-bound shares
   in between. The lock is not held to a day ahead either: it can be done any
   time before the packet's opening minute, and the time is recorded.
-- **Registering a station's unwrap key is not tied to the station.** Through
-  the gateway it takes either the device's own request signature, which must be
-  from the device named in the path, or any signed-in account, which is how the
-  Ceremonies page does it. So whoever is signed in can set the key for any
-  device that has none. A second, different key is refused.
+- **A station's unwrap key is registered by the station.** The gateway takes
+  the device's own signature for it, from the device named in the path. A
+  directly reached ledger checks nothing; a second, different key is refused
+  either way.
 - **The strong room door has no actuator and its demonstration room has no
   monitor.** The engine decides and records; nothing physical opens. Footfall
   is checked only for a room registered with a monitor device whose signed
@@ -527,9 +538,11 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   its own to sign one with. The hand-off engine is the same.
 - **The seal-lock sketch is not a field-tested lock.** The ESP32-C6 source and
   Arduino sketch verify signed, expiring, one-use commands and spool signed
-  reports. The command issuer, board flash, electrical tests and secure-boot
-  provisioning are still required. Device sequence numbers are not built.
+  reports. Migration 010 and `tools/seal-lock-command` issue short-lived commands
+  from recent granted unlock attempts. Board flash, electrical tests, UART
+  delivery and secure-boot provisioning are still required. Device sequence
+  numbers are not built.
 
-The natural next steps are moving the opening onto the ESP32 station, having
-the consoles and the field app sign their requests as the device they claim to
-be, and real attestation verification at enrolment.
+The natural next steps are moving the opening onto the ESP32 station, a way
+for a field device to be enrolled without an operator typing its key, and real
+attestation verification at enrolment.
