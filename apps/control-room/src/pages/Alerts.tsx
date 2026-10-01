@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Alert } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -141,19 +141,23 @@ type Filter = "open" | "all";
 
 export default function Alerts() {
   const [filter, setFilter] = useState<Filter>("open");
-  // The stream brings a new alert within a couple of seconds. The poll stays
-  // underneath it, slower, so a dropped stream means late rather than blind.
-  const alerts = useAsync(() => api.alerts({ open: filter === "open" }), [filter], {
-    pollMs: 20_000,
-  });
-  const summary = useAsync(() => api.alertSummary(), [], { pollMs: 20_000 });
+  // The stream brings a new alert within a couple of seconds, and while it is
+  // up the poll underneath only has to catch what a stream could miss. Without
+  // it the poll is all there is, so it runs at the pace it always did. That is
+  // the normal case behind a proxy that buffers small frames: Netlify's does,
+  // and the stream never opens there.
+  const refreshRef = useRef<() => void>(() => {});
+  const stream = useAlertStream(() => refreshRef.current());
+  const pollMs = stream === "live" ? 20_000 : 5_000;
+  const alerts = useAsync(() => api.alerts({ open: filter === "open" }), [filter], { pollMs });
+  const summary = useAsync(() => api.alertSummary(), [], { pollMs });
   const list = alerts.data?.alerts ?? [];
 
   const refresh = () => {
     void alerts.refresh();
     void summary.refresh();
   };
-  const stream = useAlertStream(refresh);
+  refreshRef.current = refresh;
 
   return (
     <>
@@ -189,7 +193,7 @@ export default function Alerts() {
         </span>
         <div className="spacer" />
         <span style={{ fontSize: 12, color: "var(--text-faint)" }}>
-          {stream === "live" ? "live" : "stream down, checking every 20 s"}
+          {stream === "live" ? "live" : "no live stream, checking every 5 s"}
         </span>
         <button onClick={refresh}>Refresh</button>
       </div>

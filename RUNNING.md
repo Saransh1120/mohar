@@ -271,6 +271,12 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   `unlock` the access engine granted. No engine emits `OPEN_CEREMONY` yet, so
   for now the granted unlock is what keeps a packet opened on the Ceremony page
   from raising this alert.
+- **The live streams do not work through Netlify.** Its `/api` proxy holds back
+  small server-sent frames and answers 504 after about thirty seconds, so on
+  the deployed site `GET /alerts/stream` never opens (and `/events/stream` goes
+  quiet once it has caught up). The Alerts page notices and polls every five
+  seconds instead. Opened against the ledger directly, or locally, the streams
+  work.
 - **The notifier has been run against a stand-in channel, not a real bot or
   mail server.** The Telegram request shape is unit-tested and delivery,
   retries and the record of attempts are checked against Postgres, but no
