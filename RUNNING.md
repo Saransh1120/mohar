@@ -438,10 +438,12 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   refuses: enrolment is an operator's. Its signed events pass once an operator
   has enrolled the key. Nothing in the app asks an operator to.
 
-- **The deployed ledger is not behind the gateway until its start command is
-  changed** to `node tools/run-gated/index.mjs`. Until then the deployment is
-  the ledger alone, open, and it now closes sign-up once an account exists
-  unless `ALLOW_SIGNUP=true` is set there.
+- **The Render web service now starts through the gateway** with
+  `node tools/run-gated/index.mjs` (deployed at `5a66964`). The access engine
+  and ledger bind to loopback; an unauthenticated `/devices` request now returns
+  401. The service's `DATABASE_URL` points to Neon `neondb`, not the Render
+  PostgreSQL database in the same project. Apply production migrations to the
+  Neon database as its owner before using the newer pages.
 - **Keys are delivered by being displayed.** There is no channel that gets a key
   to a courier's phone; the control room reads it out. That is the intended MVP
   behaviour but it is the weakest link in the key lifecycle.
@@ -501,7 +503,11 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
 - **Alerts need migrations 007 and 008, and the four newer pages need 009.**
   Without 007 the Acknowledge button returns 503; without 008 the notifier logs
   an error each round and sends nothing; without 009 the Strong rooms, Rosters,
-  Ceremonies and Override approval pages get errors from the ledger.
+  Ceremonies and Override approval pages get errors from the ledger. On the live
+  Neon-backed deployment, Strong rooms and Override approval still returned
+  500 for missing `ref.strong_room` and `led.seam_override_request` on Oct 2,
+  2026. The separate Render PostgreSQL database already has migrations 001–010;
+  that does not migrate the Neon database used by the web service.
 - **The newer pages have been opened through the gateway, not all clicked
   through.** On Strong rooms an entry was granted, a courier alone was refused
   and the exit was recorded; on Transfers a packet was dispatched; on
