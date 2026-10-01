@@ -1,17 +1,13 @@
-# field-app
+# Field app
 
-Android custody scanner. Offline-first, runs on ordinary consumer phones — no
-MDM, no purchased hardware, no privileged permissions.
+Installable phone PWA served at `/field/` by Netlify and at `http://localhost:5174/field/`
+in development. It requires a seal photograph, reads a QR from the camera image,
+signs `SCAN_OBSERVED` with a non-extractable WebCrypto Ed25519 key, and stores the
+photo plus signed event in IndexedDB before network transfer. Reconnect retries
+the same event ID, and ledger rejections remain visible in the queue. The photo
+hash is inside the signed event. Export photos before clearing browser data.
 
-Device identity comes from an **Android Keystore keypair with hardware-backed
-attestation**, which proves the private key lives in secure hardware on one
-specific handset. That replaces the SIM binding the design originally called for:
-IMEI, IMSI and SIM serial need `READ_PRIVILEGED_PHONE_STATE`, unavailable to
-Play Store apps, and commercial MDM is a paid product. See
-`docs/adr/0003-device-identity-without-mdm.md`.
-
-Handles QR/NFC handoff scanning, biometric custodian login, mandatory seal
-photography, dual-signature capture, and a local signed queue that reconciles on
-sync. Must work on a cheap phone with no signal.
-
-See `docs/05-unlock-protocol.md`.
+This is a browser field client. WebCrypto keys do not give Android hardware
+attestation, and this app does not perform fingerprint login, NFC reading or
+dual-signature handoff. Those remain for a native Android implementation. No
+claim of hardware-backed phone identity should be made for this PWA.

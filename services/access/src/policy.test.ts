@@ -224,6 +224,12 @@ function fakeTx(w: World): PoolClient {
       if (sql.includes("count(*) filter")) {
         return [{ witness: String(w.everWitness), monitor: String(w.everMonitor) }];
       }
+      if (sql.includes("kind in ('SEAL_LOCK_OPENED', 'SEAL_LOCK_CLOSED')")) {
+        return w.events.filter((e) => e.kind === "SEAL_LOCK_OPENED" || e.kind === "SEAL_LOCK_CLOSED").slice(-1);
+      }
+      if (sql.includes("select exists(select 1 from led.event")) {
+        return [{ seen: w.events.some((e) => e.kind === "ENCLOSURE_OPENED" && e.body.payload["tamperSwitchOpen"] === true) }];
+      }
       if (sql.includes("from led.event")) {
         return w.events;
       }
@@ -605,4 +611,24 @@ test("seal_lock_intact is never reported as passed while no lock exists", async 
   const d = await decide(goodWorld(), goodRequest());
   assert.equal(d.check("seal_lock_intact").passed, false);
   assert.match(d.check("seal_lock_intact").evidence, /not evaluated/);
+});
+
+test("seal_lock_intact accepts a signed closed report", async () => {
+  const w = goodWorld();
+  w.events.push({ kind: "SEAL_LOCK_CLOSED", occurred_at: ago(20_000), body: { actorDeviceId: STATION, payload: { reedSwitchClosed: true } } });
+  const d = await decide(w, goodRequest());
+  assert.equal(d.check("seal_lock_intact").passed, true);
+  assert.equal(d.outcome, "granted");
+});
+
+test("seal_lock_intact denies an open lock or enclosure tamper", async () => {
+  const w = goodWorld();
+  w.events.push({ kind: "SEAL_LOCK_CLOSED", occurred_at: ago(20_000), body: { actorDeviceId: STATION, payload: { reedSwitchClosed: true } } });
+  w.events.push({ kind: "SEAL_LOCK_OPENED", occurred_at: ago(10_000), body: { actorDeviceId: STATION, payload: {} } });
+  let d = await decide(w, goodRequest());
+  assert.equal(d.check("seal_lock_intact").reason, "seal_lock_open");
+  w.events.pop();
+  w.events.push({ kind: "ENCLOSURE_OPENED", occurred_at: ago(10_000), body: { actorDeviceId: STATION, payload: { tamperSwitchOpen: true } } });
+  d = await decide(w, goodRequest());
+  assert.equal(d.check("seal_lock_intact").reason, "seal_lock_open");
 });

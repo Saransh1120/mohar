@@ -1,6 +1,7 @@
 packages:
   - "services/*"
   - "apps/control-room"
+  - "apps/field-app"
   - "apps/verify-portal"
   - "apps/centre-client"
   - "packages/*"

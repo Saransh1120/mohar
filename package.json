@@ -6,6 +6,7 @@
   "packageManager": "pnpm@9.12.0",
   "scripts": {
     "dev": "turbo run dev",
+    "start": "node tools/run-gated/index.mjs",
     "build": "turbo run build",
     "test": "turbo run test",
     "lint": "turbo run lint",

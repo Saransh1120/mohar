@@ -24,6 +24,7 @@ SHARED = HERE / "shared" / "mohar" / "src"
 MONITOR = HERE / "room-monitor" / "src"
 WITNESS = HERE / "witness-station" / "src"
 NODE = HERE / "witness-node" / "src"
+SEAL = HERE / "seal-lock" / "src"
 
 LIBRARY_PROPERTIES = """name=Mohar
 version=0.1.0
@@ -41,6 +42,7 @@ SKETCHES = {
     "WitnessNode": (NODE / "main.cpp", [NODE / "node_config.h"]),
     "WitnessNodeSetClock": (NODE / "set_clock.cpp", [NODE / "node_config.h"]),
     "RoomMonitor": (MONITOR / "main.cpp", [MONITOR / "monitor_config.h"]),
+    "SealLock": (SEAL / "main.cpp", [SEAL / "seal_config.example.h", SEAL / "seal_config.h"]),
     "WitnessStation": (
         WITNESS / "main.cpp",
         [WITNESS / "station_config.h", WITNESS / "camera_pins.h"],
@@ -56,7 +58,7 @@ SKETCHES = {
 }
 
 # Config headers carry provisioning. Copy once, then leave alone forever.
-PRESERVE = {"monitor_config.h", "station_config.h", "node_config.h"}
+PRESERVE = {"monitor_config.h", "station_config.h", "node_config.h", "seal_config.h"}
 
 
 def copy_shared() -> None:
@@ -80,6 +82,9 @@ def copy_sketches() -> None:
         print(f"  sketch {name}/{ino.name}  <- {main_src.name}")
 
         for extra in extras:
+            if not extra.exists():
+                print(f"         {extra.name}  (not provisioned yet)")
+                continue
             dest = folder / extra.name
             if extra.name in PRESERVE and dest.exists():
                 print(f"         {extra.name}  (kept — holds your device key)")

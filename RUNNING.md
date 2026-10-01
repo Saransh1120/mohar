@@ -46,24 +46,53 @@ guarantee.
 
 ## Running it
 
-Three commands, in three terminals.
+Start the access service before the ledger when using separate processes.
 
-**1. The ledger service** (port 8081):
+```bash
+DATABASE_URL=postgres://mohar_app:change_me_in_deployment@localhost:5432/mohar \
+  pnpm --filter @mohar/access start
+```
+
+It listens on `127.0.0.1:8082` by default. Set `ACCESS_URL=http://127.0.0.1:8082`
+for the ledger below. The ledger keeps an in-process compatibility path when
+`ACCESS_URL` is unset; that path does not exercise service isolation.
+
+**1. The API: the gateway, with the ledger behind it** (port 8081):
+
+```bash
+DATABASE_URL=postgres://mohar_app:change_me_in_deployment@localhost:5432/mohar \
+  ACCESS_URL=http://127.0.0.1:8082 \
+  pnpm start
+```
+
+`pnpm start` runs two processes. `services/gateway` takes port 8081 on every
+interface, which is the port everything already points at: the control room's
+`/api` proxy, a room monitor's `LEDGER_BASE_URL`, a host's `PORT`. The ledger
+moves to `127.0.0.1:8091` and cannot be reached from another machine. See
+[The gateway](#the-gateway) for who may call what.
+
+The ledger refuses to boot if it detects a superuser connection, or any role
+holding `UPDATE`/`DELETE` on `led.event`. A `LedgerPrivilegeError` means that
+check is working — connect as `mohar_app`.
+
+To run the ledger alone on 8081, with no gateway and every route open to
+whatever can reach the port, as it was before:
 
 ```bash
 DATABASE_URL=postgres://mohar_app:change_me_in_deployment@localhost:5432/mohar \
   pnpm --filter @mohar/ledger start
 ```
 
-It refuses to boot if it detects a superuser connection, or any role holding
-`UPDATE`/`DELETE` on `led.event`. A `LedgerPrivilegeError` means that check is
-working — connect as `mohar_app`.
+It says so in its log when it starts that way.
 
 **2. Seed a pilot exam** (optional, but the UI is empty without it):
 
 ```bash
-node tools/seed/dist/index.js
+LEDGER_URL=http://127.0.0.1:8091 node tools/seed/dist/index.js
 ```
+
+The tools do not sign in. They speak to the ledger directly, on loopback, which
+is why the address is the ledger's own and not port 8081.
 
 This enrols ten devices and drives five centres through the real custody
 workflow, posting ~43 genuinely Ed25519-signed events through `POST /events`.
@@ -91,8 +120,10 @@ Each run adds a new exam alongside the previous ones.
 pnpm --filter @mohar/control-room dev
 ```
 
-Open <http://localhost:5173>. It proxies `/api` to the ledger, so the browser
-stays same-origin.
+Open <http://localhost:5173>. It proxies `/api` to port 8081, so the browser
+stays same-origin. The first account created claims the control room as its
+operator and registration closes behind it; later accounts are made on the
+Accounts page.
 
 ### Verifying the cryptography on its own
 
@@ -115,11 +146,16 @@ a genuine cross-check rather than the code agreeing with itself.
 | --- | --- |
 | `packages/crypto-core` | Merkle, hash chain, Ed25519 signing, canonical JSON, custody-key derivation. Tested. |
 | `packages/contracts` | Zod schemas for every event kind, package lifecycle, deny reasons |
-| `services/ledger` | Append path, chain verification, anchoring, device registry, custody projection, **access decision engine**, **rotating custody keys**, activity ledger, **sealing**, **hand-off engine**, **watchdog**, **alert notifier**, **strong room door**, **damaged-label override**, **roster lock and the opening ceremony** |
-| `apps/control-room` | React + Vite + Leaflet. Overview, packages, custody timelines, transfers, alerts, strong rooms, rosters, opening ceremonies, override approval, activity ledger, key management, devices, integrity |
+| `services/ledger` | Append path, chain verification, RFC 3161 anchoring, device registry, custody projection, activity ledger, sealing, hand-off engine, watchdog, alert notifier, strong room door, damaged-label override, roster lock and opening ceremony |
+| `services/access` | Access policy and rotating custody keys; runs on a private port when `ACCESS_URL` is set |
+| `apps/field-app` | Courier phone PWA for signed QR observations and offline queuing; `/field/` on the Netlify build |
+| `/verify` | Public Merkle inclusion check and downloadable RFC 3161 response |
+| `services/gateway` | The one way in. Operator sessions, device request signatures, signed-event checks, rate limits, stream tickets; forwards to the ledger and holds no database credential |
+| `apps/control-room` | React + Vite + Leaflet. Overview, packages, custody timelines, transfers, alerts, strong rooms, rosters, opening ceremonies, override approval, activity ledger, key management, devices, accounts, integrity |
 | `tools/seed` | Key generation, device enrolment, and a custody walkthrough driven through the real engine |
 | `tools/label-print` | Prints a packet's two-code seam label and signs its sealing |
-| `tools/e2e` | End-to-end checks against a real Postgres: `transfer.mjs`, `seal.mjs`, `sweeps.mjs`, `doors.mjs`, `opening.mjs` |
+| `tools/e2e` | End-to-end checks against a real Postgres: `transfer.mjs`, `seal.mjs`, `sweeps.mjs`, `doors.mjs`, `opening.mjs`, `gateway.mjs` |
+| `tools/run-gated` | `pnpm start`: the ledger on loopback and the gateway in front of it, as one command |
 
 ## Sealing a packet
 
@@ -165,7 +201,78 @@ channel is retried five times. An alert more than a day old is not sent, so a
 channel configured today does not announce last month. `NOTIFY_MS` sets how
 often the notifier looks (default 5000; `0` turns it off).
 
+## The gateway
+
+`services/gateway` settles three things about every request and forwards it
+only if all three hold: which route it is, who is asking, and how often. Whether
+the act itself is allowed stays with the engine behind it, which records the
+attempt either way. The whole policy is one table,
+`services/gateway/src/routes/policy.ts`.
+
+| What is asked | Who may ask |
+| --- | --- |
+| `GET /ping`, `/health`, `/auth/config`, `/auth/me`; `POST /auth/signin`, `/auth/signup`, `/auth/signout`; `GET /anchors`, `/verify/inclusion/:id` | anyone |
+| `POST /events`, `/events/batch`, `/packages/:id/seal` | the body is an event signed by an enrolled, unrevoked device |
+| `POST /access/request`, a hand-off step, a strong room entry or exit, a ceremony step, a station's unwrap key | a request signed by an enrolled device, or a signed-in account |
+| `POST /keys/issue`, `/keys/rotate`, `/devices`, `/fingerprints`, `/legs`, `/rooms`, `/overrides/:id/decision`, `/auth/accounts`, `/demo/*`, … | a signed-in account whose role is `control_room` |
+| every other `GET` | a signed-in account |
+| anything not listed | a read needs an account, anything else needs `control_room` |
+
+A route added to the ledger and not listed is therefore over-restricted until
+somebody lists it, never open.
+
+**A device signing a request.** Four headers, `x-mohar-device`,
+`x-mohar-timestamp`, `x-mohar-nonce` and `x-mohar-signature`: Ed25519, with the
+device's enrolled key, over the method, the path, the time, the nonce and the
+SHA-256 of the body as sent (`signedRequestHeaders` in `@mohar/crypto-core`).
+The time must be within two minutes of the gateway's, a nonce is accepted once,
+and a `deviceId` in the body or the path must be the device that signed. A room
+monitor posting events needs none of this: its events are already signed.
+
+**Limits**, per caller, counted in the gateway's memory:
+
+| Limit | At once | Then per minute | Counted against |
+| --- | --- | --- | --- |
+| `access` | 5 | 1 | caller, packet and stage: guesses at a custody key |
+| `signin` | 10 | 2 | the address, and the username |
+| `field` | 30 | 30 | a door, a hand-off step, a ceremony step |
+| `events` | 120 | 240 | the device |
+| `key_issue` | 20 | 20 | the account |
+| `enrol` | 20 | 2 | the account |
+| `read` / `write` | 300 / 60 | 600 / 60 | the caller |
+| `auth_fail` | 20 | 10 | the address: credentials that did not verify |
+
+`GATEWAY_LIMITS` overrides any of them, as JSON:
+`{"access":{"burst":3,"perMinute":1}}`.
+
+**A refusal says what was found**: the role held against the role needed, the
+skew in seconds, which header was missing, the limit that was hit. The last two
+hundred are on the Accounts page (`GET /gateway/status`) and every one is a log
+line.
+
+**Sign-up is closed** once an account exists. The first sign-up claims the
+system as a control room operator; later accounts are created by an operator on
+the Accounts page, and disabled there, never deleted. `ALLOW_SIGNUP=true` on the
+ledger opens registration to anyone, role chooser included.
+
+| Environment | Process | Meaning |
+| --- | --- | --- |
+| `PORT` | `pnpm start` | the public port, the gateway's. Default 8081 |
+| `LEDGER_PORT` | `pnpm start` | the ledger's loopback port. Default 8091 |
+| `HOST` | ledger | the interface the ledger binds. `pnpm start` sets `127.0.0.1` |
+| `GATEWAY_SECRET` | both | when set, the ledger answers only requests that carry it. For a ledger that cannot be bound to loopback |
+| `TRUST_PROXY` | gateway | `true`, or the proxies' addresses. Behind a reverse proxy, without this every caller is the proxy and shares one allowance |
+| `CORS_ORIGINS` | gateway | origins whose pages may read responses. Default `http://localhost:5173` |
+| `ALLOW_SIGNUP` | ledger | `true` opens registration |
+
+On a host that runs one command and hands it a `PORT` (Render), the start
+command is `node tools/run-gated/index.mjs`, with `TRUST_PROXY=true`.
+
 ## Checking it against a real database
+
+```bash
+E2E_OWNER_URL=postgres://mohar_migrator:dev_only_password@localhost:5432/mohar node tools/e2e/gateway.mjs
+```
 
 ```bash
 E2E_OWNER_URL=postgres://mohar_migrator:dev_only_password@localhost:5432/mohar node tools/e2e/seal.mjs
@@ -183,9 +290,12 @@ E2E_OWNER_URL=postgres://mohar_migrator:dev_only_password@localhost:5432/mohar n
 E2E_OWNER_URL=postgres://mohar_migrator:dev_only_password@localhost:5432/mohar node tools/e2e/opening.mjs
 ```
 
-All four run the built ledger code inside one transaction and roll it back, so
+All five run the built ledger code inside one transaction and roll it back, so
 they are safe to point at the development database. `transfer.mjs` commits, and
-needs a throwaway one. `opening.mjs` needs the internet and takes about half a
+needs a throwaway one. `gateway.mjs` starts the built gateway in front of the
+ledger's routes on two loopback ports and calls it over HTTP: the three routes
+that were open, a device-signed hand-off step reaching the hand-off engine, a
+replay, a revoked device, a stream ticket, and the sign-in limit. `opening.mjs` needs the internet and takes about half a
 minute: it locks a roster, waits for drand to publish the round the key was
 locked to, and opens the envelope with it.
 
@@ -274,32 +384,67 @@ it applies, the accompanying `consequence` is an instruction drawn from the
 field-ops runbook ("stop, do not print, escalate"), because that is actionable in
 a way that "critical" is not.
 
-## What does not exist yet
+## Remaining limits
 
 Stated plainly, so the endpoints that do exist do not imply more than they should:
 
 - **Attestation is accepted but never verified.** `POST /devices` stores an
-  Android Keystore / TPM chain without checking it against a root of trust, so
-  enrolment currently trusts whoever can reach the endpoint. See `adr/0003`.
-- **No authentication anywhere.** `gateway` owns authn/authz for the whole system
-  and is not built. Nothing here may be exposed beyond localhost. In particular
-  `POST /keys/issue` will mint a custody key for anyone who can reach it.
+  Android Keystore / TPM chain without checking it against a root of trust.
+  Through the gateway, enrolment takes a control room operator's session, so who
+  enrolled a device is known; what hardware holds its key is that operator's
+  word. See `adr/0003`.
+- **The gateway is the only thing that checks who is asking.** The ledger
+  checks no credential of its own beyond the signature on an event and the
+  operator's role on the three account routes. Started alone
+  (`pnpm --filter @mohar/ledger start`) it listens on every interface and is as
+  open as it was before; `pnpm start` is what binds it to loopback. Between the
+  two processes there is no mTLS: loopback, or a shared `GATEWAY_SECRET` over
+  plain HTTP. `pnpm start` does not start the access service, and the gateway
+  secret is not checked by it.
+- **Nothing signs a request yet except the tests.** The gateway verifies a
+  device's request signature, and `tools/e2e/gateway.mjs` drives a signed
+  hand-off step through it to the engine. But the room monitor only posts
+  events, and the control room's Transfers, Strong rooms and Ceremonies consoles
+  call the engines with an operator's session and a device id typed into the
+  body, which nothing checks against that session.
+- **A role decides what an account may change, not what it may see.** Any
+  signed-in account reads everything and may drive any engine's console. There
+  is no scoping to a centre or a district, and a session is a password only:
+  the WebAuthn settings in `.env.example` are read by nothing.
+- **The gateway's limits and its record of refusals are in memory.** One
+  process, so one count. A restart resets both, and a second gateway behind a
+  load balancer would keep its own. Refusals are also log lines; they are not
+  rows in the database, because the gateway has no connection to it.
+- **The tools do not sign in.** `tools/seed`, `label-print`, `demo-setup`,
+  `provision-device` and `monitor-watchdog` speak to the ledger directly on
+  loopback (`LEDGER_URL=http://127.0.0.1:8091`). With `GATEWAY_SECRET` set they
+  are refused, and there is no credential to give them.
+- **The field app cannot enrol itself through the gateway.** `apps/field-app`
+  posts its own key to `POST /devices` with no session, which the gateway
+  refuses: enrolment is an operator's. Its signed events pass once an operator
+  has enrolled the key. Nothing in the app asks an operator to.
+- **The landing page's live counters need a session.** `GET /summary` is not a
+  public route, so a signed-out visitor sees the page without the strip.
+- **The deployed ledger is not behind the gateway until its start command is
+  changed** to `node tools/run-gated/index.mjs`. Until then the deployment is
+  the ledger alone, open, and it now closes sign-up once an account exists
+  unless `ALLOW_SIGNUP=true` is set there.
 - **Keys are delivered by being displayed.** There is no channel that gets a key
   to a courier's phone; the control room reads it out. That is the intended MVP
   behaviour but it is the weakest link in the key lifecycle.
-- **No rate limiting on `/access/request`.** A six-hour window against an
-  unthrottled endpoint is a much larger search budget than it should be.
-- **No TSA client.** `buildAnchor` computes and stores the daily Merkle root, but
-  `led.anchor.tsa_token` is always null — nothing fetches the RFC 3161 token yet.
-- **`sealkeys`, `unlock`, `render`, `trace`, `notify`, `gateway`** are README
-  files and empty `src` directories. The access engine, sealing, the hand-off
-  engine, the watchdog and the notifier all live inside `ledger` for now and
-  should move to their own services.
+- **TSA availability and trust are operational dependencies.** The ledger
+  verifies the RFC 3161 response before storing it and retries pending roots
+  hourly. An outage leaves the root unnotarised until a later successful retry.
+- **`sealkeys`, `unlock`, `render`, `trace`, `notify`** remain planned services.
+  The access engine and gateway now have separate packages and processes.
 - **The end-to-end checks are scripts, not part of `pnpm test`.** `pnpm test`
   runs the unit suites (crypto-core, the access engine's checks, the hand-off
   engine, the watchdog and notifier wording, the label tool). The checks that
   need Postgres are in `tools/e2e` and are run by hand.
-- **`verify-portal`, `centre-client`, `field-app`** are unstarted.
+- **The public verify page and field PWA exist.** The field PWA records signed
+  observations and retains photos locally; it does not yet provide hardware
+  attestation, biometric hand-offs or upload photo bytes to the server.
+  `centre-client` remains planned.
 - **Sealing registers the seam label and nothing else.** The Opening Key is not
   split at sealing, because no service exists to hold the parts. There is no
   PDF output, only SVG. The label comes out 48 x 34 mm at QR version 4, not
@@ -309,9 +454,11 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
 - **The Transfers page still seals through `POST /demo/journey`**, which writes
   the label's commitment as reference data without a signed event, so that the
   page can show a hand-off without a press device. Set `DISABLE_DEMO_ROUTES=1`
-  to leave it unregistered. The hand-off routes check a device id but no device
-  signature, and the Transfers console simulates the fingerprint reader — it
-  says so on the page.
+  to leave it unregistered. A hand-off request that a device signs must name
+  the device that signed it, and the gateway checks that; one sent with an
+  operator's session, which is how the Transfers console sends it, names a
+  device in its body that nothing verifies. The console also simulates the
+  fingerprint reader — it says so on the page.
 - **The watchdog runs inside the ledger process**, not in `services/watchdog`,
   which does not exist yet. It sweeps every 30 s (`LEG_WATCHDOG_MS`, `0` turns
   it off) and writes to `led.alert`, not a signed chain event.
@@ -362,22 +509,27 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   day ahead; here both happen at the lock, so nothing holds role-bound shares
   in between. The lock is not held to a day ahead either: it can be done any
   time before the packet's opening minute, and the time is recorded.
-- **Registering a station's unwrap key is unauthenticated**, like device
-  enrolment. Whoever reaches `POST /stations/:id/wrap-key` first for a device
-  sets its key; a second, different key is refused.
+- **Registering a station's unwrap key is not tied to the station.** Through
+  the gateway it takes either the device's own request signature, which must be
+  from the device named in the path, or any signed-in account, which is how the
+  Ceremonies page does it. So whoever is signed in can set the key for any
+  device that has none. A second, different key is refused.
 - **The strong room door has no actuator and its demonstration room has no
   monitor.** The engine decides and records; nothing physical opens. Footfall
   is checked only for a room registered with a monitor device whose signed
   `ROOM_ENTRY` events are on the chain.
 - **The override's live video is the operator's word.** No call is carried by
-  this system and there is no field app to place one from. What is recorded is
+  this system or the field PWA. What is recorded is
   that two named operators each stated they saw the packet and both officers.
 - **The door, the override and the ceremony write to their own append-only
   tables, not to the signed chain.** No `STRONGROOM_ENTRY`, `OPEN_CEREMONY` or
   `SEAM_MANUAL_OVERRIDE` event is appended, because the ledger has no key of
   its own to sign one with. The hand-off engine is the same.
-- **Not built at all:** the seal lock and device sequence numbers.
+- **The seal-lock sketch is not a field-tested lock.** The ESP32-C6 source and
+  Arduino sketch verify signed, expiring, one-use commands and spool signed
+  reports. The command issuer, board flash, electrical tests and secure-boot
+  provisioning are still required. Device sequence numbers are not built.
 
-The natural next steps are moving the opening onto the ESP32 station, rate
-limiting on the decision endpoint, and real attestation verification at
-enrolment.
+The natural next steps are moving the opening onto the ESP32 station, having
+the consoles and the field app sign their requests as the device they claim to
+be, and real attestation verification at enrolment.

@@ -798,14 +798,32 @@ async function addWitnessChecks(
   }
 
   // ── 20. seal_lock_intact ──
-  // The electronic seal lock is a later phase and has no event kind yet.
-  // Recorded as unevaluated rather than quietly counted as passed: a check
-  // nobody ran must never look like a check that succeeded.
-  add(
-    "seal_lock_intact",
-    false,
-    "not evaluated — the electronic seal lock is not implemented (docs/12 Part D)",
+  const { rows: lockRows } = await tx.query<{ kind: string; body: { payload: Record<string, unknown> } }>(
+    `select kind, body from led.event
+      where package_id = $1
+        and kind in ('SEAL_LOCK_OPENED', 'SEAL_LOCK_CLOSED')
+      order by seq desc limit 1`,
+    [req.packageId],
   );
+  const lock = lockRows[0];
+  if (!lock) {
+    add("seal_lock_intact", false, "not evaluated — no seal lock has reported for this packet");
+  } else {
+    const { rows: tamperRows } = await tx.query<{ seen: boolean }>(
+      `select exists(select 1 from led.event
+        where package_id = $1 and kind = 'ENCLOSURE_OPENED'
+          and (body->'payload'->>'tamperSwitchOpen')::boolean = true) as seen`,
+      [req.packageId],
+    );
+    const tampered = tamperRows[0]?.seen === true;
+    const closed = lock.kind === "SEAL_LOCK_CLOSED" && lock.body.payload["reedSwitchClosed"] === true;
+    add(
+      "seal_lock_intact",
+      closed && !tampered,
+      tampered ? "enclosure tamper switch opened" : closed ? "latest lock report is closed with reed switch closed" : "latest lock report is open or reed switch did not close",
+      closed && !tampered ? undefined : "seal_lock_open",
+    );
+  }
 
   // ── 21. witness_capture ──
   // A frame counts whether the station took it itself or the centre PC did.

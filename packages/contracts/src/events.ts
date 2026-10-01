@@ -177,6 +177,8 @@ export const ScanObservedPayload = z.object({
   /** Exactly what was read, before any lookup. Retained even when it resolves to
    *  nothing: scans of unknown identifiers are themselves intelligence. */
   rawIdentifier: ShortText,
+  /** SHA-256 of the seal photo retained on the field phone. Optional for older records. */
+  photoSha256: Sha256Hex.optional(),
 });
 
 export const AccessRequestedPayload = z.object({

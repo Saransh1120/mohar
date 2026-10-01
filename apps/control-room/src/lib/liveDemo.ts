@@ -10,6 +10,7 @@ import {
   type FieldHolder,
   type OpeningKeySplit,
 } from "@mohar/crypto-core";
+import { authHeaders } from "./api";
 
 /**
  * ── The end-to-end demonstration ─────────────────────────────────────────────
@@ -117,7 +118,8 @@ async function enrolDevice(kind: string, centreId?: string) {
   const kp = generateKeypair();
   const res = await fetch("/api/devices", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    // Enrolment is a control room operator's: the gateway wants the session.
+    headers: { "content-type": "application/json", ...authHeaders() },
     body: JSON.stringify({ kind, pubkeyHex: kp.publicKeyHex, ...(centreId ? { centreId } : {}) }),
   });
   const body = (await res.json()) as { id?: string; error?: string };

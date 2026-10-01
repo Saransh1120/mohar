@@ -1,6 +1,6 @@
 # Firmware
 
-Three boards, all built in the **Arduino IDE** (see `arduino-ide/`). `shared/mohar`
+Four boards, all built in the **Arduino IDE** (see `arduino-ide/`). `shared/mohar`
 holds the common library; `sync-arduino.py` copies it into
 `arduino-ide/libraries/Mohar`, so edit `shared/mohar` and run the script.
 
@@ -8,6 +8,7 @@ holds the common library; `sync-arduino.py` copies it into
 | --- | --- | --- |
 | `arduino-ide/WitnessNode` | ESP32 DEVKIT V1 | Two fingerprints within 120 s, signs the assertion, reports over Wi-Fi or USB |
 | `arduino-ide/RoomMonitor` | ESP32 | Door reed switch, presence, footfall, 30 s heartbeat |
+| `arduino-ide/SealLock` | ESP32-C6 | Signed one-use solenoid command, tamper loop, flash spool |
 | `arduino-ide/BenchCheck` | any | Bench diagnostics for the sensors on a board |
 | `arduino-ide/WitnessNodeSetClock` | ESP32 | One-shot DS3231 clock set |
 

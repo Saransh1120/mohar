@@ -7,7 +7,7 @@
 [build]
   # The control room imports @mohar/contracts and @mohar/crypto-core from the
   # workspace; the trailing "..." builds those first.
-  command = "pnpm turbo run build --filter=@mohar/control-room..."
+  command = "pnpm turbo run build --filter=@mohar/control-room... && pnpm --filter @mohar/field-app build"
   publish = "apps/control-room/dist"
 
 [build.environment]
@@ -23,6 +23,11 @@
 
 # A single-page app: every path is served index.html and the router takes over.
 # Without this, /signin or /demo opened directly returns Netlify's 404.
+[[redirects]]
+  from = "/field"
+  to = "/field/"
+  status = 301
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

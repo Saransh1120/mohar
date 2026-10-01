@@ -29,11 +29,9 @@ const APP_ROUTE = "/overview";
 /**
  * Auth destinations for the navbar buttons.
  *
- * This project has no authentication yet — `services/gateway/src/auth/` holds
- * only a `.gitkeep`, and the ledger API is unauthenticated (recorded as a known
- * gap in docs/learn). Nothing here creates, replaces, or stands in for auth; the
- * buttons simply point at the conventional routes so that the day sign-in and
- * sign-up pages exist, wiring them up is a one-line change to each constant.
+ * Both pages are `pages/Auth.tsx`. Sign-up answers only while no account
+ * exists, or on a ledger started with ALLOW_SIGNUP=true; otherwise the page
+ * says registration is closed.
  */
 const SIGN_IN_ROUTE = "/signin";
 const SIGN_UP_ROUTE = "/signup";
@@ -307,6 +305,7 @@ export default function Landing() {
           </Link>
 
           <div className="l-nav-actions">
+            <Link to="/verify" className="l-btn-auth l-btn-signin">Verify record</Link>
             <MagneticButton
               as={Link}
               to={SIGN_IN_ROUTE}

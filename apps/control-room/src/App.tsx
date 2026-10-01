@@ -16,6 +16,7 @@ import Overrides from "./pages/Overrides";
 import SlotRegistry from "./pages/SlotRegistry";
 import Keys from "./pages/Keys";
 import Devices from "./pages/Devices";
+import Accounts from "./pages/Accounts";
 import Integrity from "./pages/Integrity";
 import FailedAttempts from "./pages/FailedAttempts";
 import LiveDemo from "./pages/LiveDemo";
@@ -87,6 +88,10 @@ const PAGES: Record<string, { title: string; sub: string }> = {
   "/devices": {
     title: "Devices",
     sub: "Enrolled signing keys. Revoking one invalidates nothing it already signed",
+  },
+  "/accounts": {
+    title: "Accounts",
+    sub: "Who can sign in, who created them, and what the gateway refused before it reached an engine",
   },
   "/demo": {
     title: "Live demonstration",
@@ -169,6 +174,7 @@ export default function App() {
             Devices
             {summary && <span className="nav-count">{summary.totals.active_devices}</span>}
           </NavLink>
+          <NavLink to="/accounts">Accounts</NavLink>
           <NavLink to="/integrity">Integrity</NavLink>
           <NavLink to="/demo">Live Demo</NavLink>
           <NavLink to="/failed">
@@ -261,6 +267,7 @@ export default function App() {
             <Route path="/activity" element={<Activity />} />
             <Route path="/keys" element={<Keys />} />
             <Route path="/devices" element={<Devices />} />
+            <Route path="/accounts" element={<Accounts />} />
             <Route path="/integrity" element={<Integrity />} />
             <Route path="/failed" element={<FailedAttempts />} />
             <Route path="/demo" element={<LiveDemo />} />

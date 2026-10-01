@@ -12,3 +12,4 @@ export * from "./opening-key.js";
 export * from "./timelock.js";
 export * from "./transfer-key.js";
 export * from "./share-wrap.js";
+export * from "./request-signature.js";

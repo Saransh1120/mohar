@@ -31,6 +31,46 @@ Clients: control-room (web) - verify-portal (public) - centre-client (PC)
 
 ## Services
 
+### `gateway` — the one way in
+
+> **Implementation note.** Built, in front of `ledger` only: the other services
+> in the map do not exist as processes for it to front. It does not terminate
+> TLS and there is no mTLS behind it; the ledger is bound to loopback, or shares
+> a secret with the gateway. See `RUNNING.md`, "The gateway".
+
+For every request the gateway settles which route it is, who is asking, and how
+often, and forwards only if all three hold. The policy is one table, read top
+to bottom (`services/gateway/src/routes/policy.ts`); a route not in it is
+restricted, not open.
+
+There are three kinds of caller and each proves itself differently:
+
+- **An operator** holds a session: a random token whose SHA-256 is in
+  `ref.session`. The gateway asks the ledger whose it is. A role (`control_room`
+  against the rest) decides what the account may change.
+- **A device asking an engine for a ruling** signs the request: Ed25519, with
+  the key it was enrolled with, over the method, path, time, a nonce and the
+  hash of the body. A request that then names a different device in its body or
+  path is refused. This is what turns the `deviceId` an engine is handed from a
+  number anyone can type into the device that sent it.
+- **A device recording something** sends a signed event, and the signature on
+  the event is the credential. The room monitor needs nothing more than it
+  already sends.
+
+Bodies pass through as the bytes that arrived. A signature is over exact bytes
+or a canonical form, and a proxy that parsed and re-encoded JSON would break
+every one of them.
+
+The gateway decides who is asking and never whether the act is allowed. That
+stays with the engine, which records the attempt whichever way it rules. A
+request the gateway refuses never reached an engine, so it is in the gateway's
+own record instead, with what was found: the role held against the role needed,
+the skew in seconds, the limit that was hit.
+
+It holds no database credential. What it knows about an account or a device it
+asks the ledger for, so a compromised gateway can do what the ledger's API
+allows and nothing more.
+
 ### `ledger` — custody event store
 
 The spine. Append-only, hash-chained events. Every event carries the signature of

@@ -38,6 +38,27 @@ export async function listDevices(pool: Pool): Promise<DeviceRecord[]> {
   }));
 }
 
+/** One device by id, revoked or not. The gateway reads a signing key through this. */
+export async function getDevice(pool: Pool, id: string): Promise<DeviceRecord | null> {
+  const { rows } = await pool.query(
+    `select id, kind, encode(pubkey,'hex') as pubkey, centre_id,
+            enrolled_at, revoked_at
+       from ref.device
+      where id = $1::uuid`,
+    [id],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    id: r.id,
+    kind: r.kind,
+    pubkey: r.pubkey,
+    centreId: r.centre_id,
+    enrolledAt: (r.enrolled_at as Date).toISOString(),
+    revokedAt: r.revoked_at ? (r.revoked_at as Date).toISOString() : null,
+  };
+}
+
 export async function enrolDevice(
   pool: Pool,
   input: {

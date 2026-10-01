@@ -12,6 +12,7 @@
     "test": "node --test dist/**/*.test.js"
   },
   "dependencies": {
+    "@mohar/access": "workspace:*",
     "@fastify/cors": "^11.0.1",
     "@mohar/contracts": "workspace:*",
     "@mohar/crypto-core": "workspace:*",

@@ -302,7 +302,69 @@ export async function signOut(pool: Pool, token: string | null): Promise<void> {
 }
 
 /** How many accounts exist. Zero means the next sign-up claims the system. */
-export async function accountCount(pool: Pool): Promise<number> {
-  const { rows } = await pool.query<{ n: string }>("select count(*)::text as n from ref.account");
+export async function accountCount(db: Pool | PoolClient): Promise<number> {
+  const { rows } = await db.query<{ n: string }>("select count(*)::text as n from ref.account");
   return Number(rows[0]?.n ?? 0);
+}
+
+export interface ListedAccount extends Account {
+  disabledAt: string | null;
+  disabledReason: string | null;
+}
+
+/** Every account, disabled ones included. Never the password material. */
+export async function listAccounts(pool: Pool): Promise<ListedAccount[]> {
+  const { rows } = await pool.query<AccountRow>(
+    `select id, username, display_name, role, person_id, created_at, last_sign_in,
+            disabled_at, disabled_reason
+       from ref.account
+      order by created_at`,
+  );
+  return rows.map((r) => ({
+    ...toAccount(r),
+    disabledAt: r.disabled_at ? r.disabled_at.toISOString() : null,
+    disabledReason: r.disabled_reason,
+  }));
+}
+
+/**
+ * Disable an account and end its sessions.
+ *
+ * Disabled, not deleted: an acknowledgement or an override decision made by
+ * this account last week still has to name who made it.
+ *
+ * The last control room operator cannot be disabled. With sign-up closed, a
+ * system with no operator has nobody who can create one.
+ */
+export async function disableAccount(tx: PoolClient, id: string, reason: string): Promise<void> {
+  const { rows } = await tx.query<{ role: string; disabled_at: Date | null }>(
+    "select role, disabled_at from ref.account where id = $1::uuid for update",
+    [id],
+  );
+  const target = rows[0];
+  if (!target) throw new AuthError(404, "No such account.");
+  if (target.disabled_at) throw new AuthError(409, "That account is already disabled.");
+
+  if (target.role === "control_room") {
+    const { rows: others } = await tx.query<{ n: number }>(
+      `select count(*)::int as n from ref.account
+        where role = 'control_room' and disabled_at is null and id <> $1::uuid`,
+      [id],
+    );
+    if ((others[0]?.n ?? 0) === 0) {
+      throw new AuthError(
+        409,
+        "This is the only control room operator. Create another before disabling this one.",
+      );
+    }
+  }
+
+  await tx.query(
+    "update ref.account set disabled_at = now(), disabled_reason = $2 where id = $1::uuid",
+    [id, reason],
+  );
+  await tx.query(
+    "update ref.session set revoked_at = now() where account_id = $1::uuid and revoked_at is null",
+    [id],
+  );
 }

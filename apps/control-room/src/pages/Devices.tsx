@@ -40,10 +40,10 @@ export default function Devices() {
     <>
       <div className="note">
         <strong>Attestation is accepted but not yet verified.</strong> There is no Android Keystore
-        root-of-trust check in this build, so enrolment currently trusts whoever can reach the
-        endpoint. That is a real gap, not a simplification — see{" "}
-        <span className="mono">adr/0003</span>. Enrolment must stay behind the gateway until it is
-        closed.
+        root-of-trust check in this build. Through the gateway, enrolling a device takes a control
+        room operator's session, so who enrolled is known; what kind of hardware holds the key is
+        still taken on that operator's word. That is a real gap, not a simplification — see{" "}
+        <span className="mono">adr/0003</span>.
       </div>
 
       {err && <div className="banner">{err}</div>}

@@ -14,12 +14,12 @@ ESP32 firmware in `firmware/`, written as Arduino sketches.
 
 | Path | What lives here |
 | --- | --- |
-| `services/` | Backend services. Only `ledger` is implemented — it also hosts the access engine, registry and auth routes, sealing, the hand-off engine, the watchdog and the alert notifier. The other seven directories are placeholders with a README and an empty `src/`. |
+| `services/` | Backend services. `ledger` hosts the chain, registry and auth routes, sealing, the hand-off, strong room and opening engines, the watchdog and the alert notifier. `gateway` is the one way in: operator sessions, device signatures, rate limits; it forwards to the ledger and holds no database credential. `access` is the access engine as its own package. The rest are placeholders with a README and an empty `src/`. |
 | `packages/` | `contracts` (shared types/enums/events), `crypto-core` (chain, Merkle, Shamir, custody keys, drand), `ledger-client`, `ui-kit` |
 | `apps/` | `control-room` is the only working UI. `verify-portal`, `centre-client`, `field-app` are not built. |
 | `firmware/` | ESP32 room monitor and related sketches |
 | `infra/` | SQL migrations, docker, terraform, attestation roots |
-| `tools/` | `seed`, `label-print`, `e2e`, `simulator`, `drill`, `demo-setup`, `provision-device`, `monitor-watchdog` |
+| `tools/` | `seed`, `label-print`, `e2e`, `run-gated`, `simulator`, `drill`, `demo-setup`, `provision-device`, `monitor-watchdog` |
 | `docs/` | Numbered design docs `00`–`12`, plus `docs/adr/` for decisions |
 
 ## Commands
@@ -31,7 +31,8 @@ pnpm typecheck
 pnpm test                  # node --test over built dist/**/*.test.js
 pnpm test:crypto           # crypto-core only
 pnpm migrate               # needs MIGRATE_DATABASE_URL
-pnpm --filter @mohar/ledger start
+pnpm start                 # gateway on :8081, ledger behind it on 127.0.0.1:8091
+pnpm --filter @mohar/ledger start   # the ledger alone on :8081, every route open
 pnpm --filter @mohar/control-room dev
 ```
 
@@ -49,8 +50,13 @@ configured despite the `lint` turbo task — do not invent one.
 - Run migrations as `mohar_migrator`, never as `mohar_app`. The app role's lack
   of `UPDATE`/`DELETE` on `led.event` *is* the append-only guarantee, and the
   ledger refuses to boot if that check fails.
-- There is no authentication anywhere — `gateway` owns it and does not exist.
-  Nothing may be exposed beyond localhost.
+- `services/gateway` is the only thing that checks who is asking. The ledger
+  checks no credential of its own, so it is run behind the gateway on loopback
+  (`pnpm start`) and never exposed directly. A new ledger route needs a row in
+  `services/gateway/src/routes/policy.ts`; without one it is restricted to a
+  control room operator (or, for a `GET`, any signed-in account), not open.
+- The gateway never re-serialises a body: signed bytes go through as they
+  arrived. Nothing between a device and the ledger may parse and re-encode JSON.
 
 ## Project rules
 

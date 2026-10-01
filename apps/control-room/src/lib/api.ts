@@ -48,15 +48,42 @@ export function storeToken(token: string | null): void {
   }
 }
 
-function authHeaders(): Record<string, string> {
+/** The session, as a header. Every call that is not a signed event carries it. */
+export function authHeaders(): Record<string, string> {
   const token = storedToken();
   return token ? { authorization: `Bearer ${token}` } : {};
 }
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(BASE + path, { headers: authHeaders() });
-  if (!res.ok) throw new ApiError(res.status, `GET ${path} → ${res.status}`);
+  if (!res.ok) {
+    // The gateway says why it refused; that is worth more than a status code.
+    const json = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new ApiError(res.status, json.error ?? `GET ${path} → ${res.status}`);
+  }
   return (await res.json()) as T;
+}
+
+/**
+ * The URL to open an `EventSource` on.
+ *
+ * `EventSource` cannot send an Authorization header, and the session token
+ * does not belong in a URL. So the gateway is asked for a ticket first: random,
+ * good for one stream, dead thirty seconds after it was issued. A 404 means
+ * there is no gateway in front (the page is talking to the ledger directly),
+ * and the stream is opened as it always was.
+ */
+export async function streamUrl(path: string, params: Record<string, string> = {}): Promise<string> {
+  const q = new URLSearchParams(params);
+  const res = await fetch(`${BASE}/gateway/stream-ticket`, { method: "POST", headers: authHeaders() });
+  if (res.status === 201) {
+    const { ticket } = (await res.json()) as { ticket: string };
+    q.set("ticket", ticket);
+  } else if (res.status !== 404) {
+    throw new ApiError(res.status, `stream ticket → ${res.status}`);
+  }
+  const qs = q.toString();
+  return `${BASE}${path}${qs ? `?${qs}` : ""}`;
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
@@ -717,6 +744,32 @@ export interface DutyRoster {
   packets: number;
 }
 
+export interface ListedAccount extends Account {
+  disabledAt: string | null;
+  disabledReason: string | null;
+}
+
+/** One request the gateway refused: who, what, and what it found. No ranking. */
+export interface GatewayRefusal {
+  at: string;
+  method: string;
+  path: string;
+  ip: string;
+  status: number;
+  reason: string;
+  detail: Record<string, unknown>;
+  caller: string;
+}
+
+export interface GatewayStatus {
+  startedAt: string;
+  upstream: string;
+  forwarded: number;
+  refusedByReason: Record<string, number>;
+  limits: Record<string, { burst: number; perMinute: number }>;
+  recentRefusals: GatewayRefusal[];
+}
+
 export interface LockResult {
   outcome: "locked" | "refused";
   denyReasons: string[];
@@ -909,6 +962,15 @@ export const api = {
       throw e;
     }
   },
+
+  // Accounts are kept by a control room operator. None of these signs anyone in.
+  accounts: () => get<{ accounts: ListedAccount[] }>("/auth/accounts"),
+  createAccount: (input: { username: string; password: string; displayName: string; role: string }) =>
+    post<{ account: Account }>("/auth/accounts", input),
+  disableAccount: (id: string, reason: string) =>
+    post<{ status: string }>(`/auth/accounts/${id}/disable`, { reason }),
+  /** What the gateway has refused since it started. A 404 means there is no gateway in front. */
+  gatewayStatus: () => get<GatewayStatus>("/gateway/status"),
 
   health: () => get<Health>("/health"),
   summary: (examId?: string) =>

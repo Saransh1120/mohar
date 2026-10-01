@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
-import { withTransaction } from "../db.js";
-import { decideAccess, type AccessRequest } from "../domain/policy.js";
+import { withTransaction } from "./db.js";
+import { decideAccess, type AccessRequest } from "./policy.js";
 import {
   issueKey,
   revokeKey,
@@ -12,7 +12,7 @@ import {
   recordAttempt,
   rotateAll,
   epochStatus,
-} from "../domain/keys.js";
+} from "./keys.js";
 
 /**
  * The access engine's HTTP surface.

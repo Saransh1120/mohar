@@ -1,5 +1,6 @@
 import { assertNoNulls, canonicalBytes } from "@mohar/crypto-core";
 import type { EventBody } from "@mohar/contracts";
+import { authHeaders } from "./api";
 
 /**
  * ── The centre PC as a signing device ────────────────────────────────────────
@@ -168,7 +169,8 @@ export async function pairThisBrowser(centreId?: string): Promise<CentreIdentity
   const publicKeyHex = toHex(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey)));
   const res = await fetch("/api/devices", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    // Enrolment is a control room operator's: the gateway wants the session.
+    headers: { "content-type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       kind: "centre_pc",
       pubkeyHex: publicKeyHex,

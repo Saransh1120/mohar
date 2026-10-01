@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-types/
 build/
 .env
 .env.*
@@ -29,6 +30,8 @@ firmware/*/src/node_config.h
 firmware/*/src/monitor_config.h
 firmware/arduino-ide/*/node_config.h
 firmware/arduino-ide/*/monitor_config.h
+firmware/seal-lock/src/seal_config.h
+firmware/arduino-ide/*/seal_config.h
 firmware/arduino-ide/*/*.exe
 
 # Printed seam labels. The SVG is the only copy of a packet's seam secret.

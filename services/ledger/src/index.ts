@@ -3,8 +3,15 @@ import cors from "@fastify/cors";
 import { createPool, assertAppendOnly, LedgerPrivilegeError } from "./db.js";
 import { registerRoutes } from "./http/routes.js";
 import { registerRegistryRoutes } from "./http/registry-routes.js";
-import { registerAccessRoutes } from "./http/access-routes.js";
+import { registerAccessRoutes } from "@mohar/access";
+import { registerAccessProxy } from "./http/access-proxy.js";
 import { registerAuthRoutes } from "./http/auth-routes.js";
+import {
+  exposureWarning,
+  listenHost,
+  registerGatewayGuard,
+  trustedProxies,
+} from "./http/gateway-guard.js";
 import { registerTransferRoutes } from "./http/transfer-routes.js";
 import { registerDemoRoutes } from "./http/demo-routes.js";
 import { registerAlertRoutes } from "./http/alert-routes.js";
@@ -14,6 +21,7 @@ import { registerOverrideRoutes } from "./http/override-routes.js";
 import { registerOpeningRoutes } from "./http/opening-routes.js";
 import { startWatchdog } from "./domain/watchdog.js";
 import { channelsFromEnv, startNotifier } from "./domain/notify.js";
+import { sweepAnchors } from "./anchor.js";
 
 const PORT = Number(process.env["PORT"] ?? 8081);
 const DATABASE_URL = process.env["DATABASE_URL"];
@@ -36,11 +44,13 @@ const app = Fastify({
   // would invalidate every signature, so we keep Fastify's default parser and
   // never mutate req.body before verification.
   bodyLimit: 2 * 1024 * 1024,
+  trustProxy: trustedProxies(process.env),
 });
 
 const pool = createPool(DATABASE_URL);
 let stopWatchdog: (() => void) | null = null;
 let stopNotifier: (() => void) | null = null;
+let anchorTimer: ReturnType<typeof setInterval> | null = null;
 
 async function main(): Promise<void> {
   // Refuse to start if this connection could rewrite history. The append-only
@@ -61,19 +71,24 @@ async function main(): Promise<void> {
   // browser tab, which is what a Netlify (or any other) frontend does. CORS
   // is not an access-control boundary — it stops another site's JavaScript
   // from riding a visitor's browser to this API, nothing more. A direct HTTP
-  // client (curl, Postman, another server) ignores it entirely. Every route
-  // here stays unauthenticated until `gateway` exists — that is what actually
-  // needs fixing before this runs publicly for longer than a demo.
+  // client (curl, Postman, another server) ignores it entirely. Who may call
+  // what is decided in `services/gateway`, not here: this process checks no
+  // credential of its own beyond the signature on an event.
   const origins = (process.env["CORS_ORIGINS"] ?? "http://localhost:5173")
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean);
   await app.register(cors, { origin: origins });
 
+  // After CORS, before every route: with GATEWAY_SECRET set, nothing below
+  // answers a request that did not come through services/gateway.
+  registerGatewayGuard(app, process.env);
+
   registerAuthRoutes(app, pool);
   registerRoutes(app, pool);
   registerRegistryRoutes(app, pool);
-  registerAccessRoutes(app, pool);
+  if (process.env["ACCESS_URL"]) registerAccessProxy(app, process.env["ACCESS_URL"]);
+  else registerAccessRoutes(app, pool);
   registerSealRoutes(app, pool);
   registerTransferRoutes(app, pool);
   registerOverrideRoutes(app, pool);
@@ -81,8 +96,17 @@ async function main(): Promise<void> {
   registerOpeningRoutes(app, pool);
   registerDemoRoutes(app, pool);
   registerAlertRoutes(app, pool);
-  await app.listen({ port: PORT, host: "0.0.0.0" });
-  app.log.info({ port: PORT }, "ledger listening");
+  await app.listen({ port: PORT, host: listenHost(process.env) });
+  app.log.info({ port: PORT, host: listenHost(process.env) }, "ledger listening");
+  const exposed = exposureWarning(process.env);
+  if (exposed) app.log.warn(exposed);
+
+  const anchorSweep = () => {
+    void sweepAnchors(pool, app.log).catch((err) => app.log.warn({ err }, "anchor sweep failed"));
+  };
+  anchorSweep();
+  anchorTimer = setInterval(anchorSweep, 60 * 60_000);
+  anchorTimer.unref();
 
   if (LEG_WATCHDOG_MS > 0) {
     stopWatchdog = startWatchdog(pool, app.log, LEG_WATCHDOG_MS);
@@ -112,6 +136,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     app.log.info({ signal }, "shutting down");
     stopWatchdog?.();
     stopNotifier?.();
+    if (anchorTimer) clearInterval(anchorTimer);
     void app.close().then(() => pool.end()).then(() => process.exit(0));
   });
 }

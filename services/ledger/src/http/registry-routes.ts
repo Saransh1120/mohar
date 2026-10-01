@@ -4,6 +4,7 @@ import { z } from "zod";
 import { DeviceKind, PackageState } from "@mohar/contracts";
 import {
   listDevices,
+  getDevice,
   enrolDevice,
   revokeDevice,
   listPackages,
@@ -28,9 +29,10 @@ import { listActivity, operationalSummary } from "../domain/activity.js";
  * only way into the chain is a signed event through `POST /events`, and keeping
  * that a single entrance is what makes the chain worth trusting.
  *
- * There is no authentication yet. The `gateway` service owns authn/authz for the
- * whole system (docs/02) and is not built; until it is, this must not be exposed
- * beyond localhost.
+ * Nothing here checks who is asking. `services/gateway` does that for the whole
+ * system (docs/02): enrolment, revocation and the registers are a control room
+ * operator's there. Reached directly, these routes are open, which is why the
+ * ledger is bound to loopback or given a GATEWAY_SECRET.
  */
 
 const EnrolBody = z.object({
@@ -54,6 +56,16 @@ export function registerRegistryRoutes(app: FastifyInstance, pool: Pool): void {
 
   app.get("/devices", async (_req, reply) => {
     return reply.send({ devices: await listDevices(pool) });
+  });
+
+  /** One device, revoked or not: the key the gateway checks a signature against. */
+  app.get<{ Params: { id: string } }>("/devices/:id", async (req, reply) => {
+    if (!z.string().uuid().safeParse(req.params.id).success) {
+      return reply.code(404).send({ error: "unknown device" });
+    }
+    const device = await getDevice(pool, req.params.id);
+    if (!device) return reply.code(404).send({ error: "unknown device" });
+    return reply.send(device);
   });
 
   /**
