@@ -135,10 +135,32 @@ export const PackageSealedPayload = z.object({
   seamCommitment: Sha256Hex.optional(),
 });
 
-export const SealAppliedPayload = z.object({
-  sealSerial: ShortText,
-  photoSha256: Sha256Hex,
-});
+export const SealAppliedPayload = z
+  .object({
+    sealSerial: ShortText,
+    photoSha256: Sha256Hex,
+    /**
+     * The two-code seam label, when the packet carries one. Optional and
+     * omitted for the same reason as `seamCommitment` above: seals recorded
+     * before the label existed must keep validating byte for byte.
+     *
+     * `seamId` is the opaque handle printed on the label and
+     * `labelCommitment` is sha256("MOHAR-SEAM-v1" ‖ seamId ‖ seamSecret). The
+     * secret is never in an event: it exists on the label and nowhere else.
+     */
+    seamId: z
+      .string()
+      .regex(/^[0-9A-HJKMNP-TV-Z]{20,32}$/, "expected a Crockford base32 seam id")
+      .optional(),
+    labelCommitment: Sha256Hex.optional(),
+    /** One label, or two identical ones on opposite flaps. */
+    labelsPerPacket: z.union([z.literal(1), z.literal(2)]).optional(),
+    /** Papers counted into the packet before it was closed. */
+    paperCount: z.number().int().positive().max(10_000).optional(),
+  })
+  .refine((p) => (p.seamId === undefined) === (p.labelCommitment === undefined), {
+    message: "seamId and labelCommitment are recorded together or not at all",
+  });
 
 export const HandoffPayload = z.object({
   fromPersonId: Uuid,

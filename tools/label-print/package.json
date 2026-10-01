@@ -1,0 +1,23 @@
+{
+  "name": "@mohar/label-print",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test dist/**/*.test.js",
+    "label": "node dist/index.js"
+  },
+  "dependencies": {
+    "@mohar/contracts": "workspace:*",
+    "@mohar/crypto-core": "workspace:*",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.7.0",
+    "@types/qrcode": "^1.5.6",
+    "jsqr": "^1.4.0"
+  }
+}
