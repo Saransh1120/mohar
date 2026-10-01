@@ -154,6 +154,7 @@ a genuine cross-check rather than the code agreeing with itself.
 | `apps/control-room` | React + Vite + Leaflet. Overview, packages, custody timelines, transfers, alerts, strong rooms, rosters, opening ceremonies, override approval, activity ledger, key management, devices, accounts, integrity |
 | `tools/seed` | Key generation, device enrolment, and a custody walkthrough driven through the real engine |
 | `tools/label-print` | Prints a packet's two-code seam label and signs its sealing |
+| `tools/seal-lock-command` | Signs a short-lived UART command after a recorded, granted unlock attempt; requires migration 010 |
 | `tools/e2e` | End-to-end checks against a real Postgres: `transfer.mjs`, `seal.mjs`, `sweeps.mjs`, `doors.mjs`, `opening.mjs`, `gateway.mjs` |
 | `tools/run-gated` | `pnpm start`: the ledger on loopback and the gateway in front of it, as one command |
 
@@ -453,7 +454,8 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   engine, the watchdog and notifier wording, the label tool). The checks that
   need Postgres are in `tools/e2e` and are run by hand.
 - **The public verify page and field PWA exist.** The field PWA records signed
-  observations and retains photos locally; it does not yet provide hardware
+  observations, can send a device-signed damaged-label override request, and
+  retains photos locally. It does not yet provide hardware
   attestation, biometric hand-offs or upload photo bytes to the server.
   `centre-client` remains planned.
 - **Sealing registers the seam label and nothing else.** The Opening Key is not
@@ -539,7 +541,8 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
 - **The seal-lock sketch is not a field-tested lock.** The ESP32-C6 source and
   Arduino sketch verify signed, expiring, one-use commands and spool signed
   reports. Migration 010 and `tools/seal-lock-command` issue short-lived commands
-  from recent granted unlock attempts. Board flash, electrical tests, UART
+  from recent granted unlock attempts. An opened enclosure or a failed closure
+  creates an alert when its signed event reaches the ledger. Board flash, electrical tests, UART
   delivery and secure-boot provisioning are still required. Device sequence
   numbers are not built.
 

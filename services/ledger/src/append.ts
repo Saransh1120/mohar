@@ -228,6 +228,20 @@ export async function appendEvent(
   );
 
   const row = inserted.rows[0]!;
+  const payload = body.payload as Record<string, unknown>;
+  const lockAlert = body.kind === "ENCLOSURE_OPENED" && payload["tamperSwitchOpen"] === true
+    ? { kind: "SEAL_LOCK_TAMPER", consequence: "Quarantine this packet and inspect the enclosure before any opening." }
+    : body.kind === "SEAL_LOCK_CLOSED" && payload["reedSwitchClosed"] === false
+      ? { kind: "SEAL_LOCK_NOT_CLOSED", consequence: "Keep this packet under guard and inspect the lock before transfer." }
+      : null;
+  if (lockAlert) {
+    await tx.query(
+      `insert into led.alert (kind, package_id, centre_id, device_id, evidence, requires_decision, consequence)
+       values ($1, $2::uuid, $3::uuid, $4::uuid, $5::jsonb, true, $6)`,
+      [lockAlert.kind, body.packageId ?? null, body.centreId ?? null, body.actorDeviceId,
+        JSON.stringify({ eventId: body.id, ...payload }), lockAlert.consequence],
+    );
+  }
   return {
     status: "appended",
     flags,

@@ -7,6 +7,13 @@ photo plus signed event in IndexedDB before network transfer. Reconnect retries
 the same event ID, and ledger rejections remain visible in the queue. The photo
 hash is inside the signed event. Export photos before clearing browser data.
 
+Enrolment requires a control-room operator to sign in on the same phone first.
+The app reuses that session only for `POST /devices`; field actions use the
+phone's Ed25519 key. A damaged-label request includes the retained photo hash
+and a device-signed request to `/legs/:id/override`. It waits for the two
+control-room decisions before a hand-off may proceed. The photo bytes remain
+on the phone for export; the server receives the hash, not the file.
+
 This is a browser field client. WebCrypto keys do not give Android hardware
 attestation, and this app does not perform fingerprint login, NFC reading or
 dual-signature handoff. Those remain for a native Android implementation. No

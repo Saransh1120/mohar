@@ -31,9 +31,13 @@ LittleFS before any network send. A failed flash write disables the lock until
 service. The device never formats a failed flash partition automatically.
 
 The UART protocol and signed bytes are specified at the top of the sketch.
-The issuing authority must sign only a granted access attempt for this package;
-the command issuer and its operational key custody still need integration.
-Do not use an arbitrary serial sender as the authority.
+After migration 010, `tools/seal-lock-command/index.mjs --attempt <uuid>` checks
+that the access engine granted a recent `unlock`, records a unique command and
+signs its 30-second UART line. Keep the authority seed outside Git and on an
+operator-controlled machine; the tool prints the command only after its audit
+row commits. The board accepts increasing counters, so a command that expires
+before delivery does not prevent later commands. Sending the line to the
+board's UART and operational custody of that authority key still need setup.
 
 This has not been compiled for or electrically tested on a physical ESP32-C6.
 Before field use, test driver polarity, power-loss locking, tamper transitions,

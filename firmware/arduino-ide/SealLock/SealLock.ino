@@ -2,9 +2,9 @@
  * ESP32-C6 package seal lock. Arduino IDE sketch.
  *
  * A command is one ASCII line on the service UART:
- *   OPEN|decision-event-uuid|next-counter|valid-until-unix|128-lowercase-hex-signature
+ *   OPEN|decision-attempt-uuid|next-counter|valid-until-unix|128-lowercase-hex-signature
  * Signature: Ed25519 over the exact ASCII bytes
- *   MOHAR-SEAL-LOCK-v1|package-uuid|decision-event-uuid|next-counter|valid-until-unix
+ *   MOHAR-SEAL-LOCK-v1|package-uuid|decision-attempt-uuid|next-counter|valid-until-unix
  * The authority key is pinned in seal_config.h. A replay, expired command, bad
  * signature, open tamper loop or unavailable flash spool never energises the coil.
  * The counter is persisted before energising it. Default and reset state is locked.
@@ -69,7 +69,8 @@ static bool recordTamper(bool open) {
 
 static bool recordOpened(const char *decisionId) {
   JsonWriter p;
-  p.str("decisionEventId", decisionId);
+  p.num("commandCounter", g_counter);
+  p.str("decisionAttemptId", decisionId);
   p.str("deviceId", DEVICE_ID);
   p.str("packageId", PACKAGE_ID);
   p.boolean("reedSwitchClosed", reedClosed());
@@ -112,7 +113,9 @@ static void command(String line) {
   uint64_t next = strtoull(countText.c_str(), nullptr, 10);
   uint64_t expiry = strtoull(expiryText.c_str(), nullptr, 10);
   uint32_t now = g_clock.unixTime();
-  if (g_counter == UINT32_MAX || next != uint64_t(g_counter) + 1 || expiry < now || expiry > uint64_t(now) + 60) return;
+  // An issued command may expire without being delivered. Skipped counters are
+  // safe; only reuse or rollback is forbidden.
+  if (next <= g_counter || next > UINT32_MAX || expiry < now || expiry > uint64_t(now) + 60) return;
   if (g_open || g_fault || tamperOpen() || !g_spool.healthy() || g_clock.lostPower()) return;
 
   uint8_t signature[64];

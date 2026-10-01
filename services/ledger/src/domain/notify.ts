@@ -48,6 +48,8 @@ const TITLES: Record<string, string> = {
   SEAM_DECODE_FAILED: "A seam label would not scan",
   SEAM_MANUAL_OVERRIDE: "Hand-off approved without a scan of the label",
   SEAL_MISMATCH: "Label at the opening is not the one that was sealed",
+  SEAL_LOCK_TAMPER: "Seal-lock enclosure opened",
+  SEAL_LOCK_NOT_CLOSED: "Seal lock did not confirm closure",
   CEREMONY_INCOMPLETE: "Opening not finished by its scheduled time",
   CEREMONY_SERIAL_ATTEMPTS_EXHAUSTED: "Three wrong serials typed at an opening",
 };

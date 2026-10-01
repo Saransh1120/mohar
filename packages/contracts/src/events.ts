@@ -666,8 +666,9 @@ export const EnclosureOpenedPayload = z.object({
 export const SealLockOpenedPayload = z.object({
   deviceId: Uuid,
   packageId: Uuid,
-  /** The signed decision the board verified before it energised the solenoid. */
-  decisionEventId: Uuid,
+  /** The granted access attempt bound into the signed command. */
+  decisionAttemptId: Uuid,
+  commandCounter: z.number().int().positive(),
   reedSwitchClosed: z.boolean(),
 });
 
