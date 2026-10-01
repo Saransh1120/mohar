@@ -21,9 +21,12 @@
  * go wrong on the morning of a deployment.
  */
 
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 
 const LEDGER = process.env["LEDGER_URL"] ?? "http://localhost:8081";
+// The address the control room is opened at. The station grants its browser
+// access to that origin and no other.
+const CONTROL_ROOM_ORIGIN = (process.env["CONTROL_ROOM_ORIGIN"] ?? "http://localhost:5173").replace(/\/+$/, "");
 
 // ── arguments ───────────────────────────────────────────────────────────────
 
@@ -139,6 +142,11 @@ function printBlock({ device, keys, centre, exam }) {
   console.log(`#define EXAM_ID         "${exam?.id ?? NIL}"`);
   console.log(`#define CENTRE_ID       "${centre?.id ?? NIL}"`);
   console.log();
+  // Only the witness station serves HTTP, but the token is printed for every
+  // board: a header that defines it and never reads it costs nothing.
+  console.log(`#define STATION_TOKEN   "${randomBytes(16).toString("hex")}"`);
+  console.log(`#define CONTROL_ROOM_ORIGIN "${CONTROL_ROOM_ORIGIN}"`);
+  console.log();
   console.log(line);
   console.log();
   console.log(`  kind        ${device.kind}`);
@@ -146,6 +154,8 @@ function printBlock({ device, keys, centre, exam }) {
   console.log(`  centre      ${centre ? `${centre.code} (${centre.name ?? ""})` : "not bound"}`);
   console.log(`  ledger      ${LEDGER}`);
   console.log();
+  console.log("  The station token is what the control room sends with every request to");
+  console.log("  this board. Enter it on the Slots page when you pair the station.");
   console.log("  The private key is printed once and is not stored anywhere.");
   console.log("  Copy it now. To retire this device:");
   console.log(`    curl -X POST ${LEDGER}/devices/${device.id}/revoke`);

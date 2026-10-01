@@ -5,6 +5,8 @@ import {
   station,
   loadStationUrl,
   saveStationUrl,
+  loadStationToken,
+  saveStationToken,
   normalise,
   enrolInstruction,
   type StationStatus,
@@ -25,6 +27,7 @@ import { USB_BASE, connectUsb, usbSupported, useUsbStation } from "../lib/usbSta
  */
 export default function StationPanel({ onEnrolled }: { onEnrolled?: () => void }) {
   const [url, setUrl] = useState(() => loadStationUrl());
+  const [token, setToken] = useState(() => loadStationToken());
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<StationStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +125,7 @@ export default function StationPanel({ onEnrolled }: { onEnrolled?: () => void }
     const base = normalise(url);
     if (!base) return;
     saveStationUrl(base);
+    saveStationToken(token);
     setUrl(base);
     void poll();
   };
@@ -183,6 +187,17 @@ export default function StationPanel({ onEnrolled }: { onEnrolled?: () => void }
           onChange={(ev) => setUrl(ev.target.value)}
           onKeyDown={(ev) => ev.key === "Enter" && connect()}
         />
+        {!onUsb && (
+          <input
+            className="wit-select"
+            type="password"
+            autoComplete="off"
+            placeholder="station token — the STATION_TOKEN flashed onto the board"
+            value={token}
+            onChange={(ev) => setToken(ev.target.value)}
+            onKeyDown={(ev) => ev.key === "Enter" && connect()}
+          />
+        )}
         <button className="wit-btn" onClick={connect}>
           Connect
         </button>

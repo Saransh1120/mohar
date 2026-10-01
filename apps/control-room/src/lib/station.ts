@@ -11,11 +11,18 @@
  * sign, cannot reach the ledger, and holds no key — it manages templates on the
  * reader in front of you and nothing more. If this module went away entirely,
  * every claim the system makes would still stand.
+ *
+ * The station answers only a request that carries its token, and grants a
+ * browser access from one origin. The token is typed in once when the station
+ * is paired and kept in this browser. It is not a signing key: it lets this
+ * page manage templates on that reader, and nothing it unlocks can put a
+ * record in the chain.
  */
 
 import { USB_BASE, usbRequest } from "./usbStation";
 
 const STORAGE_KEY = "mohar.station.url";
+const TOKEN_KEY = "mohar.station.token";
 
 export interface StationStatus {
   deviceId: string;
@@ -46,6 +53,16 @@ export function loadStationUrl(): string {
 
 export function saveStationUrl(url: string): void {
   localStorage.setItem(STORAGE_KEY, normalise(url));
+}
+
+export function loadStationToken(): string {
+  return localStorage.getItem(TOKEN_KEY) ?? "";
+}
+
+export function saveStationToken(token: string): void {
+  const t = token.trim();
+  if (t) localStorage.setItem(TOKEN_KEY, t);
+  else localStorage.removeItem(TOKEN_KEY);
 }
 
 /** Accept "10.0.0.5", "10.0.0.5:80" or a full URL and produce a base URL. */
@@ -122,8 +139,19 @@ async function dial<T>(base: string, path: string, method: "GET" | "POST"): Prom
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(base + path, { method, signal: ctl.signal });
+    const token = loadStationToken();
+    const res = await fetch(base + path, {
+      method,
+      signal: ctl.signal,
+      ...(token ? { headers: { "x-station-token": token } } : {}),
+    });
     const body = (await res.json().catch(() => ({}))) as T & { error?: string };
+    if (res.status === 401) {
+      throw new Error(
+        `${base} refused this page: ${body.error ?? "missing or wrong station token"}. ` +
+          "Enter the STATION_TOKEN that was flashed onto this board.",
+      );
+    }
     if (!res.ok) throw new Error(body.error ?? `${method} ${path} → ${res.status}`);
     return body;
   } catch (err) {
@@ -144,7 +172,8 @@ async function dial<T>(base: string, path: string, method: "GET" | "POST"): Prom
     if (e.message === "Failed to fetch") {
       throw new Error(
         `Could not reach ${base}. It must be on the same network as this machine, ` +
-          "and this page must be served over http — a page on https cannot call it.",
+          "this page must be served over http — a page on https cannot call it — and " +
+          `the station must have been flashed with CONTROL_ROOM_ORIGIN "${window.location.origin}".`,
       );
     }
     throw e;

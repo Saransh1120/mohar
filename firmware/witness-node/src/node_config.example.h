@@ -9,7 +9,7 @@
  *
  * The private key sits in plain flash. `docs/06-hardware-spec.md` already says
  * what that means — "ESP32 flash is readable ... tamper-evident, not
- * tamper-proof" — and putting it here rather than pretending otherwise keeps the
+ * tamper-resistant" — and putting it here rather than pretending otherwise keeps the
  * code honest with the threat model.
  */
 
@@ -19,6 +19,16 @@
 // The LAN address of the machine running the ledger. NOT localhost — the ESP32
 // resolves this on its own network.
 #define LEDGER_BASE_URL "http://CHANGE_ME:8081"
+
+// ── the control surface ────────────────────────────────────────────────────
+// Every request to this station's HTTP endpoints must carry this token in
+// `X-Station-Token`. tools/provision-device prints one; type the same value
+// into the control room when you pair the station. A board left on CHANGE_ME
+// refuses every request.
+#define STATION_TOKEN   "CHANGE_ME"
+// The one origin a browser may call this station from: the address the control
+// room is opened at, with no trailing slash.
+#define CONTROL_ROOM_ORIGIN "http://localhost:5173"
 
 // ── identity (from tools/provision-device) ─────────────────────────────────
 #define DEVICE_ID       "CHANGE_ME"

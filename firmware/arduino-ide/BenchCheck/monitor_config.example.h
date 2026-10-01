@@ -11,7 +11,7 @@
  * signing device itself.
  *
  * The private key sits in plain flash. `docs/06-hardware-spec.md` already says
- * this out loud — "ESP32 flash is readable ... tamper-evident, not tamper-proof"
+ * this out loud — "ESP32 flash is readable ... tamper-evident, not tamper-resistant"
  * — and putting the key here rather than pretending otherwise keeps the code
  * honest with the threat model. Before a real deployment, move it into NVS and
  * turn on flash encryption and secure boot; that raises the cost of extraction
