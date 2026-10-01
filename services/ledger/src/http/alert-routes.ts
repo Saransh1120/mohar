@@ -57,7 +57,15 @@ export function registerAlertRoutes(app: FastifyInstance, pool: Pool): void {
                   -- Read through to_jsonb so this query still runs on a
                   -- database where 007 has not been applied yet.
                   left join ref.account ac on ac.id = (to_jsonb(k) ->> 'account_id')::uuid
-                 where k.alert_id = a.id), '[]'::jsonb) as acks
+                 where k.alert_id = a.id), '[]'::jsonb) as acks,
+              coalesce((
+                select jsonb_agg(jsonb_build_object(
+                         'channel', d.channel,
+                         'outcome', d.outcome,
+                         'attemptedAt', d.attempted_at)
+                       order by d.attempted_at, d.id)
+                  from led.alert_delivery d
+                 where d.alert_id = a.id), '[]'::jsonb) as deliveries
          from led.alert a
          left join ref.package p on p.id = a.package_id
          left join ref.centre c on c.id = coalesce(a.centre_id, p.centre_id)

@@ -228,6 +228,7 @@ function AlertRow({ alert: a, onAcked }: { alert: Alert; onAcked: () => void }) 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const acked = a.acks.length > 0;
+  const deliveries = a.deliveries ?? [];
 
   async function acknowledge() {
     setBusy(true);
@@ -285,6 +286,20 @@ function AlertRow({ alert: a, onAcked }: { alert: Alert; onAcked: () => void }) 
               Since then: the leg closed {formatTime(a.leg_closed_at)}
               {closedAfter !== null && `, ${duration(closedAfter / 1000)} after this alert was raised`}.
               The alert stays on record as it was raised.
+            </div>
+          )}
+
+          {deliveries.length > 0 && (
+            <div className="alert-since">
+              Notification delivery: {Array.from(
+                new Map(deliveries.map((delivery) => [delivery.channel, delivery])).values(),
+              ).map((delivery, i) => (
+                <span key={delivery.channel}>
+                  {i > 0 && " · "}
+                  {delivery.channel} {delivery.outcome === "sent" ? "accepted" : "failed"} at{" "}
+                  {formatTime(delivery.attemptedAt)}
+                </span>
+              ))}
             </div>
           )}
 

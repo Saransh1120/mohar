@@ -202,6 +202,9 @@ Every send is a row in `led.alert_delivery`, failed ones included, and a failed
 channel is retried five times. An alert more than a day old is not sent, so a
 channel configured today does not announce last month. `NOTIFY_MS` sets how
 often the notifier looks (default 5000; `0` turns it off).
+The Alerts page shows the latest recorded delivery result for each channel on
+each alert. "Accepted" means Telegram or the SMTP server accepted the message;
+it does not prove a person read it.
 
 ## The gateway
 

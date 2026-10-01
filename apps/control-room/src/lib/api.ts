@@ -916,6 +916,12 @@ export interface AlertAck {
   accountUsername: string | null;
 }
 
+export interface AlertDelivery {
+  channel: string;
+  outcome: "sent" | "failed";
+  attemptedAt: string;
+}
+
 /**
  * One raised alert. `evidence` is what was known when it was raised and is
  * never rewritten; `leg_closed_at` is read live, so the page can say what has
@@ -941,6 +947,7 @@ export interface Alert {
   expected_by: string | null;
   leg_closed_at: string | null;
   acks: AlertAck[];
+  deliveries: AlertDelivery[];
 }
 
 export interface AlertSummary {
