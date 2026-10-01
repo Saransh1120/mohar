@@ -442,14 +442,19 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   `node tools/run-gated/index.mjs` (deployed at `5a66964`). The access engine
   and ledger bind to loopback; an unauthenticated `/devices` request now returns
   401. The service's `DATABASE_URL` points to Neon `neondb`, not the Render
-  PostgreSQL database in the same project. Apply production migrations to the
-  Neon database as its owner before using the newer pages.
+  PostgreSQL database in the same project. The Neon owner applied migrations
+  007–010 on Oct 2, 2026; the Render PostgreSQL database also has 001–010.
+  Render has `TRUST_PROXY=true` so gateway rate limits use the forwarded client
+  address. The configuration deploy succeeded and `/api/health` returned 200
+  while unauthenticated `/api/devices` returned 401.
 - **Keys are delivered by being displayed.** There is no channel that gets a key
   to a courier's phone; the control room reads it out. That is the intended MVP
   behaviour but it is the weakest link in the key lifecycle.
 - **TSA availability and trust are operational dependencies.** The ledger
   verifies the RFC 3161 response before storing it and retries pending roots
   hourly. An outage leaves the root unnotarised until a later successful retry.
+  A real FreeTSA response was requested and verified with OpenSSL on Oct 2,
+  2026; that test used a random root and did not create a production anchor.
 - **`sealkeys`, `unlock`, `render`, `trace`, `notify`** remain planned services.
   The access engine and gateway now have separate packages and processes.
 - **The end-to-end checks are scripts, not part of `pnpm test`.** `pnpm test`
@@ -503,19 +508,14 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
 - **Alerts need migrations 007 and 008, and the four newer pages need 009.**
   Without 007 the Acknowledge button returns 503; without 008 the notifier logs
   an error each round and sends nothing; without 009 the Strong rooms, Rosters,
-  Ceremonies and Override approval pages get errors from the ledger. On the live
-  Neon-backed deployment, Strong rooms and Override approval still returned
-  500 for missing `ref.strong_room` and `led.seam_override_request` on Oct 2,
-  2026. The separate Render PostgreSQL database already has migrations 001–010;
-  that does not migrate the Neon database used by the web service.
-- **The newer pages have been opened through the gateway, not all clicked
-  through.** On Strong rooms an entry was granted, a courier alone was refused
-  and the exit was recorded; on Transfers a packet was dispatched; on
-  Ceremonies this browser was paired as a station and registered its unwrap
-  key. Each of those was a device-signed request. The rest of a ceremony (the
-  officials, the wait for the drand round, the release), Rosters and Override
-  approval were not clicked through in a browser; `doors.mjs` and `opening.mjs`
-  cover their routes.
+  Ceremonies and Override approval pages get errors from the ledger. The live
+  Neon-backed deployment had those missing relations until migration 009 was
+  applied on Oct 2, 2026. All four pages now load through the gateway.
+- **The newer pages load through the live gateway.** Strong rooms, Rosters,
+  Ceremonies and Override approval were opened in a signed-in browser after
+  the Neon migrations and returned their empty-state data. The full production
+  ceremony and approval forms were not submitted. `doors.mjs` and
+  `opening.mjs` cover those routes against a test database.
 - **The opening is the live path only.** A station opening from a cached
   envelope with no network (`envelope-authorized`), an opening outside its
   window with all three officials and the control room's approval, and a
