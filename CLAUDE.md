@@ -31,7 +31,7 @@ pnpm typecheck
 pnpm test                  # node --test over built dist/**/*.test.js
 pnpm test:crypto           # crypto-core only
 pnpm migrate               # needs MIGRATE_DATABASE_URL
-pnpm start                 # gateway on :8081, ledger behind it on 127.0.0.1:8091
+pnpm start                 # gateway :8081, ledger :8091 and access :8082 on loopback
 pnpm --filter @mohar/ledger start   # the ledger alone on :8081, every route open
 pnpm --filter @mohar/control-room dev
 ```

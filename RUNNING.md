@@ -46,26 +46,27 @@ guarantee.
 
 ## Running it
 
-Start the access service before the ledger when using separate processes.
+`pnpm start` starts the access engine, ledger and gateway as separate processes.
+The access engine listens only on `127.0.0.1:8082` by default. To run it by
+itself while developing, use:
 
 ```bash
 DATABASE_URL=postgres://mohar_app:change_me_in_deployment@localhost:5432/mohar \
   pnpm --filter @mohar/access start
 ```
 
-It listens on `127.0.0.1:8082` by default. Set `ACCESS_URL=http://127.0.0.1:8082`
-for the ledger below. The ledger keeps an in-process compatibility path when
-`ACCESS_URL` is unset; that path does not exercise service isolation.
+Set `ACCESS_URL` to use an already running access service; the launcher then
+does not start another one. The ledger keeps an in-process compatibility path
+only when started directly without `ACCESS_URL`.
 
 **1. The API: the gateway, with the ledger behind it** (port 8081):
 
 ```bash
 DATABASE_URL=postgres://mohar_app:change_me_in_deployment@localhost:5432/mohar \
-  ACCESS_URL=http://127.0.0.1:8082 \
   pnpm start
 ```
 
-`pnpm start` runs two processes. `services/gateway` takes port 8081 on every
+`pnpm start` runs three processes. `services/gateway` takes port 8081 on every
 interface, which is the port everything already points at: the control room's
 `/api` proxy, a room monitor's `LEDGER_BASE_URL`, a host's `PORT`. The ledger
 moves to `127.0.0.1:8091` and cannot be reached from another machine. See
@@ -156,7 +157,7 @@ a genuine cross-check rather than the code agreeing with itself.
 | `tools/label-print` | Prints a packet's two-code seam label and signs its sealing |
 | `tools/seal-lock-command` | Signs a short-lived UART command after a recorded, granted unlock attempt; requires migration 010 |
 | `tools/e2e` | End-to-end checks against a real Postgres: `transfer.mjs`, `seal.mjs`, `sweeps.mjs`, `doors.mjs`, `opening.mjs`, `gateway.mjs` |
-| `tools/run-gated` | `pnpm start`: the ledger on loopback and the gateway in front of it, as one command |
+| `tools/run-gated` | `pnpm start`: the access engine and ledger on loopback with the gateway in front, as one command |
 
 ## Sealing a packet
 
@@ -401,8 +402,8 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   (`pnpm --filter @mohar/ledger start`) it listens on every interface and is as
   open as it was before; `pnpm start` is what binds it to loopback. Between the
   two processes there is no mTLS: loopback, or a shared `GATEWAY_SECRET` over
-  plain HTTP. `pnpm start` does not start the access service, and the gateway
-  secret is not checked by it.
+  plain HTTP. `pnpm start` starts the access service on loopback, but the gateway
+  secret is not checked by that service.
 - **A console signs as its device with a key the browser holds.** The
   Transfers, Strong rooms and Ceremonies consoles sign every step with the
   device's own Ed25519 key, and the gateway takes nothing else for those
