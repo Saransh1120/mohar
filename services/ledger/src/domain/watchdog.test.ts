@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { describeOverdueLeg, type OverdueLegFacts } from "./watchdog.js";
+import {
+  describeOverdueLeg,
+  describeUnopenedPacket,
+  type OverdueLegFacts,
+  type UnopenedPacketFacts,
+} from "./watchdog.js";
 
 /**
  * ── The Delayed Transfer Alert, from facts to what it says ───────────────────
@@ -113,6 +118,79 @@ test("unknown facts are left out, never written as null", () => {
   }
   assert.equal("packetSerial" in evidence, false);
   assert.equal("dispatchedAt" in evidence, false);
+});
+
+// ── the packet nobody opened ──
+
+function unopened(over: Partial<UnopenedPacketFacts> = {}): UnopenedPacketFacts {
+  return {
+    packageId: "bbbbbbbb-0000-4000-8000-000000000001",
+    centreId: "cccccccc-0000-4000-8000-000000000001",
+    centreCode: "JPR-014",
+    packetSerial: "PKT-JPR-0091",
+    examName: "Class 12 Physics",
+    // The exam starts in 9 minutes, so the packet was due to open 6 minutes ago.
+    examStartsAt: new Date(NOW.getTime() + 9 * 60_000),
+    lastEventKind: null,
+    lastEventAt: null,
+    lastVerified: null,
+    ...over,
+  };
+}
+
+test("an unopened packet is measured from fifteen minutes before the exam", () => {
+  const { evidence } = describeUnopenedPacket(unopened(), NOW);
+  assert.equal(evidence["scheduledOpenAt"], min(6).toISOString());
+  assert.equal(evidence["overdueBySeconds"], 6 * 60);
+  assert.equal(evidence["examStartsAt"], new Date(NOW.getTime() + 9 * 60_000).toISOString());
+  assert.equal(evidence["detectedAt"], NOW.toISOString());
+});
+
+test("it says whether the exam has started, and does not guess what happened to the packet", () => {
+  const before = describeUnopenedPacket(unopened(), NOW).consequence;
+  assert.match(before, /The exam has not started yet/);
+  assert.match(before, /still sealed or it was opened without the ceremony/);
+
+  const after = describeUnopenedPacket(unopened({ examStartsAt: min(20) }), NOW).consequence;
+  assert.match(after, /The exam's start time has passed/);
+});
+
+test("an unopened packet names the last person verified with it", () => {
+  const custodian = { ...courier, name: "C. Rathore", role: "custodian", step: "confirm" as const };
+  const { evidence, consequence } = describeUnopenedPacket(
+    unopened({ lastVerified: custodian }),
+    NOW,
+  );
+  assert.deepEqual(evidence["lastVerified"], custodian);
+  assert.match(consequence, /C\. Rathore \(custodian\) was the last person verified with it/);
+  assert.match(consequence, /centre JPR-014/);
+});
+
+test("an unopened packet with no verified hand-off says so", () => {
+  const { evidence, consequence } = describeUnopenedPacket(unopened(), NOW);
+  assert.equal("lastVerified" in evidence, false);
+  assert.match(consequence, /No hand-off of it has been verified/);
+});
+
+test("the newest chain event is evidence only when there is one", () => {
+  const none = describeUnopenedPacket(unopened(), NOW).evidence;
+  assert.equal("lastEventKind" in none, false);
+
+  const some = describeUnopenedPacket(
+    unopened({ lastEventKind: "SEAL_APPLIED", lastEventAt: min(600) }),
+    NOW,
+  ).evidence;
+  assert.equal(some["lastEventKind"], "SEAL_APPLIED");
+  assert.equal(some["lastEventAt"], min(600).toISOString());
+  for (const [k, v] of Object.entries(some)) assert.notEqual(v, null, `${k} is null`);
+});
+
+test("the unopened packet alert carries no severity word", () => {
+  const { evidence, consequence } = describeUnopenedPacket(unopened({ examStartsAt: min(20) }), NOW);
+  const text = `${consequence} ${JSON.stringify(evidence)}`.toLowerCase();
+  for (const word of ["critical", "severity", "high priority", "medium", "urgent"]) {
+    assert.equal(text.includes(word), false, `mentions "${word}"`);
+  }
 });
 
 test("the alert carries no severity word", () => {

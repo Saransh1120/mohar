@@ -9,6 +9,7 @@ import { bearerToken } from "./auth-routes.js";
  *
  *   GET  /alerts?open=true&limit=     raised alerts, newest first, with their acknowledgements
  *   GET  /alerts/summary              how many, and how many nobody has acknowledged
+ *   GET  /alerts/stream               the summary over server-sent events, each time it changes
  *   POST /alerts/:id/ack              a signed-in operator acknowledges one, with a note
  *
  * An alert is never updated. It is raised once, with the evidence known at that
@@ -81,6 +82,69 @@ export function registerAlertRoutes(app: FastifyInstance, pool: Pool): void {
          from led.alert a`,
     );
     return reply.send(rows[0] ?? { total: 0, unacknowledged: 0 });
+  });
+
+  /**
+   * The summary, pushed whenever it changes.
+   *
+   * What travels is the two counts and the time of the newest alert, not the
+   * alerts themselves: the page hears that something changed and reads
+   * `GET /alerts` as it always has. A stream of rows would need a cursor, and
+   * an alert's `raised_at` is the start of the transaction that raised it, so
+   * one committed late could sit behind a cursor that had already moved on.
+   * Comparing the summary cannot miss a row, whatever order they commit in.
+   */
+  app.get("/alerts/stream", async (req, reply) => {
+    reply.raw.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-accel-buffering": "no",
+      "access-control-allow-origin": "*",
+    });
+
+    let closed = false;
+    const stop = () => {
+      closed = true;
+    };
+    req.raw.on("close", stop);
+    req.raw.on("error", stop);
+
+    let last = "";
+    try {
+      while (!closed) {
+        const { rows } = await pool.query<{
+          total: number;
+          unacknowledged: number;
+          acks: number;
+          newest: Date | null;
+        }>(
+          `select count(*)::int as total,
+                  count(*) filter (
+                    where a.requires_decision
+                      and not exists (select 1 from led.alert_ack k where k.alert_id = a.id)
+                  )::int as unacknowledged,
+                  (select count(*)::int from led.alert_ack) as acks,
+                  max(a.raised_at) as newest
+             from led.alert a`,
+        );
+        const now = JSON.stringify(rows[0] ?? {});
+        if (now !== last) {
+          last = now;
+          reply.raw.write(`event: alerts\ndata: ${now}\n\n`);
+        } else {
+          // A comment line keeps proxies from reaping an idle connection.
+          reply.raw.write(": keep-alive\n\n");
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    } catch (err) {
+      app.log.error({ err }, "alert stream failed");
+    } finally {
+      req.raw.off("close", stop);
+      req.raw.off("error", stop);
+      reply.raw.end();
+    }
   });
 
   app.post<{ Params: { id: string } }>("/alerts/:id/ack", async (req, reply) => {

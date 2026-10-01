@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, type Alert } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatTime, relativeTime, useAsync } from "../lib/hooks";
+import { useAlertStream } from "../lib/useAlertStream";
 import { Card, Empty, ErrorNote } from "../components/ui";
 
 /**
@@ -20,6 +21,7 @@ import { Card, Empty, ErrorNote } from "../components/ui";
 
 const TITLES: Record<string, string> = {
   LEG_OVERDUE: "Hand-off not completed in time",
+  PACKET_UNOPENED_OVERDUE: "Packet not opened by its scheduled time",
   TRANSFER_ATTEMPTS_EXHAUSTED: "Three wrong serial or key entries on one leg",
 };
 
@@ -83,6 +85,40 @@ function facts(a: Alert): string[] {
     return out;
   }
 
+  if (a.kind === "PACKET_UNOPENED_OVERDUE") {
+    const openAt = str(e, "scheduledOpenAt");
+    const late = num(e, "overdueBySeconds");
+    if (openAt) {
+      out.push(
+        `Due to open ${formatTime(openAt)}` +
+          (late !== null ? `; the watchdog found no opening ${duration(late)} after that` : ""),
+      );
+    }
+    const startsAt = str(e, "examStartsAt");
+    const exam = str(e, "examName");
+    if (startsAt) out.push(`${exam ?? "The exam"} starts ${formatTime(startsAt)}`);
+    const lastKind = str(e, "lastEventKind");
+    const lastAt = str(e, "lastEventAt");
+    out.push(
+      lastKind && lastAt
+        ? `Newest record of this packet: ${lastKind}, ${formatTime(lastAt)}`
+        : "No signed record names this packet",
+    );
+    const lv = e["lastVerified"];
+    if (lv && typeof lv === "object") {
+      const v = lv as Record<string, unknown>;
+      const at = str(v, "at");
+      out.push(
+        `Last verified with the packet: ${str(v, "name") ?? "unknown"} ` +
+          `(${role(str(v, "role") ?? "")}), ${str(v, "step") ?? ""} of leg ${num(v, "legNo") ?? "?"}` +
+          (at ? `, ${formatTime(at)}` : ""),
+      );
+    } else {
+      out.push("No hand-off of this packet was verified before the alert");
+    }
+    return out;
+  }
+
   if (a.kind === "TRANSFER_ATTEMPTS_EXHAUSTED") {
     const step = str(e, "step");
     const attemptNo = num(e, "attemptNo");
@@ -105,24 +141,28 @@ type Filter = "open" | "all";
 
 export default function Alerts() {
   const [filter, setFilter] = useState<Filter>("open");
+  // The stream brings a new alert within a couple of seconds. The poll stays
+  // underneath it, slower, so a dropped stream means late rather than blind.
   const alerts = useAsync(() => api.alerts({ open: filter === "open" }), [filter], {
-    pollMs: 5_000,
+    pollMs: 20_000,
   });
-  const summary = useAsync(() => api.alertSummary(), [], { pollMs: 5_000 });
+  const summary = useAsync(() => api.alertSummary(), [], { pollMs: 20_000 });
   const list = alerts.data?.alerts ?? [];
 
   const refresh = () => {
     void alerts.refresh();
     void summary.refresh();
   };
+  const stream = useAlertStream(refresh);
 
   return (
     <>
       <div className="note">
         An alert says what happened and what was known when it was raised. It is never edited:
         acknowledging one adds a record of <strong>who looked and what they did</strong>, and the
-        alert stays exactly as it was raised. A hand-off that misses its expected time is raised
-        here by the watchdog within a minute, with nobody having to notice it first.
+        alert stays exactly as it was raised. A hand-off that misses its expected time, or a packet
+        with no opening on record by its scheduled time, is raised here by the watchdog within a
+        minute, with nobody having to notice it first.
       </div>
 
       <div className="toolbar">
@@ -148,6 +188,9 @@ export default function Alerts() {
             : ""}
         </span>
         <div className="spacer" />
+        <span style={{ fontSize: 12, color: "var(--text-faint)" }}>
+          {stream === "live" ? "live" : "stream down, checking every 20 s"}
+        </span>
         <button onClick={refresh}>Refresh</button>
       </div>
 

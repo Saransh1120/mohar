@@ -17,13 +17,15 @@
     "@mohar/crypto-core": "workspace:*",
     "@noble/hashes": "^1.5.0",
     "fastify": "^5.0.0",
+    "nodemailer": "^7",
     "pg": "^8.13.0",
     "pino": "^9.4.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "typescript": "^5.6.0",
     "@types/node": "^22.7.0",
-    "@types/pg": "^8.11.10"
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.6.0"
   }
 }

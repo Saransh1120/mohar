@@ -8,12 +8,19 @@ import { registerAuthRoutes } from "./http/auth-routes.js";
 import { registerTransferRoutes } from "./http/transfer-routes.js";
 import { registerDemoRoutes } from "./http/demo-routes.js";
 import { registerAlertRoutes } from "./http/alert-routes.js";
-import { startLegWatchdog } from "./domain/watchdog.js";
+import { registerSealRoutes } from "./http/seal-routes.js";
+import { startWatchdog } from "./domain/watchdog.js";
+import { channelsFromEnv, startNotifier } from "./domain/notify.js";
 
 const PORT = Number(process.env["PORT"] ?? 8081);
 const DATABASE_URL = process.env["DATABASE_URL"];
-/** How often to look for late legs. 0 turns the sweep off in this process. */
+/**
+ * How often to look for late legs and unopened packets. 0 turns the sweep off
+ * in this process.
+ */
 const LEG_WATCHDOG_MS = Number(process.env["LEG_WATCHDOG_MS"] ?? 30_000);
+/** How often to send out alerts nobody has been told about yet. 0 turns it off. */
+const NOTIFY_MS = Number(process.env["NOTIFY_MS"] ?? 5_000);
 
 if (!DATABASE_URL) {
   console.error("DATABASE_URL is required. Copy .env.example and set it.");
@@ -30,6 +37,7 @@ const app = Fastify({
 
 const pool = createPool(DATABASE_URL);
 let stopWatchdog: (() => void) | null = null;
+let stopNotifier: (() => void) | null = null;
 
 async function main(): Promise<void> {
   // Refuse to start if this connection could rewrite history. The append-only
@@ -63,6 +71,7 @@ async function main(): Promise<void> {
   registerRoutes(app, pool);
   registerRegistryRoutes(app, pool);
   registerAccessRoutes(app, pool);
+  registerSealRoutes(app, pool);
   registerTransferRoutes(app, pool);
   registerDemoRoutes(app, pool);
   registerAlertRoutes(app, pool);
@@ -70,8 +79,25 @@ async function main(): Promise<void> {
   app.log.info({ port: PORT }, "ledger listening");
 
   if (LEG_WATCHDOG_MS > 0) {
-    stopWatchdog = startLegWatchdog(pool, app.log, LEG_WATCHDOG_MS);
-    app.log.info({ intervalMs: LEG_WATCHDOG_MS }, "leg watchdog sweeping for LEG_OVERDUE");
+    stopWatchdog = startWatchdog(pool, app.log, LEG_WATCHDOG_MS);
+    app.log.info(
+      { intervalMs: LEG_WATCHDOG_MS },
+      "watchdog sweeping for LEG_OVERDUE and PACKET_UNOPENED_OVERDUE",
+    );
+  }
+
+  // With no channel configured the alerts still reach the Alerts page; the log
+  // says so once, so "nobody was messaged" is never a surprise found later.
+  const { channels, skipped } = channelsFromEnv(process.env);
+  for (const reason of skipped) app.log.warn({ reason }, "notification channel not started");
+  if (NOTIFY_MS > 0 && channels.length > 0) {
+    stopNotifier = startNotifier(pool, app.log, channels, NOTIFY_MS);
+    app.log.info(
+      { intervalMs: NOTIFY_MS, channels: channels.map((c) => c.name) },
+      "notifier sending alerts",
+    );
+  } else {
+    app.log.info("no notification channel configured: alerts appear on the Alerts page only");
   }
 }
 
@@ -79,6 +105,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     app.log.info({ signal }, "shutting down");
     stopWatchdog?.();
+    stopNotifier?.();
     void app.close().then(() => pool.end()).then(() => process.exit(0));
   });
 }

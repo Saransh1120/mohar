@@ -282,6 +282,196 @@ export async function sweepOverdueLegs(pool: Pool, now: Date = new Date()): Prom
   }
 }
 
+/**
+ * ── The packet nobody opened ─────────────────────────────────────────────────
+ *
+ * A packet is due to open fifteen minutes before its exam starts. One that
+ * passes that minute with no opening on record raises PACKET_UNOPENED_OVERDUE,
+ * once, into led.alert.
+ *
+ * The same reasoning as the late leg: an opening that never happens produces
+ * no attempt and no refusal, so the record stays quiet unless something reads
+ * the clock against it. And a quiet record here has two readings - the packet
+ * is still sealed while candidates wait, or it was opened without the engine
+ * seeing it - and the control room needs to be asked which.
+ */
+
+export const PACKET_UNOPENED_OVERDUE = "PACKET_UNOPENED_OVERDUE";
+
+/** The packet opens this long before the exam starts. */
+export const OPEN_LEAD_MS = 15 * 60_000;
+
+/**
+ * Chain events that count as the packet having been opened. PRINT_STARTED is
+ * the digital-mode opening: there is no flap to open, the content key is used.
+ */
+export const OPENING_EVENT_KINDS = ["OPEN_CEREMONY", "PACKET_OPENED", "PRINT_STARTED"] as const;
+
+/**
+ * Stages of the access engine whose grant is an opening. Until the opening
+ * ceremony has an engine of its own, a granted `unlock` is the record that a
+ * packet was opened with authority, and raising "nobody opened this" over it
+ * would be an alert that contradicts the record it sits beside.
+ */
+export const OPENING_GRANT_STAGES = ["unlock", "print"] as const;
+
+/**
+ * How far back the sweep looks. An exam whose opening time passed longer ago
+ * than this is no longer something a control room can act on tonight; its
+ * missing opening is on the packet's own timeline. Without a bound, the first
+ * sweep on a database with years of exams would raise one alert per old packet.
+ */
+export const UNOPENED_LOOKBACK_MS = 48 * 3600_000;
+
+export interface UnopenedPacketFacts {
+  packageId: string;
+  centreId: string;
+  centreCode: string | null;
+  packetSerial: string | null;
+  examName: string;
+  examStartsAt: Date;
+  /** The newest chain event that names this packet, if there is one. */
+  lastEventKind: string | null;
+  lastEventAt: Date | null;
+  lastVerified: LastVerified | null;
+}
+
+export function describeUnopenedPacket(f: UnopenedPacketFacts, now: Date): OverdueAlert {
+  const scheduledOpenAt = new Date(f.examStartsAt.getTime() - OPEN_LEAD_MS);
+  const overdueBySeconds = Math.max(
+    1,
+    Math.round((now.getTime() - scheduledOpenAt.getTime()) / 1000),
+  );
+
+  const evidence: Record<string, unknown> = {
+    packageId: f.packageId,
+    centreId: f.centreId,
+    examName: f.examName,
+    examStartsAt: f.examStartsAt.toISOString(),
+    scheduledOpenAt: scheduledOpenAt.toISOString(),
+    detectedAt: now.toISOString(),
+    overdueBySeconds,
+    ...(f.packetSerial ? { packetSerial: f.packetSerial } : {}),
+    ...(f.centreCode ? { centreCode: f.centreCode } : {}),
+    ...(f.lastEventKind && f.lastEventAt
+      ? { lastEventKind: f.lastEventKind, lastEventAt: f.lastEventAt.toISOString() }
+      : {}),
+    ...(f.lastVerified ? { lastVerified: f.lastVerified } : {}),
+  };
+
+  const where = f.centreCode ? `centre ${f.centreCode}` : "its centre";
+  const holder = f.lastVerified
+    ? `${who(f.lastVerified)} was the last person verified with it`
+    : "no hand-off of it has been verified";
+  const started = now.getTime() >= f.examStartsAt.getTime();
+  const consequence =
+    `No opening of this packet has been recorded, and it was due to open at ${where} ` +
+    `fifteen minutes before the exam. ` +
+    (started
+      ? "The exam's start time has passed. "
+      : "The exam has not started yet. ") +
+    `Either the packet is still sealed or it was opened without the ceremony; the record ` +
+    `cannot tell which. ${holder.charAt(0).toUpperCase()}${holder.slice(1)}. The control ` +
+    `room contacts the centre superintendent and records what they find.`;
+
+  return { evidence, consequence };
+}
+
+export interface RaisedUnopened {
+  alertId: string;
+  packageId: string;
+  overdueBySeconds: number;
+}
+
+/**
+ * Raise PACKET_UNOPENED_OVERDUE for every packet past its opening time with no
+ * opening on the chain, no granted unlock, and no such alert already on record.
+ */
+export async function sweepUnopenedPackets(
+  pool: Pool,
+  now: Date = new Date(),
+): Promise<RaisedUnopened[]> {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query("select pg_advisory_xact_lock(hashtext('watchdog:packet_unopened'))");
+
+    const { rows } = await client.query<{
+      id: string;
+      centre_id: string;
+      centre_code: string | null;
+      seal_serial: string | null;
+      exam_name: string;
+      starts_at: Date;
+      last_kind: string | null;
+      last_at: Date | null;
+    }>(
+      `select p.id, p.centre_id, c.code as centre_code, p.seal_serial,
+              e.name as exam_name, e.starts_at,
+              l.kind as last_kind, l.occurred_at as last_at
+         from ref.package p
+         join ref.exam e on e.id = p.exam_id
+         join ref.centre c on c.id = p.centre_id
+         left join lateral (
+           select v.kind, v.occurred_at from led.event v
+            where v.package_id = p.id
+            order by v.seq desc limit 1) l on true
+        where e.starts_at < $1::timestamptz + make_interval(secs => $2)
+          and e.starts_at > $1::timestamptz + make_interval(secs => $2) - make_interval(secs => $3)
+          and not exists (
+            select 1 from led.event v
+             where v.package_id = p.id and v.kind = any($4::text[]))
+          and not exists (
+            select 1 from led.access_attempt t
+             where t.package_id = p.id and t.outcome = 'granted'
+               and t.stage = any($6::text[]))
+          and not exists (
+            select 1 from led.alert x where x.package_id = p.id and x.kind = $5)
+        order by e.starts_at
+        limit 500`,
+      [now, OPEN_LEAD_MS / 1000, UNOPENED_LOOKBACK_MS / 1000, [...OPENING_EVENT_KINDS], PACKET_UNOPENED_OVERDUE, [...OPENING_GRANT_STAGES]],
+    );
+
+    const raised: RaisedUnopened[] = [];
+    for (const r of rows) {
+      const facts: UnopenedPacketFacts = {
+        packageId: r.id,
+        centreId: r.centre_id,
+        centreCode: r.centre_code,
+        packetSerial: r.seal_serial,
+        examName: r.exam_name,
+        examStartsAt: r.starts_at,
+        lastEventKind: r.last_kind,
+        lastEventAt: r.last_at,
+        // Every leg of the packet counts: whoever the hand-off engine last
+        // verified with it, on whichever leg that was.
+        lastVerified: await lastVerifiedFor(client, r.id, 32767),
+      };
+      const alert = describeUnopenedPacket(facts, now);
+      const { rows: inserted } = await client.query<{ id: string }>(
+        `insert into led.alert
+           (kind, package_id, centre_id, evidence, requires_decision, consequence)
+         values ($1, $2::uuid, $3::uuid, $4::jsonb, true, $5)
+         returning id`,
+        [PACKET_UNOPENED_OVERDUE, r.id, r.centre_id, JSON.stringify(alert.evidence), alert.consequence],
+      );
+      raised.push({
+        alertId: inserted[0]!.id,
+        packageId: r.id,
+        overdueBySeconds: alert.evidence["overdueBySeconds"] as number,
+      });
+    }
+
+    await client.query("commit");
+    return raised;
+  } catch (err) {
+    await client.query("rollback").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 interface Log {
   info: (obj: object, msg: string) => void;
   error: (obj: object, msg: string) => void;
@@ -290,10 +480,10 @@ interface Log {
 /**
  * Sweep now, then every `intervalMs`. Returns a function that stops it.
  *
- * The default interval is 30 seconds so a leg is flagged within a minute of
- * its expected time, whatever the phase of the timer when it went late.
+ * The default interval is 30 seconds so a leg or a packet is flagged within a
+ * minute of its expected time, whatever the phase of the timer when it went late.
  */
-export function startLegWatchdog(pool: Pool, log: Log, intervalMs: number): () => void {
+export function startWatchdog(pool: Pool, log: Log, intervalMs: number): () => void {
   let running = false;
   const tick = async () => {
     // A sweep that takes longer than the interval must not overlap itself;
@@ -310,6 +500,16 @@ export function startLegWatchdog(pool: Pool, log: Log, intervalMs: number): () =
       // Keep sweeping. A watchdog that stops on a transient database error is
       // a watchdog that is not watching, and nothing would notice.
       log.error({ err }, "leg watchdog sweep failed");
+    }
+    // Its own try: a failure looking for late legs must not stop the look for
+    // unopened packets, and the other way round.
+    try {
+      const unopened = await sweepUnopenedPackets(pool);
+      for (const r of unopened) {
+        log.info(r, `PACKET_UNOPENED_OVERDUE, ${r.overdueBySeconds}s past its opening time`);
+      }
+    } catch (err) {
+      log.error({ err }, "unopened packet sweep failed");
     } finally {
       running = false;
     }
