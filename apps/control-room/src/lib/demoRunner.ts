@@ -14,7 +14,6 @@ import {
   openDemoPaper,
   sealDemoPaper,
   sendSigned,
-  shareSubset,
   tryRecover,
   type JourneyHop,
   type SignedEvent,
@@ -360,9 +359,9 @@ export async function startDemoRun(input: {
 
     // ── the paper and its seal ──
     const sealed = await step(
-      "Encrypt the paper and split its key 3-of-4",
+      "Encrypt the paper and split its opening key",
       () => sealDemoPaper(P.id),
-      (s) => `${s.sealed.algorithm} · the key is split into 4 shares, any 3 rebuild it`,
+      (s) => `${s.sealed.algorithm} · control room part + three officials' parts, any two of them`,
     );
     await step(
       "Commit the seal to the chain",
@@ -632,14 +631,26 @@ export async function startDemoRun(input: {
     );
 
     // ── the threshold, then the paper ──
-    await step("Two key shares are not enough", async () => {
-      const a = await tryRecover(shareSubset(sealed.split, 2), sealed.split.secretCommitment);
-      if (a.ok) throw new Error("two shares rebuilt the key — the threshold is broken");
+    await step("Three officials without the control room's part open nothing", async () => {
+      const a = await tryRecover(sealed.split, {
+        controlPart: false,
+        officials: ["superintendent", "observer", "police_escort"],
+      });
+      if (a.ok) throw new Error("the key was rebuilt without the control room's part");
       return a;
-    }, () => "refused — the threshold is three");
+    }, (a) => `refused — ${a.detail}`);
 
-    const paper = await step("Three shares rebuild the key and the paper opens", async () => {
-      const a = await tryRecover(shareSubset(sealed.split, 3), sealed.split.secretCommitment);
+    await step("The control room's part with one official is not enough", async () => {
+      const a = await tryRecover(sealed.split, { controlPart: true, officials: ["superintendent"] });
+      if (a.ok) throw new Error("one official rebuilt the key — the threshold is broken");
+      return a;
+    }, (a) => `refused — ${a.detail}`);
+
+    const paper = await step("The control room's part and two officials open the paper", async () => {
+      const a = await tryRecover(sealed.split, {
+        controlPart: true,
+        officials: ["superintendent", "observer"],
+      });
       if (!a.ok || !a.key) throw new Error(a.detail);
       return openDemoPaper(sealed, a.key);
     }, () => "key rebuilt · paper decrypted");

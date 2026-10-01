@@ -2,13 +2,13 @@ import {
   generateContentKey,
   sealContent,
   openSeal,
-  splitContentKey,
-  combineContentKey,
+  splitOpeningKey,
+  combineOpeningKey,
   generateKeypair,
   signBody,
   type SealedContent,
-  type CommittedShare,
-  type SplitResult,
+  type FieldHolder,
+  type OpeningKeySplit,
 } from "@mohar/crypto-core";
 
 /**
@@ -20,11 +20,13 @@ import {
  * module exists to make sure nothing here is animated.
  *
  * Every cryptographic operation below is the same code the rest of the system
- * uses: `sealContent` is the real AEAD, `splitContentKey` is the real Shamir,
+ * uses: `sealContent` is the real AEAD, `splitOpeningKey` is the real split
+ * (the control room's part XOR a Shamir 2-of-3 across the three officials),
  * `signBody` is the real Ed25519 over the real RFC 8785 canonical form, and
  * every event posted lands in the real chain and is refused by the real ledger
- * if it is wrong. The two-shares-fail demonstration fails because the library
- * genuinely refuses, not because a branch was written to say so.
+ * if it is wrong. The attempts that fail - three officials without the control
+ * room's part, the control room's part with one official - fail because the
+ * library genuinely refuses, not because a branch was written to say so.
  *
  * ── What *is* simulated, and why it is labelled ──
  *
@@ -35,6 +37,11 @@ import {
  * *hardware input* behind them is fabricated, and every surface that shows them
  * says so. That distinction is the entire honesty of this page: simulated input,
  * real machinery. Blur it and the demonstration proves nothing.
+ *
+ * The control room's part is also not time-locked here. In the field it is
+ * wrapped to a drand round and cannot be read before the scheduled minute; on
+ * this page it is simply held in memory beside the officials' parts, and the
+ * page says so where it shows it.
  */
 
 // ── the paper ───────────────────────────────────────────────────────────────
@@ -211,24 +218,35 @@ const nowTimestamp = (): string => new Date().toISOString();
 export interface SealedPackage {
   packageId: string;
   sealed: SealedContent;
-  split: SplitResult;
-  /** Held only so the demo can show that three shares reproduce it exactly. */
+  split: OpeningKeySplit;
+  /** Held only so the demo can show that the parts reproduce it exactly. */
   contentKey: Uint8Array;
 }
+
+/**
+ * Who each official answers to. A pair from one institution does not open a
+ * packet, so the three have to be three different bodies.
+ */
+export const DEMO_INSTITUTIONS: Readonly<Record<FieldHolder, string>> = {
+  superintendent: "Examination centre",
+  observer: "Board of examinations",
+  police_escort: "State police",
+};
 
 /** Encrypt the paper and split its key. Nothing here touches the network. */
 export async function sealDemoPaper(packageId: string): Promise<SealedPackage> {
   const contentKey = generateContentKey();
   const sealed = sealContent(DEMO_PAPER, contentKey, packageId);
-  const split = await splitContentKey(contentKey);
+  const split = await splitOpeningKey(contentKey, DEMO_INSTITUTIONS);
   return { packageId, sealed, split, contentKey };
 }
 
 /**
  * Commit the seal to the chain.
  *
- * What goes in is the ciphertext's digest and one commitment per share — not the
- * ciphertext and not the shares. The chain's job is to make it impossible to
+ * What goes in is the ciphertext's digest and one commitment per part — the
+ * control room's first, then the three officials' — not the ciphertext and not
+ * the parts. The chain's job is to make it impossible to
  * later claim a different document was sealed, and a digest does that without
  * the ledger becoming the place the paper is stored.
  */
@@ -253,7 +271,10 @@ export function buildSealEvent(
       copies,
       ciphertextSha256: pkg.sealed.ciphertextSha256,
       drandRound,
-      shareCommitments: pkg.split.shares.map((s) => s.commitment),
+      shareCommitments: [
+        pkg.split.controlCommitment,
+        ...pkg.split.fieldShares.map((s) => s.commitment),
+      ],
     },
   };
   return buildSigned(body, identity.sealerPrivateKeyHex);
@@ -601,33 +622,53 @@ export async function digestOf(bytes: Uint8Array): Promise<string> {
 
 export interface RecoveryAttempt {
   ok: boolean;
-  used: number;
+  /** What was presented, in words: "Control room part + superintendent, observer". */
+  presented: string;
   detail: string;
   /** Present only on success — and only ever held for the length of the demo. */
   key?: Uint8Array;
 }
 
+/** Which parts are put on the table for one attempt. */
+export interface PartsPresented {
+  controlPart: boolean;
+  officials: readonly FieldHolder[];
+}
+
+const holderName = (h: FieldHolder) => h.replace(/_/g, " ");
+
 /**
- * Try to rebuild the content key from a subset of shares.
+ * Try to rebuild the opening key from the parts presented.
  *
- * Two shares fail here because `combineContentKey` refuses below the threshold,
- * not because this function checks a count first. The distinction matters: what
- * the page shows is the library declining, which is the property being claimed.
+ * Every refusal here is `combineOpeningKey` refusing, not this function
+ * checking a count first: three officials without the control room's part, or
+ * the control room's part with a single official, are handed to the library
+ * exactly as they are. What the page shows is the library declining, which is
+ * the property being claimed.
  */
 export async function tryRecover(
-  shares: readonly CommittedShare[],
-  secretCommitment: string,
+  split: OpeningKeySplit,
+  parts: PartsPresented,
 ): Promise<RecoveryAttempt> {
+  const shares = split.fieldShares.filter((s) => parts.officials.includes(s.holder));
+  const presented =
+    (parts.controlPart ? "Control room part" : "No control room part") +
+    (shares.length > 0 ? ` + ${shares.map((s) => holderName(s.holder)).join(", ")}` : "");
   try {
-    const key = await combineContentKey(shares, secretCommitment);
+    const key = await combineOpeningKey(parts.controlPart ? split.controlPart : undefined, shares, {
+      controlCommitment: split.controlCommitment,
+      keyCommitment: split.keyCommitment,
+    });
     return {
       ok: true,
-      used: shares.length,
-      detail: `${shares.length} shares reconstructed the content key and it matches the commitment recorded at sealing`,
+      presented,
+      detail:
+        "The control room's part and two officials from different institutions rebuilt the " +
+        "opening key, and it matches the commitment made at sealing",
       key,
     };
   } catch (err) {
-    return { ok: false, used: shares.length, detail: (err as Error).message };
+    return { ok: false, presented, detail: (err as Error).message };
   }
 }
 
@@ -635,7 +676,3 @@ export async function tryRecover(
 export function openDemoPaper(pkg: SealedPackage, key: Uint8Array): string {
   return openSeal(pkg.sealed, key, pkg.packageId);
 }
-
-/** Shares in the order the demo hands them over, so the UI can slice a subset. */
-export const shareSubset = (split: SplitResult, n: number): CommittedShare[] =>
-  split.shares.slice(0, n);

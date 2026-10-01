@@ -736,10 +736,11 @@ export default function Witness() {
               <div className="wit-label">enrolled as</div>
               <code>{identity.deviceId}</code>
               <div className="wit-note">
-                The private key is in this browser's local storage. It is not bound to the
-                TPM and the enrolment was not attested — <code>docs/02</code> specifies both
-                and <code>adr/0003</code> records that neither exists yet. Treat this as a
-                demonstration credential.
+                The private key is held by this browser as a non-extractable key: this page
+                can ask for a signature, and nothing can read the key out. It is not bound to
+                the TPM and the enrolment was not attested — <code>docs/02</code> specifies
+                both and <code>adr/0003</code> records that neither exists yet. Treat this as
+                a demonstration credential.
               </div>
             </div>
             <button

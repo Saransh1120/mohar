@@ -15,10 +15,10 @@ import {
   openDemoPaper,
   sealDemoPaper,
   sendSigned,
-  shareSubset,
   tryRecover,
   type DemoIdentity,
   type RecoveryAttempt,
+  type PartsPresented,
   type JourneyHop,
   type SealedPackage,
   type SignedEvent,
@@ -26,16 +26,23 @@ import {
 import { startDemoRun, useDemoRun } from "../lib/demoRunner";
 import { startTour } from "../components/DemoTour";
 
+/** What a legitimate opening presents: the control room's part and two officials. */
+const OPENING_PARTS: PartsPresented = {
+  controlPart: true,
+  officials: ["superintendent", "observer"],
+};
+
 /**
  * ── The whole system, in one screen and about three minutes ──────────────────
  *
  * A paper is sealed, its key is split, the seal is committed to the chain, a
  * ceremony is attested, the access engine is asked, and — only if it says yes —
- * three shares rebuild the key and the paper opens.
+ * the control room's part and two officials' parts rebuild the key and the
+ * paper opens.
  *
  * Nothing on this page is a mock. The ciphertext is produced by the same AEAD
- * the rest of the system uses; the shares come from the same audited Shamir
- * implementation; the events are signed with real Ed25519 over real RFC 8785
+ * the rest of the system uses; the officials' parts come from the same audited
+ * Shamir implementation; the events are signed with real Ed25519 over real RFC 8785
  * canonical bytes and are rejected by the real ledger if they are malformed; and
  * the twenty-two checks are whatever the real engine returned, pass or fail.
  *
@@ -177,7 +184,7 @@ export default function LiveDemo() {
   const steps: Step[] = [
     { key: "paper", title: "Demo paper prepared", state: "done" },
     { key: "encrypt", title: "Content encrypted", state: sealedPkg ? "done" : "idle" },
-    { key: "split", title: "Key split 3-of-4", state: sealedPkg ? "done" : "idle" },
+    { key: "split", title: "Opening key split", state: sealedPkg ? "done" : "idle" },
     { key: "seal", title: "Seal committed to chain", state: sealEvent?.seq ? "done" : "idle" },
     {
       key: "journey",
@@ -480,15 +487,12 @@ export default function LiveDemo() {
     }
   };
 
-  const doRecoverAndOpen = async (count: number) => {
+  const doRecoverAndOpen = async (parts: PartsPresented) => {
     if (!sealedPkg) return;
-    setBusy(`combining ${count} shares`);
+    setBusy("combining the parts presented");
     setError(null);
     try {
-      const attempt = await tryRecover(
-        shareSubset(sealedPkg.split, count),
-        sealedPkg.split.secretCommitment,
-      );
+      const attempt = await tryRecover(sealedPkg.split, parts);
       setRecovery(attempt);
       if (attempt.ok && attempt.key && decision?.outcome === "granted") {
         setPlaintext(openDemoPaper(sealedPkg, attempt.key));
@@ -743,31 +747,60 @@ export default function LiveDemo() {
 
       {/* ── 3. the split ─────────────────────────────────────────────────── */}
       {sealedPkg && (
-        <Card title="3 · Key split, 3 of 4" hint="Shamir over GF(2⁸) — audited implementation">
+        <Card
+          title="3 · Opening key split"
+          hint="control room part XOR a Shamir 2-of-3 across three officials"
+        >
           <div className="ld-shares">
-            {sealedPkg.split.shares.map((s) => (
+            <div className="ld-share">
+              <div className="ld-share-h">Control room part · always required</div>
+              <div className="mono ld-share-c">{short(sealedPkg.split.controlCommitment, 24)}</div>
+              <div className="ld-share-f">
+                {sealedPkg.split.controlPart.length} bytes · commitment sha256 · in the field this
+                part is time-locked to the scheduled minute; on this page it is not
+              </div>
+            </div>
+            {sealedPkg.split.fieldShares.map((s) => (
               <div key={s.index} className="ld-share">
                 <div className="ld-share-h">
-                  Share {s.index} · {s.holder}
+                  Official {s.index} · {s.holder.replace(/_/g, " ")}
                 </div>
                 <div className="mono ld-share-c">{short(s.commitment, 24)}</div>
-                <div className="ld-share-f">{s.share.length} bytes · commitment sha256</div>
+                <div className="ld-share-f">
+                  {s.institution} · {s.share.length} bytes · commitment sha256
+                </div>
               </div>
             ))}
           </div>
 
           <div className="ld-row">
-            <button className="wit-btn ghost" onClick={() => void doRecoverAndOpen(2)} disabled={!!busy}>
-              Try with 2 shares
+            <button
+              className="wit-btn ghost"
+              onClick={() =>
+                void doRecoverAndOpen({
+                  controlPart: false,
+                  officials: ["superintendent", "observer", "police_escort"],
+                })
+              }
+              disabled={!!busy}
+            >
+              Try all three officials, no control room part
             </button>
-            <button className="wit-btn" onClick={() => void doRecoverAndOpen(3)} disabled={!!busy}>
-              Try with 3 shares
+            <button
+              className="wit-btn ghost"
+              onClick={() => void doRecoverAndOpen({ controlPart: true, officials: ["superintendent"] })}
+              disabled={!!busy}
+            >
+              Try control room part + one official
+            </button>
+            <button className="wit-btn" onClick={() => void doRecoverAndOpen(OPENING_PARTS)} disabled={!!busy}>
+              Try control room part + two officials
             </button>
           </div>
 
           {recovery && (
             <div className={`ld-banner ${recovery.ok ? "ok" : "bad"}`}>
-              <strong>{recovery.used} shares — {recovery.ok ? "key recovered" : "insufficient"}</strong>
+              <strong>{recovery.presented} — {recovery.ok ? "key recovered" : "refused"}</strong>
               <div>{recovery.detail}</div>
               {recovery.ok && !granted && (
                 <div className="ld-gate">
@@ -1037,13 +1070,13 @@ export default function LiveDemo() {
           <div className="ld-flow">
             <span>Encrypted package</span>
             <span className="ld-arrow">↓</span>
-            <span>3 of 4 shares</span>
+            <span>Control room part + 2 of 3 officials</span>
             <span className="ld-arrow">↓</span>
             <span>Content key</span>
             <span className="ld-arrow">↓</span>
             <span className="ok">Original paper</span>
           </div>
-          <button className="wit-btn" onClick={() => void doRecoverAndOpen(3)} disabled={!!busy}>
+          <button className="wit-btn" onClick={() => void doRecoverAndOpen(OPENING_PARTS)} disabled={!!busy}>
             Reconstruct key and decrypt
           </button>
           {plaintext && (

@@ -2,10 +2,15 @@
  * Typed client for the ledger API.
  *
  * Everything goes through `/api`, which Vite proxies to the ledger service. The
- * UI never talks to Postgres and never constructs a signed event — writes into
- * the chain come from attested devices only, and an operator's browser is not
- * one. What the control room can do is read, and record intent against
- * reference data.
+ * UI never talks to Postgres, and nothing in this file constructs a signed
+ * event: what the control room does through this client is read, and record
+ * intent against reference data.
+ *
+ * Signing happens in exactly one other place. A browser that has been paired
+ * as a `centre_pc` device signs the photographs its own camera takes, with a
+ * key the browser holds and script cannot read; that is `lib/witness.ts`, and
+ * it says there what the arrangement does and does not protect. The Live Demo
+ * page also signs, as devices it enrols for itself and labels as its own.
  */
 
 const BASE = "/api";
