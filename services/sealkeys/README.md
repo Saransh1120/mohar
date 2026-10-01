@@ -1,7 +1,13 @@
 # sealkeys
 
 Sealed package service. Encrypts each centre bundle with XChaCha20-Poly1305 and
-splits the content key 3-of-4 by Shamir.
+splits the opening key as the control room's part XOR a Shamir 2-of-3 across
+three officials. Not built: `src/` is empty. The split and the time lock exist
+in `packages/crypto-core`, and sealing a packet's seam label is
+`POST /packages/:id/seal` in the ledger.
+
+The paragraph below describes the earlier 3-share-holder design and is kept
+until this service is written against `docs/03-crypto-design.md`.
 
 Each share is protected differently and every method is free: one Argon2id
 passphrase-wrapped for the exam authority, one under `tlock` bound to a public

@@ -43,8 +43,9 @@ honest shape of the design.
 | will not read | refuses, `seam_token_absent` | operator invokes the witnessed fallback ceremony |
 | package predates seam labels | not evaluated | ceremony proceeds on the other checks |
 
-The key never depended on the seal. The content key is rebuilt from Shamir
-shares (3 of 4) after a drand round, and neither of those reads a label. A
+The key never depended on the seal. The opening key is rebuilt from the control
+room's part, released by a drand round, and two of the three officials' Shamir
+shares, and neither of those reads a label. A
 damaged seam changes *who must be present* and *what is recorded*. It does not
 remove the ability to open the paper.
 
@@ -89,9 +90,9 @@ people are present. — `apps/control-room/src/pages/PackageDetail.tsx`
 No. An unreadable seam routes to a witnessed manual opening. The key comes from
 Shamir shares and a drand round, neither of which reads the label. — §2 above
 
-**"Why not put the whole thing on a blockchain?"**
-There is one authority, the board. A blockchain buys consensus between parties
-who don't trust each other; there are none here. Signatures and database
+**"Why not put the whole thing on a distributed ledger?"**
+There is one authority, the board. A consensus network buys agreement between
+parties who don't trust each other; there are none here. Signatures and database
 privileges give tamper evidence without a network. — `CLAUDE.md`, `docs/adr`
 
 ---

@@ -14,12 +14,12 @@ ESP32 firmware in `firmware/`, written as Arduino sketches.
 
 | Path | What lives here |
 | --- | --- |
-| `services/` | Backend services. Only `ledger` is implemented — it also hosts the access engine, registry and auth routes. The other seven directories are placeholders with a README and an empty `src/`. |
+| `services/` | Backend services. Only `ledger` is implemented — it also hosts the access engine, registry and auth routes, sealing, the hand-off engine, the watchdog and the alert notifier. The other seven directories are placeholders with a README and an empty `src/`. |
 | `packages/` | `contracts` (shared types/enums/events), `crypto-core` (chain, Merkle, Shamir, custody keys, drand), `ledger-client`, `ui-kit` |
 | `apps/` | `control-room` is the only working UI. `verify-portal`, `centre-client`, `field-app` are not built. |
 | `firmware/` | ESP32 room monitor and related sketches |
 | `infra/` | SQL migrations, docker, terraform, attestation roots |
-| `tools/` | `seed`, `simulator`, `drill`, `demo-setup`, `provision-device`, `monitor-watchdog` |
+| `tools/` | `seed`, `label-print`, `e2e`, `simulator`, `drill`, `demo-setup`, `provision-device`, `monitor-watchdog` |
 | `docs/` | Numbered design docs `00`–`12`, plus `docs/adr/` for decisions |
 
 ## Commands

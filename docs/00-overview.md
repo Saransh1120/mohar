@@ -10,8 +10,10 @@ to a court's standard, and no one can say which centre a leaked image came from.
 
 ## Build constraints
 
-Software-first. The only hardware we build is a simple ESP32 room monitor (door
-state, footfall, presence, light) costing under Rs 1,200. No paid or premium
+Software-first. The hardware we build is small and supporting: an ESP32 room
+monitor (door state, footfall, presence, light) at about Rs 1,250-1,450, and a
+fingerprint witness station for the exam centre. `06-hardware-spec.md` has the
+per-centre kit. No paid or premium
 dependency anywhere in the stack. `adr/0004-no-paid-dependencies.md` records
 every substitution and what each costs us in assurance.
 

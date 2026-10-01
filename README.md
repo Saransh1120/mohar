@@ -3,15 +3,16 @@
 A tamper-evident, time-locked custody and distribution system for competitive and
 government examination papers.
 
-**Design goals** (see `docs/00-overview.md` for why these and not "100% leak-proof"):
+**Design goals** (see `docs/00-overview.md` for why these and not "a paper that can never leak"):
 
 1. Collapse the **exposure window** — the time a paper exists in readable form —
    from ~240 hours to under one hour.
 2. Make every leak **attributable** to a centre, and where possible a seat,
    within minutes of an image surfacing.
-3. Produce a **court-admissible** custody record, because India's exam-fraud
-   problem is an evidentiary failure (148 cases since 2015, one conviction)
-   more than a detection failure.
+3. Produce a **custody record investigators can work from**, because India's
+   exam-fraud problem is an evidentiary failure (148 cases since 2015, one
+   conviction) more than a detection failure. Whether the record is accepted
+   as evidence in court has not been checked by a lawyer and is not claimed.
 
 **Non-goal:** eliminating leaks entirely. A paper must be readable by humans at
 several points in its life. We shrink and instrument those points; we do not
@@ -27,7 +28,7 @@ pretend to remove them.
 | `packages/` | Shared contracts, crypto primitives, ledger client, UI kit |
 | `firmware/` | ESP32 room-monitor firmware — the only hardware we build |
 | `infra/` | Docker compose, SQL migrations, Terraform, attestation roots |
-| `tools/` | Exam simulator, seed data, chaos-drill harness |
+| `tools/` | Seed data, label printing and sealing, device provisioning, end-to-end checks |
 | `tests/` | End-to-end, load, and shared fixtures |
 
 ## Quick start
@@ -54,13 +55,20 @@ pnpm --filter @mohar/control-room dev
 
 Working: the hash-chained ledger, device enrolment, the custody projection, the
 deny-by-default access engine with six-hourly stage keys, Merkle anchoring, and
-the control-room UI. The seed tool drives five centres through the real engine —
-it presents credentials and accepts whatever the engine rules, rather than
+the control-room UI. On top of that: sealing a packet with a two-code seam label
+(`tools/label-print` and `POST /packages/:id/seal`), the hand-off engine
+(dispatch, receive, confirm, with a Transfer Key per leg), the watchdog that
+raises a late hand-off or an unopened packet, and alerts sent out by Telegram
+and email. The seed tool drives five centres through the real engine — it
+presents credentials and accepts whatever the engine rules, rather than
 asserting outcomes.
 
-Not built: `sealkeys`, `render`, `trace`, `notify`, `gateway`, and all clients
-except the control room. **There is no authentication anywhere** — `gateway` owns
-that and does not exist, so nothing here may be exposed beyond localhost.
+Not built: the strong room door, the opening ceremony, the damaged-label
+override, the seal lock, the RFC 3161 timestamp, and the services `sealkeys`,
+`unlock`, `render`, `trace`, `notify` and `gateway` as services of their own —
+what exists of them runs inside `ledger`. No client exists except the control
+room. **There is no authentication anywhere** — `gateway` owns that and does not
+exist, so nothing here may be exposed beyond localhost.
 
 [RUNNING.md](RUNNING.md) carries the honest list of gaps. See
 `docs/09-mvp-plan.md` for the 12-week build order.
@@ -71,8 +79,9 @@ Three constraints shape every decision in `docs/`:
 
 1. **Software-first.** The system is software; hardware is a small supporting
    element, never the centre of a design.
-2. **Simple ESP32 hardware only.** One room monitor under Rs 1,200 for door
-   state, footfall and presence. No custom PCBs, secure elements or latches.
+2. **Simple ESP32 hardware only.** A room monitor (about Rs 1,250-1,450) for
+   door state, footfall and presence, and a fingerprint witness station. No
+   custom PCBs or secure elements. The per-centre kit is in `docs/06`.
 3. **No paid or premium dependencies.** Self-hosted Postgres, the public drand
    beacon, a free RFC 3161 timestamp authority, OpenStreetMap tiles, WebAuthn
    platform authenticators, Android Keystore attestation.

@@ -23,6 +23,6 @@ Three PlatformIO environments:
 
 Wiring, bring-up order and integration steps: `docs/12-hardware-build-guide.md`.
 
-Tamper-evident, not tamper-proof — the per-device signing key is in readable
+Tamper-evident, not tamper-resistant — the per-device signing key is in readable
 flash, and an optical reader is spoofable with a lifted print. Both limits are
 stated in `docs/12` Part H and should be stated in the pitch too.

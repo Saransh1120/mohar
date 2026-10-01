@@ -7,7 +7,7 @@ examination, under the throughput ceiling, one district, 20-50 centres.
 | --- | --- | --- |
 | 1-3 | `ledger`: hash-chained signed event store, device enrolment, package and seal registry, RFC 3161 anchoring, `verify-portal` | The audit trail is tamper-evident and independently checkable |
 | 3-6 | `field-app`: offline-first NFC/QR handoff scanning, dual-signature capture, geotag, local queue and sync | The chain records cleanly with zero connectivity |
-| 5-8 | `sealkeys`: Shamir 3-of-4, tlock to the public drand beacon, WebAuthn share custody, dual-authorised fallback | No single party - including us - can open a package early |
+| 5-8 | `sealkeys`: opening key as control room part + Shamir 2-of-3 across three officials, tlock of the control room part to the public drand beacon, share wrapping to the duty roster, supervised override | No single party - including us - can open a package early |
 | 6-9 | `access` policy engine + `firmware/room-monitor`: deny-by-default decisions, seal-photo capture, ESP32 door/footfall/heartbeat telemetry | Every access attempt and every room entry is recorded, granted or not |
 | 7-10 | `render` + `centre-client`: metered N-copy printing, per-centre permutation, copy serial and watermark, key destruction | The exposure-window collapse, end to end |
 | 9-11 | `trace`: upload a photo of a printed paper, recover centre and copy | Attribution in under a minute - the demo that wins the room |

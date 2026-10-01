@@ -26,32 +26,54 @@ It is binary, provable from the architecture, and costs nothing to build.
 3. **The key exists too early.** Material generated at encryption time sits
    somewhere for days, and every day is an exfiltration opportunity.
 
-## The four locks, rebuilt for zero cost
+## The opening key, in four parts
 
-Content key `K` encrypts the bundle with XChaCha20-Poly1305 (libsodium, free).
-`K` is split by Shamir into 4 shares, threshold 3.
+The opening key `K` encrypts the bundle with XChaCha20-Poly1305 (free). It is
+split so that the control room's part is always needed and two officials from
+two institutions are needed with it:
 
-| Share | Held by | Protected under | Cost |
+```
+K          =  controlPart  XOR  fieldKey
+fieldKey   ->  Shamir 2-of-3  ->  superintendent · board observer · police escort
+```
+
+| Part | Held by | Protected under | Cost |
 | --- | --- | --- | --- |
-| S1 | Exam authority | Passphrase-wrapped (Argon2id), stored on our server | Free |
-| S2 | *Nobody, yet* | `tlock` to the public drand beacon round at `startAt` | Free |
-| S3 | Centre superintendent | WebAuthn platform authenticator (Windows Hello / Android biometric) | Free |
-| S4 | Independent observer | WebAuthn platform authenticator on their own phone | Free |
+| Control room part | *Nobody, until the scheduled minute* | `tlock` to the drand round fifteen minutes before `startAt` | Free |
+| Official 1 | Centre superintendent | Wrapped to the role at sealing, to the named officer's device a day ahead | Free |
+| Official 2 | Board observer | The same | Free |
+| Official 3 | Police escort | The same | Free |
 
-Any 3 of 4 reconstruct `K`. S2 is unobtainable by anyone until the beacon
-publishes, so opening early needs **all three** remaining holders to collude -
-across three organisations, leaving a trail in three places.
+The XOR is what makes the control room's part mandatory rather than likely:
+all three officials together reconstruct `fieldKey`, and `fieldKey` alone opens
+nothing. That part does not exist in readable form before the beacon publishes,
+so opening early is not a matter of who colludes. And the two officials must
+answer to two different institutions: `combineOpeningKey` refuses a pair from
+one, because a 2-of-3 across three people who report to the same office is one
+signature.
+
+This replaced an earlier Shamir split of four shares with a threshold of three,
+in which the authority was one holder among four and could be outvoted.
+`shamir.ts` keeps that scheme for packages already sealed under it.
+
+**What is built.** The split and its refusals (`opening-key.ts`) and the time
+lock (`timelock.ts`), both in `packages/crypto-core`, both tested. The Live Demo
+page splits a key this way and opens with it. **What is not:** no service issues
+the envelope, wraps the officials' parts to a duty roster, or runs the opening
+ceremony. Until `sealkeys` and `unlock` exist, no packet in the field is
+actually opened with this key.
 
 ### What we lose without an HSM, stated plainly
 
-With a FIPS 140-2 Level 3 HSM, S1 could never be extracted even by a full server
-compromise. Without one, S1 is a passphrase-wrapped blob on our infrastructure.
-An attacker who fully owns our servers **and** obtains one more share can open a
-package early.
+Between sealing and the moment the control room's part is time-locked, that
+part exists in the clear inside whatever process generated it. With a FIPS
+140-2 Level 3 HSM it could be generated and wrapped without ever being
+readable. Without one, an attacker who fully owns that process during that
+interval, **and** obtains two officials' parts, can open a package early.
+Time-locking at sealing rather than a day ahead shrinks the interval to
+nothing; that is a design choice still open.
 
-The threshold split still means we are not a single point of failure, which was
-the whole point. But do not claim HSM-grade custody. If a customer requires it
-later, S1 moves to their HSM with no change to the rest of the design.
+Do not claim HSM-grade custody.
 
 ## Lock B - the part that is free and genuinely strong
 
@@ -64,10 +86,14 @@ policy check - an unforgeable fact about the state of the world.
 there is no account, quota, or billing anywhere in the path.
 
 ```ts
-const round = roundAt(chainInfo, startAt);   // genesis + period * n
-const ct    = await tlock.encrypt(shareS2, chainInfo, round);
-// Always verify chainInfo against the pinned DRAND_CHAIN_HASH before use.
+// round = roundAtOrAfter(scheduledOpenTime), against the pinned quicknet chain
+const envelope = await wrapControlPart(controlPart, scheduledOpenTime, policy);
+// later, offline, once that round's beacon value is in hand:
+const controlPart = await unwrapControlPart(envelope, beacon);
 ```
+
+`timelock.ts` does not fetch. It takes the beacon value as an argument, because
+the station's copy runs in a room with no route to the internet.
 
 Pin the chain hash, cache `chainInfo`, and treat a beacon that disagrees with the
 pinned hash as a hostile network rather than a transient error.
@@ -80,7 +106,7 @@ already in the box:
 
 - The centre client binds its device identity to a TPM-resident keypair and
   proves possession on every request. Free.
-- The WebAuthn platform authenticators behind S3 and S4 ride on that same TPM or
+- The credentials the officials' parts are wrapped to ride on that same TPM or
   Android Keystore - so "two-person co-presence" costs zero rupees in tokens.
 
 ### What we lose without a sealed appliance, stated plainly
@@ -100,11 +126,20 @@ than this document does.
 
 Beacons need network. Many centres have neither reliable connectivity nor power.
 
-Fallback: two control-room operators each authenticate with their own platform
-authenticator and release a replacement for S2. Delivery is by whatever channel
+The first answer is that the opening does not need the network at the moment
+it happens. The time-locked envelope and the wrapped officials' parts are cached
+on the station a day ahead; at the scheduled minute the station needs only that
+round's beacon value, 48 bytes, from any public relay, a LAN cache or an
+officer's phone.
+
+Where even that fails, the fallback: two control-room operators each
+authenticate with their own platform authenticator and release a replacement
+for the control room's part. Delivery is by whatever channel
 exists - and because paid SMS gateways are out, the default is an operator
 **reading a short alphanumeric code over a phone call**, which the centre types
 in. Crude, free, and auditable because the call is logged as a ledger event.
+An opening outside its window needs the control room's part, **all three**
+officials and control-room approval. None of this fallback is built.
 
 Every one of these conditions is required:
 
@@ -115,16 +150,18 @@ Every one of these conditions is required:
 - Every invocation is reviewed post-exam and the aggregate count published.
 
 **This is the weakest link in the system.** It re-introduces the central-operator
-risk that Lock A exists to remove. Measure it, publish it. "Fallback used at 3 of
-4,750 centres" is credible; hiding the path is not.
+risk that the time lock exists to remove. Measure it, publish it. "Fallback used
+at three centres out of 4,750" is credible; hiding the path is not.
 
 ## Key lifecycle at the centre
 
 1. Ciphertext bundle pre-staged days ahead. Only key material arrives on the day,
    and it is a few kilobytes.
-2. At `startAt` the beacon publishes; the client recovers S2.
-3. Superintendent and observer each complete a WebAuthn assertion - two-person rule.
-4. Shares combine in memory; `K` is zeroised immediately after the print job.
+2. Fifteen minutes before `startAt` the beacon publishes; the station recovers
+   the control room's part.
+3. Two officials from different institutions each verify - the two-person rule -
+   and their parts unwrap.
+4. The parts combine in memory; `K` is zeroised immediately after the print job.
 5. Print controller meters exactly N copies, watermarking each.
 6. `KEY_DESTROYED` is signed and queued.
 

@@ -30,7 +30,8 @@ That refusal is a feature. Ship it in the MVP.
 
 ## Part B - The ESP32 room monitor (the only thing we build)
 
-One device per strong room or control room. Target cost under Rs 1,200.
+One device per strong room or control room. Estimated cost Rs 1,250-1,450: the
+parts below come to about Rs 1,255, before wiring and an enclosure.
 
 | Component | Part | Approx cost | Purpose |
 | --- | --- | ---: | --- |
@@ -70,13 +71,27 @@ the door-open event as the reliable signal and the count as corroboration.
 
 ESP32 flash is readable. A determined attacker with physical access can extract
 the HMAC key and forge records. This device is **tamper-evident, not
-tamper-proof**, and its real value is the heartbeat gap and the anomaly log, not
+tamper-resistant**, and its real value is the heartbeat gap and the anomaly log, not
 cryptographic assurance. Do not oversell it.
 
 And the point that matters most: at Hazaribagh the principal was *authorised* to
 be in that room. Occupancy sensing is a detective control against unauthorised
 entry and close to useless against authorised betrayal. Build it; do not let it
 be the story.
+
+### The per-centre kit
+
+The room monitor is one of three boards. The witness station exists as firmware
+(`firmware/witness-station`, and the bench build `firmware/witness-node`); the
+seal lock is designed and not built.
+
+| Device | Parts | Est. cost (INR) |
+| --- | --- | ---: |
+| Witness station | ESP32-S3, R307 fingerprint reader, DS3231 RTC, OLED (SSD1306), microSD | 1,700-2,100 |
+| Room monitor | ESP32, reed switch, 2x VL53L0X ToF, HLK-LD2410C mmWave, microSD | 1,250-1,450 |
+| Seal lock (not built) | ESP32, 12 V solenoid, reed switch, tamper switch, supply | 900-1,100 |
+| Enclosures, wiring | 3D print / ABS boxes | 400-600 |
+| **Per centre kit** | uses the centre PC it already has | **about 4,250-5,250** |
 
 ## Part C - What the centre must already have
 

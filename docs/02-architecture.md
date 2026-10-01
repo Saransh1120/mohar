@@ -44,11 +44,16 @@ compromised service account must not be able to rewrite history.
 
 ### `sealkeys` — sealed package service
 
-Encrypts each centre's bundle. Generates a content key, splits it 3-of-4 by
-Shamir, then protects each share differently: one Argon2id passphrase-wrapped for
-the authority, one under `tlock` bound to the drand round for exam start, and two
-under WebAuthn platform authenticators held by the superintendent and the
-independent observer. Never holds a reconstructable key at rest.
+Encrypts each centre's bundle. Generates an opening key and splits it as
+`controlPart XOR fieldKey`: the control room's part is mandatory and goes under
+`tlock`, bound to the drand round fifteen minutes before exam start; `fieldKey`
+is split 2-of-3 by Shamir across the superintendent, the board observer and the
+police escort, and a pair from one institution does not reconstruct it. Never
+holds a reconstructable key at rest. See `03-crypto-design.md`.
+
+Not built as a service. The split (`opening-key.ts`) and the time lock
+(`timelock.ts`) exist in `crypto-core` and are tested; sealing a packet's seam
+label is `POST /packages/:id/seal` inside the ledger.
 
 ### `access` — package access policy engine
 
@@ -145,9 +150,9 @@ police"), because that is actionable in a way an adjective is not.
 - **Offline-first is a hard requirement, not a feature.** Any client may be
   disconnected for hours. All writes queue locally, are signed at creation time,
   and reconcile on sync. Clock skew is bounded and recorded, never trusted.
-- **Not a blockchain.** Hash chain plus external RFC 3161 timestamping plus
-  published roots gives tamper-evidence and admissibility without consensus
-  overhead — or the procurement scepticism the word attracts.
+- **An append-only hash chain, with no consensus network.** Hash chain plus
+  external RFC 3161 timestamping plus published roots gives tamper-evidence
+  without consensus overhead. See `adr/0001`.
 - **Deny-by-default.** Every access decision, every print, every share release
   starts from refusal and requires positive evidence to proceed.
 - **Free-tier only.** Self-hosted Postgres, public drand, free RFC 3161 TSA,

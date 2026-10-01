@@ -22,7 +22,11 @@ over plain HTTP.
 
 1. **Ceremony page** → *Pair this browser* → *Sound on* → *Start camera*.
 2. **Slots page** → enter the station's address (it prints it at boot and
-   records it in the activity feed as `station_online`) → *Connect*.
+   records it in the activity feed as `station_online`) and the station token
+   (the `STATION_TOKEN` in that board's `node_config.h`) → *Connect*. The
+   station answers no request without the token, and grants a browser access
+   only from the `CONTROL_ROOM_ORIGIN` it was flashed with, so the page must be
+   open at exactly that address. Over USB neither is needed.
 3. Enrol two fingers from that page: one in a slot **below 10**, one in a slot
    **10 or above**. The page walks whoever is at the reader through it.
 4. Register both slots against two people on the roster. Give the second one
@@ -95,8 +99,20 @@ mention will assume there are others you are hiding.
   compromised centre PC could pair a real match with a substituted frame. What
   it cannot do is arrange that afterwards — both halves are committed at the
   time.
-- The browser's signing key is in local storage, not the TPM. `adr/0003`
-  records that attestation verification does not exist yet.
+- The browser's signing key is a non-extractable key held by the browser, not
+  the TPM. Script on the page cannot read it out, but anyone at this unlocked
+  machine can still have the browser sign. `adr/0003` records that attestation
+  verification does not exist yet.
+- Two authorised officials who collude at a legitimate opening pass every
+  check. Mohar does not stop them; it narrows the enquiry to two named people
+  and a signed time.
+- A leak at the press before the packet is sealed is outside the chain, which
+  begins at `SEAL_APPLIED`.
+- A careful attacker can read a seam label's QR code offline without opening
+  the packet. Detection covers careless scans.
+- Nobody has checked with a lawyer whether this record is accepted as evidence
+  under the Bharatiya Sakshya Adhiniyam 2023. It is a custody record
+  investigators can work from, and no more is claimed.
 - The station has no card fitted, so records buffer in RAM and do not survive a
   power cut. The device says so in the ledger on every boot.
 - The electronic seal lock is not built, so check 20 reports "not evaluated" on

@@ -448,7 +448,7 @@ export default function Landing() {
             The failure is therefore not primarily detection. It is <em>evidence and
             attribution</em> — chain of custody cannot be proved to a court's standard, and
             no one can say which centre a leaked image came from. Mohar is built to close
-            that gap, not to promise a leak-proof examination.
+            that gap, not to promise an examination that cannot leak.
           </p>
         </div>
       </section>
@@ -524,7 +524,7 @@ export default function Landing() {
         </div>
 
         <div className="l-disclaim l-reveal">
-          <strong>Stated plainly:</strong> Mohar does not make examinations leak-proof. Someone
+          <strong>Stated plainly:</strong> Mohar does not stop a paper from leaking. Someone
           with legitimate access at the moment a bundle is opened can still photograph a paper.
           What changes is the cost — the exposure window narrows, and every act carries an
           attributable, tamper-evident record.
