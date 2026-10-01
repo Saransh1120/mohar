@@ -19,6 +19,7 @@ import {
  *   POST /legs/:legId/dispatch    sender: scan, fingerprint → leg opened
  *   POST /legs/:legId/receive     receiver: scan, serial, fingerprint → key
  *   POST /legs/:legId/confirm     receiver's device submits the key → closed
+ *   POST /legs/:legId/override    a label that will not scan (in override-routes)
  *
  * Every step records the attempt before it answers. A refusal is a 200 with
  * `outcome: "refused"`, not a 4xx: it is a successful evaluation that produced
@@ -48,6 +49,8 @@ const StepBody = z.object({
   // came from a camera pointed at a surface anyone could have printed on.
   seamSecretHex: z.string().regex(/^[0-9a-f]{32}$/, "seam secret must be 32 lowercase hex").optional(),
   seamIdRead: z.string().regex(/^[0-9A-Z]{20,32}$/).optional(),
+  // A damaged-label override, in place of the scan. See override-routes.
+  overrideId: z.string().uuid().optional(),
   packetSerialTyped: z.string().min(1).max(64).optional(),
   biometricSlot: z.number().int().nonnegative().max(1000).optional(),
   biometricScore: z.number().int().nonnegative().max(1000).optional(),

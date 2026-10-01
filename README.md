@@ -57,14 +57,17 @@ Working: the hash-chained ledger, device enrolment, the custody projection, the
 deny-by-default access engine with six-hourly stage keys, Merkle anchoring, and
 the control-room UI. On top of that: sealing a packet with a two-code seam label
 (`tools/label-print` and `POST /packages/:id/seal`), the hand-off engine
-(dispatch, receive, confirm, with a Transfer Key per leg), the watchdog that
-raises a late hand-off or an unopened packet, and alerts sent out by Telegram
-and email. The seed tool drives five centres through the real engine — it
+(dispatch, receive, confirm, with a Transfer Key per leg), the strong room door
+(two verified people, every entry and exit recorded), the damaged-label override
+(two operators approve it), roster lock and the opening ceremony (the control
+room's part time-locked to drand, two officials' shares wrapped to the station),
+the watchdog that raises a late hand-off, an unopened packet, an overlong visit
+or an unfinished opening, and alerts sent out by Telegram and email. The seed tool drives five centres through the real engine — it
 presents credentials and accepts whatever the engine rules, rather than
 asserting outcomes.
 
-Not built: the strong room door, the opening ceremony, the damaged-label
-override, the seal lock, the RFC 3161 timestamp, and the services `sealkeys`,
+Not built: the seal lock, the opening on the ESP32 station (a paired browser
+stands in for it), the offline opening, and the services `sealkeys`,
 `unlock`, `render`, `trace`, `notify` and `gateway` as services of their own —
 what exists of them runs inside `ledger`. No client exists except the control
 room. **There is no authentication anywhere** — `gateway` owns that and does not

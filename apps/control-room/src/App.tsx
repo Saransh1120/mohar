@@ -9,6 +9,10 @@ import PackageDetail from "./pages/PackageDetail";
 import Activity from "./pages/Activity";
 import Witness from "./pages/Witness";
 import NoAuth from "./pages/NoAuth";
+import StrongRooms from "./pages/StrongRooms";
+import Rosters from "./pages/Rosters";
+import Ceremonies from "./pages/Ceremonies";
+import Overrides from "./pages/Overrides";
 import SlotRegistry from "./pages/SlotRegistry";
 import Keys from "./pages/Keys";
 import Devices from "./pages/Devices";
@@ -63,6 +67,22 @@ const PAGES: Record<string, { title: string; sub: string }> = {
   "/alerts": {
     title: "Alerts",
     sub: "What happened, what was known when it was raised, and who has acknowledged it",
+  },
+  "/strongrooms": {
+    title: "Strong rooms",
+    sub: "Who is inside, every visit against the time it was expected to take, and every attempt at the door",
+  },
+  "/rosters": {
+    title: "Duty rosters",
+    sub: "The three officials at each centre, and the keys issued the moment the list is locked",
+  },
+  "/ceremonies": {
+    title: "Opening ceremonies",
+    sub: "Scan, two officials, the serial, and a key that cannot exist before its minute",
+  },
+  "/overrides": {
+    title: "Override approval",
+    sub: "Labels that would not scan: two operators decide each one, and how often it happens is counted",
   },
   "/devices": {
     title: "Devices",
@@ -131,7 +151,11 @@ export default function App() {
               <span className="nav-count alert">{alertSummary?.unacknowledged}</span>
             )}
           </NavLink>
-          <NavLink to="/witness">Ceremony</NavLink>
+          <NavLink to="/strongrooms">Strong rooms</NavLink>
+          <NavLink to="/rosters">Rosters</NavLink>
+          <NavLink to="/ceremonies">Ceremonies</NavLink>
+          <NavLink to="/overrides">Overrides</NavLink>
+          <NavLink to="/witness">Unlock</NavLink>
           <NavLink to="/slots">Slots</NavLink>
           <NavLink to="/activity">
             Activity
@@ -228,6 +252,10 @@ export default function App() {
             <Route path="/packages/:id" element={<PackageDetail />} />
             <Route path="/transfers" element={<Transfers />} />
             <Route path="/alerts" element={<Alerts />} />
+            <Route path="/strongrooms" element={<StrongRooms />} />
+            <Route path="/rosters" element={<Rosters />} />
+            <Route path="/ceremonies" element={<Ceremonies />} />
+            <Route path="/overrides" element={<Overrides />} />
             <Route path="/witness" element={<Witness />} />
             <Route path="/slots" element={<SlotRegistry />} />
             <Route path="/activity" element={<Activity />} />

@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import type { DenyReason } from "@mohar/contracts";
 import { checkTransferKey, seamLabelMatches, TRANSFER_KEY_ATTEMPT_LIMIT } from "@mohar/crypto-core";
+import { loadOverride } from "./override.js";
 
 /**
  * ── The hand-off decision engine ─────────────────────────────────────────────
@@ -77,6 +78,11 @@ export interface TransferRequest {
   /** The secret rebuilt from both QR codes, hex. Absent means it was not read. */
   seamSecretHex?: string | undefined;
   seamIdRead?: string | undefined;
+  /**
+   * An approved damaged-label override, offered in place of the scan. It stands
+   * in for the seam check on this leg and for nothing else.
+   */
+  overrideId?: string | undefined;
   /** Typed off the packet by the receiver. Proves someone is standing next to it. */
   packetSerialTyped?: string | undefined;
   /** Slot and score from the reader. Never an image, never a template. */
@@ -114,6 +120,8 @@ export interface TransferDecision {
     packageState: string | null;
     serialRegistered: string | null;
     lateBySeconds: number | null;
+    /** Set when the seam check was satisfied by an override rather than a scan. */
+    overrideId?: string;
   };
 }
 
@@ -311,6 +319,28 @@ export async function decideTransfer(
         undefined,
         "not evaluated: this packet has no label on record, so there is nothing " +
           "to check a scan against",
+      );
+    } else if (!req.seamSecretHex && req.overrideId) {
+      // The label was not scanned and an override is offered instead. It
+      // passes only if two operators approved it, for this leg, and the seam
+      // id typed off the label was this packet's.
+      const override = await loadOverride(tx, req.overrideId);
+      const forThisLeg = override?.legId === leg.id;
+      const approved = forThisLeg && override?.standing.status === "approved";
+      if (approved) context.overrideId = req.overrideId;
+      add(
+        "seam_commitment",
+        approved,
+        !override
+          ? `no override request with id ${req.overrideId}`
+          : !forThisLeg
+            ? "the override offered was approved for a different leg"
+            : approved
+              ? `label not scanned: override approved by ${override.approvers.join(" and ")}; ` +
+                "the packet is to be inspected where it arrives"
+              : `label not scanned, and the override offered is ${override.standing.status}: ` +
+                override.standing.detail,
+        "seam_override_not_approved",
       );
     } else if (!req.seamSecretHex) {
       add(

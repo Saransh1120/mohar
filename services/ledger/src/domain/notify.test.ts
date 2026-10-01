@@ -55,8 +55,8 @@ test("an alert about a packet with no leg leaves the leg out", () => {
 });
 
 test("a kind with no title of its own is still readable", () => {
-  const { subject } = alertNotice(alert({ kind: "DWELL_EXCEEDED" }));
-  assert.equal(subject, "Mohar alert: dwell exceeded");
+  const { subject } = alertNotice(alert({ kind: "MONITOR_SILENT" }));
+  assert.equal(subject, "Mohar alert: monitor silent");
 });
 
 test("only an alert that needs a decision says so", () => {

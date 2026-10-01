@@ -1,4 +1,6 @@
 import type { Pool, PoolClient } from "pg";
+import { sweepOverstays } from "./strongroom.js";
+import { sweepIncompleteCeremonies } from "./opening.js";
 
 /**
  * ── The Delayed Transfer Alert ───────────────────────────────────────────────
@@ -425,6 +427,10 @@ export async function sweepUnopenedPackets(
             select 1 from led.access_attempt t
              where t.package_id = p.id and t.outcome = 'granted'
                and t.stage = any($6::text[]))
+          -- A packet whose opening ceremony was started is the ceremony's to
+          -- report on: finished, it is opened; unfinished, CEREMONY_INCOMPLETE
+          -- says how far it got, which is more than "nobody opened this".
+          and not exists (select 1 from led.ceremony cy where cy.package_id = p.id)
           and not exists (
             select 1 from led.alert x where x.package_id = p.id and x.kind = $5)
         order by e.starts_at
@@ -510,6 +516,20 @@ export function startWatchdog(pool: Pool, log: Log, intervalMs: number): () => v
       }
     } catch (err) {
       log.error({ err }, "unopened packet sweep failed");
+    }
+    try {
+      for (const visitId of await sweepOverstays(pool)) {
+        log.info({ visitId }, "DWELL_EXCEEDED, a strong room visit with no exit ran past its limit");
+      }
+    } catch (err) {
+      log.error({ err }, "strong room overstay sweep failed");
+    }
+    try {
+      for (const packageId of await sweepIncompleteCeremonies(pool)) {
+        log.info({ packageId }, "CEREMONY_INCOMPLETE, an opening had not released by its scheduled time");
+      }
+    } catch (err) {
+      log.error({ err }, "incomplete ceremony sweep failed");
     } finally {
       running = false;
     }

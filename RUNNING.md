@@ -115,11 +115,11 @@ a genuine cross-check rather than the code agreeing with itself.
 | --- | --- |
 | `packages/crypto-core` | Merkle, hash chain, Ed25519 signing, canonical JSON, custody-key derivation. Tested. |
 | `packages/contracts` | Zod schemas for every event kind, package lifecycle, deny reasons |
-| `services/ledger` | Append path, chain verification, anchoring, device registry, custody projection, **access decision engine**, **rotating custody keys**, activity ledger, **sealing**, **hand-off engine**, **watchdog**, **alert notifier** |
-| `apps/control-room` | React + Vite + Leaflet. Overview, packages, custody timelines, transfers, alerts, activity ledger, key management, devices, integrity |
+| `services/ledger` | Append path, chain verification, anchoring, device registry, custody projection, **access decision engine**, **rotating custody keys**, activity ledger, **sealing**, **hand-off engine**, **watchdog**, **alert notifier**, **strong room door**, **damaged-label override**, **roster lock and the opening ceremony** |
+| `apps/control-room` | React + Vite + Leaflet. Overview, packages, custody timelines, transfers, alerts, strong rooms, rosters, opening ceremonies, override approval, activity ledger, key management, devices, integrity |
 | `tools/seed` | Key generation, device enrolment, and a custody walkthrough driven through the real engine |
 | `tools/label-print` | Prints a packet's two-code seam label and signs its sealing |
-| `tools/e2e` | End-to-end checks against a real Postgres: `transfer.mjs`, `seal.mjs`, `sweeps.mjs` |
+| `tools/e2e` | End-to-end checks against a real Postgres: `transfer.mjs`, `seal.mjs`, `sweeps.mjs`, `doors.mjs`, `opening.mjs` |
 
 ## Sealing a packet
 
@@ -175,9 +175,58 @@ E2E_OWNER_URL=postgres://mohar_migrator:dev_only_password@localhost:5432/mohar n
 E2E_OWNER_URL=postgres://mohar_migrator:dev_only_password@localhost:5432/mohar node tools/e2e/sweeps.mjs
 ```
 
-Both run the built ledger code inside one transaction and roll it back, so they
-are safe to point at the development database. `transfer.mjs` commits, and needs
-a throwaway one.
+```bash
+E2E_OWNER_URL=postgres://mohar_migrator:dev_only_password@localhost:5432/mohar node tools/e2e/doors.mjs
+```
+
+```bash
+E2E_OWNER_URL=postgres://mohar_migrator:dev_only_password@localhost:5432/mohar node tools/e2e/opening.mjs
+```
+
+All four run the built ledger code inside one transaction and roll it back, so
+they are safe to point at the development database. `transfer.mjs` commits, and
+needs a throwaway one. `opening.mjs` needs the internet and takes about half a
+minute: it locks a roster, waits for drand to publish the round the key was
+locked to, and opens the envelope with it.
+
+## The strong room, the override and the opening
+
+Four control room pages, each with a console that drives the real engine. All
+of them need migration 009.
+
+**Strong rooms.** "New strong room to try" registers a room, a door device and
+three people with a finger each on its reader. The door opens to two people,
+each verified, within 120 seconds of each other; one person, the same person
+twice, a courier, a borrowed finger or a weak match is refused, and every
+attempt is recorded. An exit records how long the visit lasted. A visit past
+its limit (twice the expected time, and at least five minutes over) raises
+`DWELL_EXCEEDED`, at the exit or, if there is no exit, from the watchdog. Where
+the room has a monitor, the `ROOM_ENTRY` events that monitor signed are summed
+over the visit, and more counted in than admitted raises `FOOTFALL_MISMATCH`.
+
+**Override approval.** On the Transfers console, choose "damaged, will not
+scan", attach a photograph and report it. The request appears on the Override
+approval page and raises `SEAM_DECODE_FAILED`. Two operators, each signed in to
+their own account, each tick that they saw the packet and both officers on
+video and approve; the second approval raises `SEAM_MANUAL_OVERRIDE`. Only then
+does the hand-off engine accept the override in place of the scan, for that leg
+only. The page also counts approved overrides per hundred legs by centre, route
+and officer.
+
+**Rosters and Ceremonies.** On Ceremonies, "New packet due to open" makes this
+browser the opening station (an enrolled device with a non-extractable X25519
+unwrap key), and makes a packet at its centre, three officials and an unlocked
+roster, with the exam starting in 17 minutes so the packet is due to open in
+two. On Rosters, sign in and lock it: that generates the opening key, time-locks
+the control room's part to the drand round for that minute, wraps each
+official's share to the station, and keeps none of it readable. Back on
+Ceremonies the console scans the packet, identifies two officials (each one's
+wrapped share is released only when they pass, and is unwrapped in the
+browser), confirms the serial, and then waits for the round. Before it, drand
+has nothing to give and the page says so. After it, the browser opens the
+envelope, assembles the key, and the ledger grants if the key hashes to the
+commitment made at the lock. A ceremony started and not released by its minute
+raises `CEREMONY_INCOMPLETE`.
 
 ## Custody access keys
 
@@ -290,16 +339,45 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   added. `firmware/witness-node/src/main.cpp` was already behind the Arduino
   sketch (it lacks the USB transport), so do not run `sync-arduino.py` over the
   sketch.
-- **Alerts need migrations 007 and 008.** Without 007 the Acknowledge button
-  returns 503; without 008 the notifier logs an error each round and sends
-  nothing.
-- **Not built at all:** strong room entry and exit (`/rooms/*`), the opening
-  ceremony (`/ceremonies/*`), roster lock and share re-wrapping, the
-  damaged-label override, the seal lock, device sequence numbers, and the
-  control room pages that would show them (Strong rooms, Ceremonies, Rosters,
-  Override approval). The tables for them exist from migration 006 and nothing
-  writes to them.
+- **Alerts need migrations 007 and 008, and the four newer pages need 009.**
+  Without 007 the Acknowledge button returns 503; without 008 the notifier logs
+  an error each round and sends nothing; without 009 the Strong rooms, Rosters,
+  Ceremonies and Override approval pages get errors from the ledger.
+- **The four newer pages have not been looked at in a browser.** They build and
+  typecheck, the routes behind them pass `doors.mjs` and `opening.mjs`, and the
+  station's cryptography (the X25519 unwrap and the drand time lock) was run in
+  a real browser against this code. But the control room needs a sign-in, and
+  the pages themselves were not opened and clicked through.
+- **The opening is the live path only.** A station opening from a cached
+  envelope with no network (`envelope-authorized`), an opening outside its
+  window with all three officials and the control room's approval, and a
+  roster change after locking are designed and not built. The ceremony window
+  is closed once the exam starts.
+- **The opening station is a paired browser, not the ESP32.** The witness
+  station firmware does not hold envelopes or unwrap shares. The console's
+  fingerprint is simulated, and no face reading is sent, so the engine records
+  that check as not evaluated.
+- **The opening key is made when the roster is locked, not when the packet is
+  sealed.** The design splits the key at the press and re-wraps the shares a
+  day ahead; here both happen at the lock, so nothing holds role-bound shares
+  in between. The lock is not held to a day ahead either: it can be done any
+  time before the packet's opening minute, and the time is recorded.
+- **Registering a station's unwrap key is unauthenticated**, like device
+  enrolment. Whoever reaches `POST /stations/:id/wrap-key` first for a device
+  sets its key; a second, different key is refused.
+- **The strong room door has no actuator and its demonstration room has no
+  monitor.** The engine decides and records; nothing physical opens. Footfall
+  is checked only for a room registered with a monitor device whose signed
+  `ROOM_ENTRY` events are on the chain.
+- **The override's live video is the operator's word.** No call is carried by
+  this system and there is no field app to place one from. What is recorded is
+  that two named operators each stated they saw the packet and both officers.
+- **The door, the override and the ceremony write to their own append-only
+  tables, not to the signed chain.** No `STRONGROOM_ENTRY`, `OPEN_CEREMONY` or
+  `SEAM_MANUAL_OVERRIDE` event is appended, because the ledger has no key of
+  its own to sign one with. The hand-off engine is the same.
+- **Not built at all:** the seal lock and device sequence numbers.
 
-The natural next steps are the opening ceremony (its tables and its crypto both
-exist), rate limiting on the decision endpoint, and real attestation
-verification at enrolment.
+The natural next steps are moving the opening onto the ESP32 station, rate
+limiting on the decision endpoint, and real attestation verification at
+enrolment.

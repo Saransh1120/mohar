@@ -139,6 +139,27 @@ export const DenyReason = z.enum([
   "two_person_window_not_met",
   "occupancy_contradicts_two_person",
   "witness_frame_missing",
+  // ── the strong room door ──
+  "room_unknown",
+  /** One person at the door, or the same person twice. The door takes two. */
+  "two_person_required",
+  /** The finger matched a slot that is not registered to the person named. */
+  "biometric_slot_not_registered",
+  "face_not_matched",
+  "visit_unknown",
+  "visit_already_closed",
+  // ── the damaged-label override ──
+  /** An override was offered in place of a scan and two operators have not
+   *  approved it, or one refused it. */
+  "seam_override_not_approved",
+  // ── the opening ceremony ──
+  "ceremony_window_closed",
+  "ceremony_step_out_of_order",
+  "opening_key_not_issued",
+  /** What the station assembled does not hash to the commitment made when the
+   *  key was split. */
+  "opening_key_mismatch",
+  "station_not_paired",
 ]);
 export type DenyReason = z.infer<typeof DenyReason>;
 

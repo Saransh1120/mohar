@@ -11,6 +11,7 @@ import {
 } from "../lib/api";
 import { formatTime, relativeTime, useAsync } from "../lib/hooks";
 import { Card, Empty, ErrorNote } from "../components/ui";
+import { sha256OfFile } from "../components/CheckList";
 
 /**
  * ── Hand-offs ────────────────────────────────────────────────────────────────
@@ -87,7 +88,28 @@ function Checks({ checks }: { checks: TransferCheck[] }) {
   );
 }
 
-type LabelChoice = "this" | "other" | "none";
+type LabelChoice = "this" | "other" | "none" | "damaged";
+
+const OVERRIDES_KEY = "mohar.legOverrides";
+
+/** The override this browser requested for a leg, so a reload does not lose it. */
+function loadOverride(legId: string): string | null {
+  try {
+    const map = JSON.parse(localStorage.getItem(OVERRIDES_KEY) ?? "{}") as Record<string, string>;
+    return map[legId] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function saveOverride(legId: string, overrideId: string): void {
+  try {
+    const map = JSON.parse(localStorage.getItem(OVERRIDES_KEY) ?? "{}") as Record<string, string>;
+    localStorage.setItem(OVERRIDES_KEY, JSON.stringify({ ...map, [legId]: overrideId }));
+  } catch {
+    /* the console just forgets the request on reload */
+  }
+}
 type FingerChoice = "match" | "weak" | "none";
 
 export default function Transfers() {
@@ -323,6 +345,8 @@ function Console({ leg, journey, onDone }: { leg: Leg; journey: DemoJourney; onD
   const [serial, setSerial] = useState(journey.serial);
   // The key lives only in this component, as it would only live on the
   // receiver's phone. A reload loses it, and the ledger will not issue it twice.
+  const [overrideId, setOverrideId] = useState<string | null>(() => loadOverride(leg.id));
+  const [photo, setPhoto] = useState<File | null>(null);
   const [heldKey, setHeldKey] = useState<string | null>(null);
   const [keyTyped, setKeyTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -334,6 +358,30 @@ function Console({ leg, journey, onDone }: { leg: Leg; journey: DemoJourney; onD
     if (p) setPersonId(p.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expectedRole]);
+
+  async function reportDamaged() {
+    if (!photo) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      // The officer types what is printed on the label; the codes did not read.
+      const r = await api.requestOverride(leg.id, {
+        deviceId: journey.deviceId,
+        personId,
+        seamIdTyped: journey.label.seamId,
+        serialTyped: journey.serial,
+        attemptedSeconds: 10,
+        whichCodes: "both",
+        photoSha256: await sha256OfFile(photo),
+      });
+      setOverrideId(r.overrideId);
+      saveOverride(leg.id, r.overrideId);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function run(step: TransferStep) {
     setBusy(true);
@@ -355,6 +403,7 @@ function Console({ leg, journey, onDone }: { leg: Leg; journey: DemoJourney; onD
         deviceId: journey.deviceId,
         personId,
         ...seam,
+        ...(labelChoice === "damaged" && overrideId ? { overrideId } : {}),
         ...(finger === "none" ? {} : { biometricSlot: 3, biometricScore: finger === "match" ? 180 : 40 }),
         ...(step === "receive" ? { packetSerialTyped: serial } : {}),
         ...(step === "confirm" ? { transferKey: keyTyped } : {}),
@@ -405,6 +454,7 @@ function Console({ leg, journey, onDone }: { leg: Leg; journey: DemoJourney; onD
               <option value="this">this packet's label, both codes</option>
               <option value="other">a label from another packet</option>
               <option value="none">not scanned</option>
+              <option value="damaged">damaged, will not scan</option>
             </select>
 
             <label>Fingerprint</label>
@@ -434,6 +484,33 @@ function Console({ leg, journey, onDone }: { leg: Leg; journey: DemoJourney; onD
               </>
             )}
           </div>
+
+          {labelChoice === "damaged" && (
+            <div className="note" style={{ marginTop: 10 }}>
+              {overrideId ? (
+                <>
+                  Override <span className="mono">{overrideId.slice(0, 8)}</span> was requested for this
+                  leg. It stands in for the scan only once two operators have approved it on the{" "}
+                  <Link to="/overrides">Override approval</Link> page; until then the engine refuses.
+                </>
+              ) : (
+                <>
+                  Photograph the label, then report it. Two control room operators decide it on the{" "}
+                  <Link to="/overrides">Override approval</Link> page.
+                  <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+                    />
+                    <button disabled={busy || !photo} onClick={() => void reportDamaged()}>
+                      Report the damaged label
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {nextStep === "confirm" && (
             <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 8 }}>

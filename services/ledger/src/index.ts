@@ -9,6 +9,9 @@ import { registerTransferRoutes } from "./http/transfer-routes.js";
 import { registerDemoRoutes } from "./http/demo-routes.js";
 import { registerAlertRoutes } from "./http/alert-routes.js";
 import { registerSealRoutes } from "./http/seal-routes.js";
+import { registerStrongroomRoutes } from "./http/strongroom-routes.js";
+import { registerOverrideRoutes } from "./http/override-routes.js";
+import { registerOpeningRoutes } from "./http/opening-routes.js";
 import { startWatchdog } from "./domain/watchdog.js";
 import { channelsFromEnv, startNotifier } from "./domain/notify.js";
 
@@ -73,6 +76,9 @@ async function main(): Promise<void> {
   registerAccessRoutes(app, pool);
   registerSealRoutes(app, pool);
   registerTransferRoutes(app, pool);
+  registerOverrideRoutes(app, pool);
+  registerStrongroomRoutes(app, pool);
+  registerOpeningRoutes(app, pool);
   registerDemoRoutes(app, pool);
   registerAlertRoutes(app, pool);
   await app.listen({ port: PORT, host: "0.0.0.0" });
@@ -82,7 +88,7 @@ async function main(): Promise<void> {
     stopWatchdog = startWatchdog(pool, app.log, LEG_WATCHDOG_MS);
     app.log.info(
       { intervalMs: LEG_WATCHDOG_MS },
-      "watchdog sweeping for LEG_OVERDUE and PACKET_UNOPENED_OVERDUE",
+      "watchdog sweeping for LEG_OVERDUE, PACKET_UNOPENED_OVERDUE, DWELL_EXCEEDED and CEREMONY_INCOMPLETE",
     );
   }
 

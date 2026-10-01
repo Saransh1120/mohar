@@ -43,6 +43,13 @@ const TITLES: Record<string, string> = {
   LEG_OVERDUE: "Hand-off not completed in time",
   PACKET_UNOPENED_OVERDUE: "Packet not opened by its scheduled time",
   TRANSFER_ATTEMPTS_EXHAUSTED: "Three wrong serial or key entries on one leg",
+  DWELL_EXCEEDED: "Strong room visit ran far past its expected time",
+  FOOTFALL_MISMATCH: "More people counted into a strong room than the door admitted",
+  SEAM_DECODE_FAILED: "A seam label would not scan",
+  SEAM_MANUAL_OVERRIDE: "Hand-off approved without a scan of the label",
+  SEAL_MISMATCH: "Label at the opening is not the one that was sealed",
+  CEREMONY_INCOMPLETE: "Opening not finished by its scheduled time",
+  CEREMONY_SERIAL_ATTEMPTS_EXHAUSTED: "Three wrong serials typed at an opening",
 };
 
 function utc(d: Date): string {

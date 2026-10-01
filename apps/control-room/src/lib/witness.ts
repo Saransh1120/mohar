@@ -82,7 +82,7 @@ const KEY_STORE = "keys";
 const ED25519 = { name: "Ed25519" } as const;
 
 /** One request against the key store. IndexedDB can hold a CryptoKey as it is. */
-function keyStore<T>(
+export function keyStore<T>(
   mode: IDBTransactionMode,
   run: (store: IDBObjectStore) => IDBRequest<T>,
 ): Promise<T> {

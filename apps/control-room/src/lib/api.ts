@@ -70,6 +70,17 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   return json;
 }
 
+async function put<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(BASE + path, {
+    method: "PUT",
+    headers: { "content-type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (!res.ok) throw new ApiError(res.status, json.error ?? `PUT ${path} → ${res.status}`);
+  return json;
+}
+
 // ── shapes returned by the service ──────────────────────────────────────────
 
 export type PackageState =
@@ -513,6 +524,8 @@ export interface TransferStepInput {
   biometricSlot?: number;
   biometricScore?: number;
   transferKey?: string;
+  /** An approved damaged-label override, in place of the scan. */
+  overrideId?: string;
   occurredAt?: string;
 }
 
@@ -533,6 +546,280 @@ export interface DemoJourney {
   deviceId: string;
   people: Record<"press" | "courier" | "custodian", { id: string; name: string; role: string }>;
   legIds: string[];
+  label: { seamId: string; shareAHex: string; shareBHex: string };
+}
+
+// ── the strong room door ────────────────────────────────────────────────────
+
+/** One check as an engine recorded it. passed is absent where it was not run. */
+export interface EngineCheck {
+  check: string;
+  passed?: boolean;
+  evidence: string;
+  reason?: string;
+}
+
+export interface DoorEntrant {
+  personId: string;
+  biometricSlot?: number;
+  biometricScore?: number;
+  faceMatched?: boolean;
+  assertedAt: string;
+}
+
+export interface StrongRoom {
+  id: string;
+  name: string;
+  place: string;
+  monitor_device_id: string | null;
+  centre_code: string | null;
+  monitor_last_heard: string | null;
+  visits: number;
+  refused_attempts: number;
+  inside: { visitId: string; enteredAt: string; expectedMinutes: number; persons: DoorEntrant[] }[];
+}
+
+export interface Footfall {
+  evaluated: boolean;
+  countedAtLeast: number | null;
+  monitorEvents: number;
+  mismatch: boolean;
+  detail: string;
+}
+
+export interface RoomVisit {
+  id: string;
+  entered_at: string;
+  expected_minutes: number;
+  persons: DoorEntrant[];
+  exited_at: string | null;
+  dwell_seconds: number | null;
+  packages_touched: number | null;
+  footfall_out: Footfall | null;
+  task: string | null;
+  limit_seconds: number;
+  inside_seconds: number | null;
+}
+
+export interface DoorAttempt {
+  id: string;
+  kind: "entry" | "exit";
+  outcome: "granted" | "refused";
+  recorded_at: string;
+  persons: DoorEntrant[];
+  visit_id: string | null;
+  checks: EngineCheck[];
+  task: string | null;
+}
+
+export interface DoorResult {
+  outcome: "granted" | "refused";
+  denyReasons: string[];
+  checks: EngineCheck[];
+  visitId?: string;
+  dwellSeconds?: number;
+  expectedMinutes?: number;
+  dwellExceeded?: boolean;
+  footfall?: Footfall;
+}
+
+export interface DemoStrongRoom {
+  roomId: string;
+  roomName: string;
+  deviceId: string;
+  people: { id: string; name: string; role: string; slot: number }[];
+}
+
+// ── the damaged-label override ──────────────────────────────────────────────
+
+export interface OverrideStanding {
+  status: "pending" | "approved" | "refused" | "unusable";
+  approvals: number;
+  detail: string;
+}
+
+export interface OverrideDecision {
+  accountId: string;
+  accountName: string;
+  accountUsername: string;
+  decision: "approved" | "refused";
+  videoConfirmed: boolean;
+  officersPresent: boolean;
+  note: string;
+  decidedAt: string;
+}
+
+export interface OverrideRequest {
+  id: string;
+  leg_id: string;
+  package_id: string;
+  seam_id_typed: string;
+  serial_typed: string | null;
+  attempted_seconds: number;
+  which_codes: "A" | "B" | "both";
+  photo_sha256: string;
+  evidence: { seamIdMatches?: boolean; serialMatches?: boolean; labelOnRecord?: boolean };
+  requested_at: string;
+  leg_no: number;
+  from_place: string;
+  to_place: string;
+  seal_serial: string | null;
+  centre_code: string;
+  person_name: string | null;
+  person_role: string | null;
+  used: boolean;
+  decisions: OverrideDecision[];
+  standing: OverrideStanding;
+}
+
+export interface OverrideRate {
+  key: string;
+  label: string;
+  legs: number;
+  overrides: number;
+  per100: number;
+  timesBaseline: number | null;
+}
+
+export interface OverrideStats {
+  baseline: { legs: number; overrides: number; per100: number };
+  byCentre: OverrideRate[];
+  byRoute: OverrideRate[];
+  byOfficer: OverrideRate[];
+}
+
+// ── rosters and the opening ─────────────────────────────────────────────────
+
+export type DutyRole = "superintendent" | "observer" | "police_escort";
+
+export interface DutyRoster {
+  centre_id: string;
+  centre_code: string;
+  exam_session: string;
+  exam_name: string;
+  starts_at: string;
+  duty: {
+    role: DutyRole;
+    personId: string;
+    personName: string;
+    personRole: string;
+    lockedAt: string | null;
+  }[];
+  issued: {
+    packageId: string;
+    packetSerial: string | null;
+    drandRound: number;
+    scheduledOpenAt: string;
+    stationDeviceId: string;
+    issuedAt: string;
+    keyCommitment: string;
+  }[];
+  packets: number;
+}
+
+export interface LockResult {
+  outcome: "locked" | "refused";
+  denyReasons: string[];
+  checks: EngineCheck[];
+  lockedAt: string | null;
+  lockedBy: string | null;
+  packets: {
+    packageId: string;
+    packetSerial: string | null;
+    drandRound: number;
+    scheduledOpenAt: string;
+  }[];
+}
+
+export interface StepDecision {
+  outcome: "passed" | "refused";
+  checks: EngineCheck[];
+  denyReasons: string[];
+}
+
+export type CeremonyStepName =
+  | "scan"
+  | "authorize"
+  | "identify"
+  | "confirm"
+  | "release"
+  | "opened"
+  | "incomplete";
+
+export interface CeremonyOfficial {
+  personId: string;
+  role: DutyRole;
+  institution: string;
+  assertedAt?: string;
+}
+
+export interface Ceremony {
+  id: string;
+  packageId: string;
+  centreId: string;
+  scheduledOpenAt: string;
+  startedAt: string;
+  reached: CeremonyStepName | null;
+  officials: CeremonyOfficial[];
+  steps: {
+    step: CeremonyStepName;
+    outcome: "passed" | "refused";
+    officials: CeremonyOfficial[];
+    checks: EngineCheck[];
+    recordedAt: string;
+  }[];
+  packetSerial?: string | null;
+  centreCode?: string;
+  examName?: string;
+  examStartsAt?: string;
+}
+
+export interface CeremonyStart {
+  ceremonyId: string;
+  outcome: "passed" | "refused";
+  scan: StepDecision;
+  authorize: StepDecision;
+  scheduledOpenAt: string;
+  drandRound: number | null;
+}
+
+/** A share as the server hands it over: ciphertext only the station can read. */
+export interface WrappedShareEnvelope {
+  wrapped: { ephemeralPublicHex: string; nonceHex: string; ciphertextHex: string };
+  holder: DutyRole;
+  institution: string;
+  index: number;
+  commitment: string;
+}
+
+export interface OfficialResult {
+  outcome: "passed" | "refused";
+  denyReasons: string[];
+  checks: EngineCheck[];
+  identified: number;
+  official?: CeremonyOfficial;
+  share?: WrappedShareEnvelope;
+}
+
+export interface ConfirmResult {
+  outcome: "passed" | "refused";
+  denyReasons: string[];
+  checks: EngineCheck[];
+  alertRaised: boolean;
+  /** The time-locked envelope, as `@mohar/crypto-core` issued it. */
+  envelope?: unknown;
+  commitments?: { controlCommitment: string; keyCommitment: string };
+}
+
+export interface DemoOpening {
+  examId: string;
+  examStartsAt: string;
+  centreId: string;
+  centreCode: string;
+  packageId: string;
+  serial: string;
+  stationDeviceId: string;
+  officials: { id: string; name: string; role: DutyRole; slot: number }[];
   label: { seamId: string; shareAHex: string; shareBHex: string };
 }
 
@@ -745,4 +1032,87 @@ export const api = {
   alertSummary: () => get<AlertSummary>("/alerts/summary"),
   ackAlert: (id: string, note: string) =>
     post<{ id: string; ackedAt: string }>(`/alerts/${id}/ack`, { note }),
+
+  // ── the strong room door ──
+  rooms: () => get<{ rooms: StrongRoom[] }>("/rooms"),
+  roomVisits: (roomId: string) =>
+    get<{ visits: RoomVisit[]; attempts: DoorAttempt[] }>(`/rooms/${roomId}/visits`),
+  roomEntry: (
+    roomId: string,
+    input: { deviceId: string; entrants: DoorEntrant[]; task: string; expectedMinutes: number },
+  ) => post<DoorResult>(`/rooms/${roomId}/entry`, input),
+  roomExit: (
+    roomId: string,
+    input: { deviceId: string; visitId: string; packagesTouched: number },
+  ) => post<DoorResult>(`/rooms/${roomId}/exit`, input),
+  demoStrongRoom: () => post<DemoStrongRoom>("/demo/strongroom"),
+
+  // ── the damaged-label override ──
+  overrides: () => get<{ overrides: OverrideRequest[] }>("/overrides"),
+  overrideStats: () => get<OverrideStats>("/overrides/stats"),
+  requestOverride: (
+    legId: string,
+    input: {
+      deviceId: string;
+      personId?: string;
+      seamIdTyped: string;
+      serialTyped?: string;
+      attemptedSeconds: number;
+      whichCodes: "A" | "B" | "both";
+      photoSha256: string;
+    },
+  ) => post<{ overrideId: string; standing: OverrideStanding }>(`/legs/${legId}/override`, input),
+  decideOverride: (
+    id: string,
+    input: {
+      decision: "approved" | "refused";
+      videoConfirmed: boolean;
+      officersPresent: boolean;
+      note: string;
+    },
+  ) => post<{ standing: OverrideStanding }>(`/overrides/${id}/decision`, input),
+
+  // ── rosters and the opening ──
+  rosters: (centreId?: string) =>
+    get<{ rosters: DutyRoster[] }>(`/rosters${centreId ? `?centreId=${centreId}` : ""}`),
+  assignRoster: (
+    centreId: string,
+    session: string,
+    assignments: { role: DutyRole; personId: string }[],
+  ) => put<{ status: string }>(`/rosters/${centreId}/${session}`, { assignments }),
+  lockRoster: (centreId: string, session: string, stationDeviceId: string) =>
+    post<LockResult>(`/rosters/${centreId}/${session}/lock`, { stationDeviceId }),
+  registerWrapKey: (deviceId: string, x25519PubHex: string) =>
+    post<{ status: string }>(`/stations/${deviceId}/wrap-key`, { x25519PubHex }),
+  ceremonies: (packageId?: string) =>
+    get<{ ceremonies: Ceremony[] }>(`/ceremonies${packageId ? `?packageId=${packageId}` : ""}`),
+  startCeremony: (input: {
+    packageId: string;
+    deviceId: string;
+    seamIdRead?: string;
+    seamSecretHex?: string;
+  }) => post<CeremonyStart>("/ceremonies", input),
+  ceremonyOfficial: (
+    id: string,
+    input: {
+      personId: string;
+      biometricSlot?: number;
+      biometricScore?: number;
+      faceMatched?: boolean;
+    },
+  ) => post<OfficialResult>(`/ceremonies/${id}/official`, input),
+  ceremonyConfirm: (id: string, packetSerialTyped: string) =>
+    post<ConfirmResult>(`/ceremonies/${id}/confirm`, { packetSerialTyped }),
+  ceremonyRelease: (id: string, openingKeyHex: string) =>
+    post<{ outcome: "granted" | "refused"; denyReasons: string[]; checks: EngineCheck[] }>(
+      `/ceremonies/${id}/release`,
+      { openingKeyHex },
+    ),
+  ceremonyOpened: (id: string, photoSha256: string, candidateWitnesses: number) =>
+    post<{ outcome: "opened" | "refused" }>(`/ceremonies/${id}/opened`, {
+      photoSha256,
+      candidateWitnesses,
+    }),
+  demoOpening: (stationDeviceId: string, startsInMinutes: number) =>
+    post<DemoOpening>("/demo/opening", { stationDeviceId, startsInMinutes }),
 };
