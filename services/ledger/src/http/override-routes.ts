@@ -4,6 +4,7 @@ import { z } from "zod";
 import { accountForToken } from "../domain/accounts.js";
 import { withTransaction } from "../db.js";
 import { appendServiceEvent } from "../domain/service-events.js";
+import { recordSeamManualOverride } from "../domain/override-events.js";
 import { bearerToken } from "./auth-routes.js";
 import {
   APPROVALS_REQUIRED,
@@ -266,8 +267,12 @@ export function registerOverrideRoutes(
         evidence: { seamIdMatches?: boolean; legNo?: number };
         photo_sha256: string;
         centre_id: string;
+        exam_id: string;
+        person_id: string | null;
+        seam_id_typed: string;
       }>(
-        `select q.leg_id, q.package_id, q.evidence, q.photo_sha256, p.centre_id
+        `select q.leg_id, q.package_id, q.evidence, q.photo_sha256,
+                q.person_id, q.seam_id_typed, p.centre_id, p.exam_id
            from led.seam_override_request q join ref.package p on p.id = q.package_id
           where q.id = $1::uuid`,
         [req.params.id],
@@ -283,8 +288,10 @@ export function registerOverrideRoutes(
             video_confirmed: boolean;
             officers_present: boolean;
             display_name: string;
+            note: string;
           }>(
-            `select d.account_id, d.decision, d.video_confirmed, d.officers_present, a.display_name
+            `select d.account_id, d.decision, d.video_confirmed, d.officers_present,
+                    d.note, a.display_name
                from led.seam_override_decision d join ref.account a on a.id = d.account_id
               where d.request_id = $1::uuid order by d.decided_at`,
             [req.params.id],
@@ -355,6 +362,7 @@ export function registerOverrideRoutes(
 
       // The second approval is the moment the override exists, and the moment
       // the packet becomes one that has to be inspected where it arrives.
+      let chainEvent = null;
       if (now.status === "approved") {
         const approvers = after.filter((d) => d.decision === "approved").map((d) => d.display_name);
         await tx.query(
@@ -374,8 +382,19 @@ export function registerOverrideRoutes(
               `the inspection finds is recorded here.`,
           ],
         );
+        chainEvent = await recordSeamManualOverride(tx, {
+          packageId: request.package_id,
+          centreId: request.centre_id,
+          examId: request.exam_id,
+          personId: request.person_id,
+          seamIdTyped: request.seam_id_typed,
+          photoSha256: request.photo_sha256,
+        }, after.filter((d) => d.decision === "approved").map((d) => ({
+          accountId: d.account_id, note: d.note,
+        })), callRequired);
       }
-      return { code: 201 as const, body: { standing: now, call: callEvidence } };
+      return { code: 201 as const, body: { standing: now, call: callEvidence,
+        ...(chainEvent ? { chainEvent } : {}) } };
     });
 
     let out: Awaited<ReturnType<typeof decide>>;

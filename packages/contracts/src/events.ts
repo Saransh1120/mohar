@@ -629,10 +629,12 @@ export const SeamDecodeFailedPayload = z.object({
 export const SeamManualOverridePayload = z.object({
   packageId: Uuid,
   seamIdTyped: ShortText,
-  approverPersonId: Uuid,
-  /** The control room approves over live video, both field officers present. */
-  approvalChannel: z.enum(["live-video"]),
-  fieldPersonIds: z.array(Uuid).length(2),
+  /** The two distinct operator accounts whose decisions approved the request. */
+  approverAccountIds: z.array(Uuid).length(2),
+  /** The recorded approval channel, including the explicitly enabled fallback. */
+  approvalChannel: z.enum(["live-video", "operator-attestation"]),
+  /** The requesting field person's ID; a second field person is not captured today. */
+  fieldPersonIds: z.array(Uuid).min(1),
   photoSha256: Sha256Hex,
   justification: LongText,
 });

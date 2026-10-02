@@ -578,7 +578,7 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   the Neon migrations and returned their empty-state data. The full production
   ceremony and approval forms were not submitted. `doors.mjs` and
   `opening.mjs` cover those routes against a test database; `doors.mjs` passed
-  47 checks and `opening.mjs` passed 75 checks on Oct 2, 2026.
+  68 checks and `opening.mjs` passed 75 checks on Oct 2, 2026.
 - **The offline opening path exists.** `POST /stations/:deviceId/cache` caches
   an envelope and `POST /ceremonies/offline` records an `envelope-authorized`
   opening. A failing account raises `OFFLINE_OPENING_DISPUTED`. A station
@@ -617,8 +617,13 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   attached to the packet's centre. The response reports why a room event was
   not recorded otherwise. 013 was applied to local Postgres and Neon production
   on Oct 2, 2026; the hosted `schema_migrations` record and `room_id` column
-  were checked in Neon SQL Editor. `SEAM_MANUAL_OVERRIDE` is still absent because
-  override approvers are operator accounts while the contract names a person.
+  were checked in Neon SQL Editor. The `SEAM_MANUAL_OVERRIDE` contract now names
+  the two recorded operator account IDs (`approverAccountIds`) instead of an
+  invented person ID; `fieldPersonIds` requires at least the requesting person
+  instead of exactly two. `approvalChannel` also records `operator-attestation`
+  when the video requirement is explicitly disabled. The second approval
+  appends this service-signed event after the alert; if the request has no
+  registered field person the response reports why it was not recorded.
   A strong room attached to no centre has no exam to file under, so its events
   are not written.
 - **The seal-lock sketch is not a field-tested lock.** The ESP32-C6 source and

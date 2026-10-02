@@ -360,6 +360,16 @@ try {
   const second = await post(`/overrides/${overrideId}/decision`, approve, op2);
   expect("a second operator's approval, over their own call, approves it",
     second.status === 201 && second.body.standing.status === "approved", JSON.stringify(second.body));
+  const [manualEvent] = await q(
+    `select body from led.event where package_id = $1 and kind = 'SEAM_MANUAL_OVERRIDE' order by seq desc limit 1`,
+    [pkg.id]);
+  expect("the second approval appends both operator account IDs and the requesting person to the chain",
+    second.body.chainEvent?.recorded === true &&
+    manualEvent?.body.payload.approverAccountIds.length === 2 &&
+    manualEvent.body.payload.fieldPersonIds.length === 1 &&
+    manualEvent.body.payload.fieldPersonIds[0] === press &&
+    manualEvent.body.payload.approvalChannel === "live-video",
+    JSON.stringify(second.body.chainEvent));
 
   const record = await get(callUrl);
   expect("the call's record names both operators and shows each one's call standing",
