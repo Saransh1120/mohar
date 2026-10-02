@@ -495,11 +495,13 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   quiet once it has caught up). The Alerts page notices and polls every five
   seconds instead. Opened against the ledger directly, or locally, the streams
   work.
-- **The notifier has been run against a stand-in channel, not a real bot or
-  mail server.** The Telegram request shape is unit-tested and delivery,
-  retries and the record of attempts are checked against Postgres, but no
-  message has been sent to a real Telegram chat or SMTP server from this repo.
-  The station buzzer is not wired to alerts.
+- **Telegram delivery was checked against a real bot on Oct 2, 2026.** Render
+  booted with `channels:["telegram"]`. A packet planned with leg 1 due in one
+  minute raised `LEG_OVERDUE` on the live Alerts page (alert
+  `1829e0bb-5e22-43a3-ade0-31522ae0de8c`, packet `PKT-JPR-7288`). The
+  message appeared in the bot chat, and Neon `led.alert_delivery` recorded
+  `channel=telegram`, `outcome=sent`, `detail=null` for that alert. Gmail SMTP
+  has not been configured or tested; the station buzzer is not wired to alerts.
 - **The witness station's token check and single-origin CORS have not been
   compiled or flashed.** The firmware change is written for both the Arduino
   sketch and the `witness-node` source; this machine has no ESP32 toolchain, so
