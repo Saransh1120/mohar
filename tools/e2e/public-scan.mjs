@@ -12,6 +12,7 @@ const { Client } = require("pg");
 const Fastify = require("fastify");
 const at = (path) => new URL(`../../${path}`, import.meta.url).href;
 const { registerPublicScanRoutes } = await import(at("services/ledger/dist/http/public-scan-routes.js"));
+const { servicePublicKeyHex } = await import(at("services/ledger/dist/domain/service-events.js"));
 const { generateSeamLabel } = await import(at("packages/crypto-core/dist/index.js"));
 
 const url = process.env.E2E_OWNER_URL;
@@ -70,7 +71,7 @@ try {
   check("public scan receives a generic response", first.statusCode === 202 &&
     first.json().status === "received" && !first.body.includes(packet.id));
   const [event] = (await client.query(
-    "select id,body from led.event where kind = 'UNAUTHORIZED_SCAN' and package_id = $1", [packet.id],
+    "select id,body,actor_device from led.event where kind = 'UNAUTHORIZED_SCAN' and package_id = $1", [packet.id],
   )).rows;
   check("service signs an UNAUTHORIZED_SCAN event on the real chain",
     event?.body?.payload?.seamId === label.seamId &&
@@ -79,9 +80,15 @@ try {
   check("no QR share is stored in the signed body",
     !JSON.stringify(event.body).includes(Buffer.from(label.shareA).toString("base64url")));
   const [alert] = (await client.query(
-    "select kind,evidence from led.alert where package_id = $1 and kind = 'UNAUTHORIZED_SCAN'", [packet.id],
+    "select kind,evidence,device_id from led.alert where package_id = $1 and kind = 'UNAUTHORIZED_SCAN'", [packet.id],
   )).rows;
   check("a linked alert reaches the control room", alert?.evidence?.eventId === event.id);
+  const [service] = (await client.query(
+    "select kind,encode(pubkey,'hex') as pubkey from ref.device where id = $1", [event.actor_device],
+  )).rows;
+  check("public scan and alert share the ledger's enrolled service identity",
+    event.actor_device === alert.device_id && service?.kind === "service" &&
+    service.pubkey === servicePublicKeyHex());
   const second = await scan(label.seamId, "B");
   check("a second code visit is accepted", second.statusCode === 202);
   const [later] = (await client.query(
