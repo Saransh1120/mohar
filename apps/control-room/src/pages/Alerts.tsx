@@ -31,6 +31,8 @@ const TITLES: Record<string, string> = {
   CEREMONY_INCOMPLETE: "Opening not finished by its scheduled time",
   OFFLINE_OPENING_DISPUTED: "Offline opening whose record does not pass",
   CEREMONY_SERIAL_ATTEMPTS_EXHAUSTED: "Three wrong serials typed at an opening",
+  UNAUTHORIZED_SCAN: "Seam QR opened in a public browser",
+  DEVICE_SEQ_GAP: "Device event numbers have a gap",
 };
 
 const role = (r: string) => r.replace(/_/g, " ");
@@ -136,6 +138,27 @@ function facts(a: Alert): string[] {
       out.push(`Refused for: ${reasons.join(", ")}`);
     }
     out.push("Further attempts on this leg are refused");
+    return out;
+  }
+
+  if (a.kind === "UNAUTHORIZED_SCAN") {
+    const half = str(e, "whichCodes");
+    const prior = num(e, "priorHitsOnThisSeam");
+    if (half) out.push(`QR code ${half} was opened outside the custody app`);
+    if (prior !== null) out.push(`${prior} earlier public visit${prior === 1 ? "" : "s"} to this seam`);
+    const seamId = str(e, "seamId");
+    if (seamId) out.push(`Seam ID: ${seamId}`);
+    return out;
+  }
+
+  if (a.kind === "DEVICE_SEQ_GAP") {
+    const last = num(e, "lastSeenSeq");
+    const received = num(e, "receivedSeq");
+    const missing = num(e, "missingCount");
+    if (last !== null && received !== null) {
+      out.push(`Last number received: ${last}; next number received: ${received}`);
+    }
+    if (missing !== null) out.push(`${missing} signed event number${missing === 1 ? " is" : "s are"} missing`);
     return out;
   }
 
