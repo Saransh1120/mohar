@@ -22,6 +22,7 @@ import {
 } from "../lib/openingStation";
 import { Card, Empty, ErrorNote } from "../components/ui";
 import { CheckList, durationText, roleText, sha256OfFile } from "../components/CheckList";
+import { OfflineOpening } from "../components/OfflineOpening";
 
 /**
  * ── Opening ceremonies ───────────────────────────────────────────────────────
@@ -228,7 +229,15 @@ export default function Ceremonies() {
         </div>
 
         {run && station ? (
-          <StationConsole run={run} station={station} onDone={() => void ceremonies.refresh()} key={run.packageId} />
+          <div style={{ display: "grid", gap: 14 }}>
+            <StationConsole run={run} station={station} onDone={() => void ceremonies.refresh()} key={run.packageId} />
+            <OfflineOpening
+              run={run}
+              station={station}
+              onDone={() => void ceremonies.refresh()}
+              key={`offline-${run.packageId}`}
+            />
+          </div>
         ) : (
           <Card title="Station console">
             <Empty>

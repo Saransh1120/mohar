@@ -137,6 +137,8 @@ export const RULES: readonly Rule[] = Object.freeze([
   r("POST", "/rosters/:centreId/:session/reissue", "control_room", "write"),
   r("POST", "/stations/:deviceId/wrap-key", "device", "field"),
   r("GET", "/stations/:deviceId/envelopes", "device", "read"),
+  r("POST", "/stations/:deviceId/cache", "device", "field"),
+  r("POST", "/ceremonies/offline", "device", "field"),
   r("POST", "/ceremonies", "device", "field"),
   r("POST", "/ceremonies/:id/official", "device", "field"),
   r("POST", "/ceremonies/:id/confirm", "device", "field"),

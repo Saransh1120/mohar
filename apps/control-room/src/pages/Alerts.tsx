@@ -29,6 +29,7 @@ const TITLES: Record<string, string> = {
   SEAM_MANUAL_OVERRIDE: "Hand-off approved without a scan of the label",
   SEAL_MISMATCH: "Label at the opening is not the one that was sealed",
   CEREMONY_INCOMPLETE: "Opening not finished by its scheduled time",
+  OFFLINE_OPENING_DISPUTED: "Offline opening whose record does not pass",
   CEREMONY_SERIAL_ATTEMPTS_EXHAUSTED: "Three wrong serials typed at an opening",
 };
 

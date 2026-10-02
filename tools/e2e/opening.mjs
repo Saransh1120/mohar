@@ -253,6 +253,52 @@ try {
   expect("the roster view shows the key in force and both issues",
     rv.issued.length === 1 && rv.issued[0].issueNo === 2 && rv.issues.length === 2 && rv.issues[1].kind === "reissue");
 
+  // ════ packets that will be opened with no link to the ledger ════
+  // Locked now, before the round, like any roster. Each gets its own centre and
+  // its own station, as it would have.
+  const offlinePacket = async (n) => {
+    const [c2] = await q(
+      `insert into ref.centre (exam_id, code, lat, lon, capacity) values ($1,$2,26.9,75.7,300) returning id`,
+      [exam.id, `OF${n}-${tag}`]);
+    const serial2 = `PKT-OF${n}-${tag}`;
+    const [p2] = await q(
+      `insert into ref.package (exam_id, centre_id, seal_serial, copies, state) values ($1,$2,$3,300,'at_centre') returning id`,
+      [exam.id, c2.id, serial2]);
+    const label2 = generateSeamLabel();
+    await q(`insert into ref.seal_label (package_id, seam_id, commitment_hex) values ($1,$2,$3)`,
+      [p2.id, label2.seamId, label2.commitment]);
+    const [st] = await q(`insert into ref.device (kind, pubkey, centre_id) values ('centre_pc',$1,$2) returning id`,
+      [randomBytes(32), c2.id]);
+    const keys2 = generateWrapKeypair();
+    await post(`/stations/${st.id}/wrap-key`, { x25519PubHex: keys2.publicKeyHex });
+    const people = {};
+    for (const [role, slot] of [["superintendent", 1], ["observer", 11], ["police_escort", 21]]) {
+      const [pp] = await q(`insert into ref.person (display_name, role, govt_id_hash) values ($1,$2,$3) returning id`,
+        [`${role} ${n}`, role, randomBytes(32)]);
+      await q(`insert into ref.fingerprint_enrolment (device_id, template_slot, person_id, role) values ($1,$2,$3,$4)`,
+        [st.id, slot, pp.id, role]);
+      people[role] = { id: pp.id, slot };
+    }
+    const url = `/rosters/${c2.id}/${exam.id}`;
+    await call("PUT", url, { assignments: Object.entries(people).map(([role, v]) => ({ role, personId: v.id })) });
+    const locked = await post(`${url}/lock`, { stationDeviceId: st.id, lateReason: "exam moved forward by the board this morning" }, token);
+    return { id: p2.id, centreId: c2.id, serial: serial2, label: label2, station: st.id, keys: keys2, people, locked };
+  };
+  const off1 = await offlinePacket(1);
+  const off2 = await offlinePacket(2);
+  expect("two more packets are keyed for an offline opening",
+    off1.locked.body.outcome === "locked" && off2.locked.body.outcome === "locked",
+    JSON.stringify([off1.locked.body.denyReasons, off2.locked.body.denyReasons]));
+
+  const cached = await post(`/stations/${off1.station}/cache`, { packageId: off1.id });
+  expect("the station caches the envelope, all three wrapped shares and what to check against",
+    cached.status === 200 && cached.body.officials.length === 3 && cached.body.envelope.round === round &&
+    cached.body.seam.seamId === off1.label.seamId && cached.body.officials.every((o) => o.slot !== null && o.wrapped.ciphertextHex),
+    JSON.stringify(cached.body).slice(0, 300));
+  expect("another station is not given that cache",
+    (await post(`/stations/${station}/cache`, { packageId: off1.id })).status === 403);
+  const cached2 = await post(`/stations/${off2.station}/cache`, { packageId: off2.id });
+
   // ════ the ceremony ════
 
   const swapped = await start({ seamSecretHex: "ab".repeat(16) });
@@ -386,6 +432,85 @@ try {
       view.body.reached === "opened" && view.body.officials.length === 2 &&
       view.body.steps.filter((s) => s.outcome === "refused").length >= 6,
       `${view.body.reached}, ${view.body.steps.length} steps`);
+  }
+
+  // ════ opened offline, reported afterwards ════
+  if (beacon) {
+    // What the station does on its own: open the envelope, unwrap two shares,
+    // assemble the key. The ledger is not asked.
+    const assemble = async (off, cache, holders) => {
+      const control = await unwrapControlPart(cache.envelope, { round: beacon.round, signature: beacon.signature });
+      const two = cache.officials.filter((o) => holders.includes(o.holder)).map((o) => ({
+        index: o.index, holder: o.holder, institution: o.institution, commitment: o.commitment,
+        share: unwrapShare(o.wrapped, off.keys.privateKeyHex, shareContext(off.id, o.holder, o.personId)),
+      }));
+      return Buffer.from(await combineOpeningKey(control, two, cache.commitments)).toString("hex");
+    };
+    const at = (secondsAgo) => new Date(Date.now() - secondsAgo * 1000).toISOString();
+    const transcript = (off, keyHex, over = {}) => ({
+      transcriptId: randomUUID(), packageId: off.id, deviceId: off.station,
+      seamIdRead: off.label.seamId, seamSecretHex: Buffer.from(off.label.seamSecret).toString("hex"),
+      officials: [
+        { personId: off.people.superintendent.id, biometricSlot: 1, biometricScore: 180, assertedAt: at(9) },
+        { personId: off.people.observer.id, biometricSlot: 11, biometricScore: 176, assertedAt: at(6) },
+      ],
+      packetSerialTyped: off.serial, openingKeyHex: keyHex, photoSha256: "12".repeat(32),
+      startedAt: at(12), releasedAt: at(1), ...over,
+    });
+
+    const key1 = await assemble(off1, cached.body, ["superintendent", "observer"]);
+    const report = transcript(off1, key1);
+    const ruled = await post("/ceremonies/offline", report);
+    expect("an offline opening reported afterwards is put to the same steps and accepted",
+      ruled.status === 201 && ruled.body.outcome === "accepted" && ruled.body.mode === "envelope-authorized" &&
+      ruled.body.steps.map((s) => s.step).join(",") === "scan,authorize,identify,identify,confirm,release,opened",
+      JSON.stringify(ruled.body.denyReasons ?? ruled.body));
+    const [mode] = await q(`select mode from led.ceremony where id = $1`, [ruled.body.ceremonyId]);
+    const [st1] = await q(`select state from ref.package where id = $1`, [off1.id]);
+    expect("it is on record as envelope-authorized and the packet is marked opened",
+      mode.mode === "envelope-authorized" && st1.state === "opened");
+    const [scanStep] = await q(
+      `select evidence from led.ceremony_step where ceremony_id = $1 and step = 'scan'`, [ruled.body.ceremonyId]);
+    expect("each step says whose clock its times are",
+      scanStep.evidence.stationStartedAt === report.startedAt && typeof scanStep.evidence.uploadedAt === "string" &&
+      scanStep.evidence.secondsUntilUpload >= 0);
+    const again = await post("/ceremonies/offline", report);
+    expect("the same transcript sent again is recorded once",
+      again.status === 200 && again.body.duplicate === true && again.body.ceremonyId === ruled.body.ceremonyId &&
+      (await q(`select 1 from led.ceremony where package_id = $1`, [off1.id])).length === 1);
+
+    // A station that opened with one official at the reader and says so.
+    const key2 = await assemble(off2, cached2.body, ["superintendent", "police_escort"]);
+    const short = transcript(off2, key2, {
+      officials: [{ personId: off2.people.superintendent.id, biometricSlot: 1, biometricScore: 180, assertedAt: at(9) }],
+      packetSerialTyped: "PKT-WRONG",
+    });
+    const disputed = await post("/ceremonies/offline", short);
+    expect("an account with one official and a wrong serial is disputed, not refused into silence",
+      disputed.status === 201 && disputed.body.outcome === "disputed" &&
+      disputed.body.denyReasons.includes("packet_serial_mismatch") && disputed.body.denyReasons.includes("ceremony_step_out_of_order"),
+      JSON.stringify(disputed.body.denyReasons));
+    const [alert] = await q(
+      `select evidence, consequence from led.alert where kind = 'OFFLINE_OPENING_DISPUTED' and package_id = $1`, [off2.id]);
+    const [st2] = await q(`select state from ref.package where id = $1`, [off2.id]);
+    expect("it raises OFFLINE_OPENING_DISPUTED naming what failed, and the packet is still marked opened because its key was used",
+      alert?.evidence.failedSteps.includes("confirm") && /The key it presents is the packet's/.test(alert.consequence) &&
+      st2.state === "opened", JSON.stringify(alert?.evidence.failedSteps));
+
+    const forged = await post("/ceremonies/offline", transcript(off1, randomBytes(32).toString("hex"), { transcriptId: randomUUID() }));
+    expect("a transcript with a key that is not the packet's is disputed for that",
+      forged.body.outcome === "disputed" && forged.body.denyReasons.includes("opening_key_mismatch"));
+
+    const early = await post("/ceremonies/offline", transcript(off1, key1, {
+      transcriptId: randomUUID(), startedAt: new Date(opensAt.getTime() - 120_000).toISOString(),
+      releasedAt: new Date(opensAt.getTime() - 60_000).toISOString(),
+      officials: [
+        { personId: off1.people.superintendent.id, biometricSlot: 1, biometricScore: 180, assertedAt: new Date(opensAt.getTime() - 100_000).toISOString() },
+        { personId: off1.people.observer.id, biometricSlot: 11, biometricScore: 176, assertedAt: new Date(opensAt.getTime() - 90_000).toISOString() },
+      ] }));
+    expect("a station claiming it released before the round was published is disputed",
+      early.body.outcome === "disputed" && early.body.denyReasons.includes("control_part_still_locked"),
+      JSON.stringify(early.body.denyReasons));
   }
 
   // ════ the hard floor ════

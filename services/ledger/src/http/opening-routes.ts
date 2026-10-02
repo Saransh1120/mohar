@@ -14,8 +14,10 @@ import {
   DUTY_ROLES,
   loadCeremony,
   lockRoster,
+  recordOfflineOpening,
   recordStep,
   reissueRoster,
+  stationCache,
   wrappedShareFor,
   type CeremonyState,
 } from "../domain/opening.js";
@@ -38,6 +40,10 @@ import {
  *   POST /ceremonies/:id/confirm            the packet serial, typed
  *   POST /ceremonies/:id/release            the assembled key, checked against its commitment
  *   POST /ceremonies/:id/opened             the packet was opened; the photograph's hash
+ *
+ *   POST /stations/:deviceId/cache          everything a station needs to open one packet
+ *                                           with the ledger out of reach
+ *   POST /ceremonies/offline                a station's account of an opening it already did
  *
  * Every ceremony step is recorded before it is answered, and a refusal is a 200
  * with `outcome: "refused"`.
@@ -89,6 +95,34 @@ const ConfirmBody = z.object({ packetSerialTyped: z.string().trim().min(1).max(6
 
 const ReleaseBody = z.object({
   openingKeyHex: z.string().regex(/^[0-9a-f]{64}$/, "expected the 32-byte key as lowercase hex"),
+});
+
+const CacheBody = z.object({ packageId: Uuid });
+
+const OfflineBody = z.object({
+  transcriptId: Uuid,
+  packageId: Uuid,
+  deviceId: Uuid,
+  seamIdRead: z.string().regex(/^[0-9A-Z]{20,32}$/).optional(),
+  seamSecretHex: z.string().regex(/^[0-9a-f]{32}$/, "seam secret must be 32 lowercase hex").optional(),
+  // Not capped at two: a station that says three officials presented is
+  // reporting something to record and rule on.
+  officials: z
+    .array(
+      z.object({
+        personId: Uuid,
+        biometricSlot: z.number().int().nonnegative().max(1000).optional(),
+        biometricScore: z.number().int().nonnegative().max(1000).optional(),
+        faceMatched: z.boolean().optional(),
+        assertedAt: z.string().datetime(),
+      }),
+    )
+    .max(6),
+  packetSerialTyped: z.string().trim().min(1).max(64),
+  openingKeyHex: z.string().regex(/^[0-9a-f]{64}$/, "expected the 32-byte key as lowercase hex"),
+  photoSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+  startedAt: z.string().datetime(),
+  releasedAt: z.string().datetime(),
 });
 
 const OpenedBody = z.object({
@@ -369,7 +403,54 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
     return reply.send({ envelopes });
   });
 
+  app.post<{ Params: { deviceId: string } }>("/stations/:deviceId/cache", async (req, reply) => {
+    if (!Uuid.safeParse(req.params.deviceId).success) {
+      return reply.code(400).send({ error: "device id must be a uuid" });
+    }
+    const parsed = CacheBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "packageId is required" });
+    const out = await withTransaction(pool, (tx) =>
+      stationCache(tx, req.params.deviceId, parsed.data.packageId),
+    );
+    if (!out.ok) return reply.code(out.code).send({ error: out.error });
+    req.log.info(
+      { deviceId: req.params.deviceId, packageId: parsed.data.packageId, issueNo: out.cache.issueNo },
+      "station cached a packet's envelope and shares",
+    );
+    return reply.send(out.cache);
+  });
+
   // ── the ceremony ──────────────────────────────────────────────────────────
+
+  app.post("/ceremonies/offline", async (req, reply) => {
+    const parsed = OfflineBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid transcript", detail: parsed.error.issues });
+    }
+    const out = await withTransaction(pool, async (tx) => {
+      await tx.query("select pg_advisory_xact_lock(hashtext($1))", [
+        `ceremony:${parsed.data.packageId}`,
+      ]);
+      return recordOfflineOpening(tx, parsed.data);
+    });
+    if (!out) return reply.code(404).send({ error: "no such packet" });
+    req.log.info(
+      { ceremonyId: out.ceremonyId, outcome: out.outcome, denyReasons: out.denyReasons, duplicate: out.duplicate },
+      `offline opening ${out.outcome}`,
+    );
+    return reply.code(out.duplicate ? 200 : 201).send({
+      ceremonyId: out.ceremonyId,
+      mode: "envelope-authorized",
+      outcome: out.outcome,
+      duplicate: out.duplicate,
+      denyReasons: out.denyReasons,
+      steps: out.steps.map((s) => ({
+        step: s.step,
+        outcome: s.decision.outcome,
+        checks: s.decision.checks,
+      })),
+    });
+  });
 
   app.post("/ceremonies", async (req, reply) => {
     const parsed = StartBody.safeParse(req.body);

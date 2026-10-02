@@ -1433,6 +1433,357 @@ export async function decideRelease(
   return c.decide();
 }
 
+// ── the opening with no link to the ledger ──────────────────────────────────
+
+/**
+ * What a station needs to open one packet with the ledger out of reach: the
+ * time-locked envelope, all three officials' wrapped shares, and what to check
+ * a scan, a finger and a serial against.
+ *
+ * Handing this over changes who is trusted with what, and it is as well to say
+ * so. On the live path a share leaves the ledger only when the engine has
+ * identified its official. A station holding this cache has all three shares
+ * and can unwrap any of them with its own key; that two officials stood at the
+ * reader is then something the station enforces and reports, not something the
+ * ledger watched. What does not change is the time lock: no cache opens the
+ * control room's part before its round, so an early opening stays impossible
+ * whichever path is taken.
+ */
+export interface StationCache {
+  packageId: string;
+  packetSerial: string | null;
+  centreCode: string;
+  examStartsAt: string;
+  scheduledOpenAt: string;
+  issueNo: number;
+  drandRound: number;
+  seam: { seamId: string; commitmentHex: string } | null;
+  commitments: { controlCommitment: string; keyCommitment: string };
+  envelope: ControlEnvelope;
+  officials: {
+    personId: string;
+    name: string;
+    holder: FieldHolder;
+    institution: string;
+    index: number;
+    commitment: string;
+    /** The slot this official's finger is registered in on this station, if any. */
+    slot: number | null;
+    wrapped: unknown;
+  }[];
+}
+
+export type CacheResult =
+  | { ok: true; cache: StationCache }
+  | { ok: false; code: 403 | 404; error: string };
+
+export async function stationCache(
+  tx: PoolClient,
+  deviceId: string,
+  packageId: string,
+): Promise<CacheResult> {
+  const key = await loadKey(tx, packageId);
+  if (!key) return { ok: false, code: 404, error: "no opening key has been issued for this packet" };
+  if (key.station_device_id !== deviceId) {
+    return {
+      ok: false,
+      code: 403,
+      error: "this packet's shares were wrapped to a different station",
+    };
+  }
+  const { rows: pk } = await tx.query<{
+    seal_serial: string | null;
+    code: string;
+    starts_at: Date;
+    seam_id: string | null;
+    commitment_hex: string | null;
+  }>(
+    `select p.seal_serial, c.code, e.starts_at, l.seam_id, l.commitment_hex
+       from ref.package p
+       join ref.centre c on c.id = p.centre_id
+       join ref.exam e on e.id = p.exam_id
+       left join ref.seal_label l on l.package_id = p.id
+      where p.id = $1::uuid`,
+    [packageId],
+  );
+  const p = pk[0]!;
+  const envelope = await controlEnvelopeFor(tx, packageId);
+  const commitments = await commitmentsFor(tx, packageId);
+  if (!envelope || !commitments) {
+    return { ok: false, code: 404, error: "the envelope for this packet is not on record" };
+  }
+
+  const officials: StationCache["officials"] = [];
+  for (const meta of key.field_shares) {
+    const share = await wrappedShareFor(tx, packageId, meta.personId);
+    const { rows: who } = await tx.query<{ display_name: string; slot: number | null }>(
+      `select p.display_name,
+              (select f.template_slot from ref.fingerprint_enrolment f
+                where f.person_id = p.id and f.device_id = $2::uuid and f.revoked_at is null
+                order by f.enrolled_at desc limit 1) as slot
+         from ref.person p where p.id = $1::uuid`,
+      [meta.personId, deviceId],
+    );
+    if (!share) continue;
+    officials.push({
+      personId: meta.personId,
+      name: who[0]?.display_name ?? meta.personId,
+      holder: meta.holder,
+      institution: meta.institution,
+      index: meta.index,
+      commitment: meta.commitment,
+      slot: who[0]?.slot ?? null,
+      wrapped: share.wrapped,
+    });
+  }
+
+  return {
+    ok: true,
+    cache: {
+      packageId,
+      packetSerial: p.seal_serial,
+      centreCode: p.code,
+      examStartsAt: p.starts_at.toISOString(),
+      scheduledOpenAt: key.scheduled_open_at.toISOString(),
+      issueNo: key.issue_no,
+      drandRound: Number(key.drand_round),
+      seam: p.seam_id && p.commitment_hex ? { seamId: p.seam_id, commitmentHex: p.commitment_hex } : null,
+      commitments,
+      envelope,
+      officials,
+    },
+  };
+}
+
+/** What a station reports once it can reach the ledger again. */
+export interface OfflineTranscript {
+  /** Made by the station when the opening began. Sending it twice records it once. */
+  transcriptId: string;
+  packageId: string;
+  deviceId: string;
+  seamIdRead?: string | undefined;
+  seamSecretHex?: string | undefined;
+  officials: OfficialRequest[];
+  packetSerialTyped: string;
+  openingKeyHex: string;
+  photoSha256?: string | undefined;
+  /** By the station's own clock. */
+  startedAt: string;
+  releasedAt: string;
+}
+
+export interface OfflineRuling {
+  ceremonyId: string;
+  /** True when this transcript had already been recorded. */
+  duplicate: boolean;
+  outcome: "accepted" | "disputed";
+  steps: { step: CeremonyStep; decision: StepDecision }[];
+  denyReasons: DenyReason[];
+}
+
+export const OFFLINE_OPENING_DISPUTED = "OFFLINE_OPENING_DISPUTED";
+
+/**
+ * Rule on an opening that already happened.
+ *
+ * The station opened the packet from its cache with no link to the ledger, and
+ * this is its account of it. Every step is put to the same checks as the live
+ * path, in the same order, and written down as a ceremony whose mode is
+ * `envelope-authorized`. The difference is what a refusal means. On the live
+ * path a refused step stops the opening. Here the packet is open whatever is
+ * decided, so a transcript that fails a check does not undo anything: it is
+ * recorded as it was reported and raised for the control room, because an
+ * opening that cannot account for itself is the finding.
+ *
+ * The times are the station's own, and each step says so. One of them can be
+ * held to something outside the station: the key in the transcript hashes to
+ * the commitment only if the control room's part was opened, and that could
+ * not be done before the round was published.
+ */
+export async function recordOfflineOpening(
+  tx: PoolClient,
+  t: OfflineTranscript,
+  now: Date = new Date(),
+): Promise<OfflineRuling | null> {
+  const { rows: seen } = await tx.query<{ ceremony_id: string }>(
+    `select s.ceremony_id from led.ceremony_step s join led.ceremony c on c.id = s.ceremony_id
+      where c.package_id = $1::uuid and s.step = 'scan' and s.evidence ->> 'transcriptId' = $2
+      limit 1`,
+    [t.packageId, t.transcriptId],
+  );
+  if (seen[0]) {
+    const state = await loadCeremony(tx, seen[0].ceremony_id);
+    const steps = (state?.steps ?? []).map((s) => ({
+      step: s.step,
+      decision: {
+        outcome: s.outcome,
+        checks: s.evidence.checks ?? [],
+        denyReasons: [
+          ...new Set((s.evidence.checks ?? []).filter((c) => c.passed === false && c.reason).map((c) => c.reason!)),
+        ],
+      },
+    }));
+    return {
+      ceremonyId: seen[0].ceremony_id,
+      duplicate: true,
+      outcome: steps.every((s) => s.decision.outcome === "passed") ? "accepted" : "disputed",
+      steps,
+      denyReasons: [...new Set(steps.flatMap((s) => s.decision.denyReasons))],
+    };
+  }
+
+  const startedAt = new Date(t.startedAt);
+  const releasedAt = new Date(t.releasedAt);
+  const start = await decideStart(tx, t, startedAt);
+  if (!start.centreId || !start.scheduledOpenAt) return null;
+
+  const { rows } = await tx.query<{ id: string }>(
+    `insert into led.ceremony (package_id, mode, centre_id, scheduled_open_at)
+     values ($1::uuid, 'envelope-authorized', $2::uuid, $3) returning id`,
+    [t.packageId, start.centreId, start.scheduledOpenAt],
+  );
+  const id = rows[0]!.id;
+  const claimed = {
+    mode: "envelope-authorized",
+    transcriptId: t.transcriptId,
+    deviceId: t.deviceId,
+    // Whose clock. The station's times are evidence of what it says happened,
+    // and the ledger's is when it was told.
+    stationStartedAt: t.startedAt,
+    stationReleasedAt: t.releasedAt,
+    uploadedAt: now.toISOString(),
+    secondsUntilUpload: Math.round((now.getTime() - releasedAt.getTime()) / 1000),
+  };
+  const steps: OfflineRuling["steps"] = [];
+  const note = async (
+    step: CeremonyStep,
+    decision: StepDecision,
+    extra: Record<string, unknown> = {},
+    officials: unknown[] = [],
+    photo: string | null = null,
+  ) => {
+    await recordStep(tx, id, step, decision, { ...claimed, ...extra }, officials, photo);
+    steps.push({ step, decision });
+  };
+
+  await note("scan", start.scan, {
+    ...(t.seamIdRead ? { seamIdRead: t.seamIdRead } : {}),
+    ...(start.issueNo === null ? {} : { issueNo: start.issueNo }),
+  });
+  await note("authorize", start.authorize);
+
+  for (const official of t.officials) {
+    const state = (await loadCeremony(tx, id))!;
+    const d = await decideOfficial(tx, state, official);
+    await note(
+      "identify",
+      d.decision,
+      { personId: official.personId },
+      d.official
+        ? [
+            {
+              ...d.official,
+              biometricSlot: official.biometricSlot,
+              biometricScore: official.biometricScore,
+              ...(official.faceMatched === undefined ? {} : { faceMatched: official.faceMatched }),
+              assertedAt: official.assertedAt,
+            },
+          ]
+        : [],
+    );
+  }
+
+  const confirm = await decideConfirm(tx, (await loadCeremony(tx, id))!, t.packetSerialTyped);
+  await note("confirm", confirm.decision, { serialTyped: t.packetSerialTyped });
+
+  // Judged at the time the station says it released. The key matching is what
+  // holds that claim to the public clock.
+  const beforeRelease = (await loadCeremony(tx, id))!;
+  const release = await decideRelease(tx, beforeRelease, t.openingKeyHex, releasedAt);
+  const ordered = startedAt.getTime() <= releasedAt.getTime() && releasedAt.getTime() <= now.getTime() + 120_000;
+  release.checks.push({
+    check: "station_times",
+    passed: ordered,
+    evidence: ordered
+      ? `by the station's clock it began ${t.startedAt} and released ${t.releasedAt}; ` +
+        `the ledger was told ${claimed.secondsUntilUpload}s after the release`
+      : `the station's times are out of order: began ${t.startedAt}, released ${t.releasedAt}, ` +
+        `told to the ledger ${now.toISOString()}`,
+    ...(ordered ? {} : { reason: "clock_skew_excessive" as const }),
+  });
+  const releaseDecision: StepDecision = {
+    outcome: release.checks.every((c) => c.passed !== false) ? "passed" : "refused",
+    checks: release.checks,
+    denyReasons: [
+      ...new Set(release.checks.filter((c) => c.passed === false && c.reason).map((c) => c.reason!)),
+    ],
+  };
+  await note("release", releaseDecision, {}, beforeRelease.officials);
+
+  const allPassed = steps.every((s) => s.decision.outcome === "passed");
+  // The station says the packet is open. That is recorded either way; whether
+  // the opening is accepted is what the steps above decided.
+  await note(
+    "opened",
+    {
+      outcome: allPassed ? "passed" : "refused",
+      checks: [
+        {
+          check: "transcript_accepted",
+          passed: allPassed,
+          evidence: allPassed
+            ? "every step of the station's account passed the checks the live path applies"
+            : "the station reports the packet opened, and its account of the opening fails at least one check",
+          ...(allPassed ? {} : { reason: "ceremony_step_out_of_order" as const }),
+        },
+      ],
+      denyReasons: allPassed ? [] : ["ceremony_step_out_of_order"],
+    },
+    {},
+    beforeRelease.officials,
+    t.photoSha256 ?? null,
+  );
+
+  const denyReasons = [...new Set(steps.flatMap((s) => s.decision.denyReasons))];
+  // The key in the transcript is the packet's key or it is not. If it is, the
+  // key has been assembled and the packet is open in fact, whatever else the
+  // account gets wrong, and the plan says so. If it is not, all the ledger has
+  // is a station's word, and the plan is left as it was.
+  const keyProven = release.checks.find((c) => c.check === "key_commitment")?.passed === true;
+  if (keyProven) {
+    await tx.query(
+      "update ref.package set state = 'opened', updated_at = now() where id = $1::uuid and state <> 'compromised'",
+      [t.packageId],
+    );
+  }
+  if (!allPassed) {
+    const failed = steps
+      .filter((s) => s.decision.outcome === "refused")
+      .map((s) => s.step)
+      .filter((s, i, a) => a.indexOf(s) === i);
+    await tx.query(
+      `insert into led.alert (kind, package_id, centre_id, evidence, requires_decision, consequence)
+       values ($1, $2::uuid, $3::uuid, $4::jsonb, true, $5)`,
+      [
+        OFFLINE_OPENING_DISPUTED,
+        t.packageId,
+        start.centreId,
+        JSON.stringify({ ceremonyId: id, ...claimed, failedSteps: failed, denyReasons }),
+        `A station reports that it opened this packet with no link to the ledger, and the ` +
+          `account it uploaded afterwards does not pass: ${failed.join(", ")} failed ` +
+          `(${denyReasons.join(", ")}). ` +
+          (keyProven
+            ? "The key it presents is the packet's, so the packet is open. "
+            : "The key it presents is not the packet's, so whether the packet is open is the station's word. ") +
+          `Nobody was in a position to refuse it at the time, so the control room establishes ` +
+          `from the officials named, the photograph and the CCTV what happened, and records it.`,
+      ],
+    );
+  }
+
+  return { ceremonyId: id, duplicate: false, outcome: allPassed ? "accepted" : "disputed", steps, denyReasons };
+}
+
 // ── the hard floor ──────────────────────────────────────────────────────────
 
 export const CEREMONY_INCOMPLETE = "CEREMONY_INCOMPLETE";

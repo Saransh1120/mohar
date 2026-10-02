@@ -51,6 +51,7 @@ const TITLES: Record<string, string> = {
   SEAL_LOCK_TAMPER: "Seal-lock enclosure opened",
   SEAL_LOCK_NOT_CLOSED: "Seal lock did not confirm closure",
   CEREMONY_INCOMPLETE: "Opening not finished by its scheduled time",
+  OFFLINE_OPENING_DISPUTED: "Offline opening whose record does not pass",
   CEREMONY_SERIAL_ATTEMPTS_EXHAUSTED: "Three wrong serials typed at an opening",
 };
 

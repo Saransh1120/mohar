@@ -927,6 +927,60 @@ export interface ConfirmResult {
   commitments?: { controlCommitment: string; keyCommitment: string };
 }
 
+/** What a station holds to open one packet with the ledger out of reach. */
+export interface StationCache {
+  packageId: string;
+  packetSerial: string | null;
+  centreCode: string;
+  examStartsAt: string;
+  scheduledOpenAt: string;
+  issueNo: number;
+  drandRound: number;
+  seam: { seamId: string; commitmentHex: string } | null;
+  commitments: { controlCommitment: string; keyCommitment: string };
+  /** The time-locked envelope, as `@mohar/crypto-core` issued it. */
+  envelope: unknown;
+  officials: {
+    personId: string;
+    name: string;
+    holder: DutyRole;
+    institution: string;
+    index: number;
+    commitment: string;
+    slot: number | null;
+    wrapped: { ephemeralPublicHex: string; nonceHex: string; ciphertextHex: string };
+  }[];
+}
+
+/** A station's account of an opening it did on its own. */
+export interface OfflineTranscript {
+  transcriptId: string;
+  packageId: string;
+  deviceId: string;
+  seamIdRead?: string;
+  seamSecretHex?: string;
+  officials: {
+    personId: string;
+    biometricSlot?: number;
+    biometricScore?: number;
+    assertedAt: string;
+  }[];
+  packetSerialTyped: string;
+  openingKeyHex: string;
+  photoSha256?: string;
+  startedAt: string;
+  releasedAt: string;
+}
+
+export interface OfflineRuling {
+  ceremonyId: string;
+  mode: "envelope-authorized";
+  outcome: "accepted" | "disputed";
+  duplicate: boolean;
+  denyReasons: string[];
+  steps: { step: CeremonyStepName; outcome: "passed" | "refused"; checks: EngineCheck[] }[];
+}
+
 export interface DemoOpening {
   examId: string;
   examStartsAt: string;
@@ -1287,6 +1341,11 @@ export const api = {
       photoSha256,
       candidateWitnesses,
     }),
+  // Both are the station's own acts, signed with its key.
+  stationCache: (stationDeviceId: string, packageId: string) =>
+    postAsDevice<StationCache>(stationDeviceId, `/stations/${stationDeviceId}/cache`, { packageId }),
+  offlineOpening: (transcript: OfflineTranscript) =>
+    postAsDevice<OfflineRuling>(transcript.deviceId, "/ceremonies/offline", transcript),
   demoOpening: (stationDeviceId: string, startsInMinutes: number) =>
     post<DemoOpening>("/demo/opening", { stationDeviceId, startsInMinutes }),
 };
