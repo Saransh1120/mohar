@@ -1,3 +1,6 @@
+import { randomBytes, type X509Certificate } from "node:crypto";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
@@ -6,6 +9,8 @@ import {
   listDevices,
   getDevice,
   enrolDevice,
+  recordAttestation,
+  listAttestations,
   revokeDevice,
   listPackages,
   getPackage,
@@ -20,6 +25,8 @@ import {
   revokeEnrolment,
 } from "../store/registry.js";
 import { listActivity, operationalSummary } from "../domain/activity.js";
+import { ChallengeBook, loadRoots, verifyAttestation } from "../domain/attestation.js";
+import { withTransaction } from "../db.js";
 
 /**
  * Registry and operations endpoints.
@@ -51,7 +58,85 @@ const EnrolFingerprintBody = z.object({
   note: z.string().min(1).max(500).optional(),
 });
 
-export function registerRegistryRoutes(app: FastifyInstance, pool: Pool): void {
+const ChallengeBody = z.object({
+  pubkeyHex: z.string().regex(/^[0-9a-f]{64}$/, "expected a 32-byte hex Ed25519 public key"),
+});
+
+/**
+ * How enrolment treats attestation. Read from the environment by default; the
+ * end-to-end checks pass their own so they can use a root they made.
+ */
+export interface AttestationPolicy {
+  roots: readonly X509Certificate[];
+  /** Device kinds that are refused when they present no attestation at all. */
+  requiredKinds: ReadonlySet<string>;
+  /** Certificate serial to its status in the vendor's list, when one is loaded. */
+  revocation?: ((serialHex: string) => string | undefined) | undefined;
+}
+
+/** `infra/attestation`, from wherever the ledger was started. */
+function defaultRootsDir(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  return join(here, "..", "..", "..", "..", "infra", "attestation");
+}
+
+function policyFromEnvironment(app: FastifyInstance): AttestationPolicy {
+  const dir = process.env["ATTESTATION_ROOTS_DIR"] ?? defaultRootsDir();
+  const { roots, problems } = loadRoots(dir);
+  const requiredKinds = new Set(
+    (process.env["ATTESTATION_REQUIRED_KINDS"] ?? "")
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean),
+  );
+  app.log.info(
+    { dir, roots: roots.length, problems, requiredKinds: [...requiredKinds] },
+    roots.length === 0
+      ? "no attestation roots loaded: an enrolment presenting an attestation will be refused"
+      : "attestation roots loaded",
+  );
+
+  // The vendor's revocation list, if a URL for it is configured. Fetched in
+  // the background and refreshed hourly; until the first fetch lands, the
+  // check reports itself as not evaluated rather than as passed.
+  const statusUrl = process.env["ATTESTATION_STATUS_URL"];
+  let entries: Map<string, string> | null = null;
+  if (statusUrl) {
+    const refresh = async (): Promise<void> => {
+      try {
+        const res = await fetch(statusUrl, { signal: AbortSignal.timeout(10_000) });
+        if (!res.ok) throw new Error(`answered ${res.status}`);
+        const body = (await res.json()) as { entries?: Record<string, { status?: string }> };
+        entries = new Map(
+          Object.entries(body.entries ?? {}).map(([serial, v]) => [serial.toLowerCase(), v.status ?? "LISTED"]),
+        );
+        app.log.info({ entries: entries.size }, "attestation revocation list loaded");
+      } catch (err) {
+        app.log.warn({ err }, "attestation revocation list could not be fetched");
+      }
+    };
+    void refresh();
+    setInterval(() => void refresh(), 3600_000).unref();
+  }
+
+  return {
+    roots,
+    requiredKinds,
+    get revocation() {
+      const loaded = entries;
+      return loaded ? (serial: string) => loaded.get(serial.replace(/^0+/, "")) ?? loaded.get(serial) : undefined;
+    },
+  };
+}
+
+export function registerRegistryRoutes(
+  app: FastifyInstance,
+  pool: Pool,
+  options: { attestation?: AttestationPolicy } = {},
+): void {
+  const attestationPolicy = options.attestation ?? policyFromEnvironment(app);
+  const challenges = new ChallengeBook();
+
   // ── devices ───────────────────────────────────────────────────────────────
 
   app.get("/devices", async (_req, reply) => {
@@ -68,29 +153,114 @@ export function registerRegistryRoutes(app: FastifyInstance, pool: Pool): void {
     return reply.send(device);
   });
 
+  /** The ruling each device was enrolled under, for the Devices page. */
+  app.get("/devices/attestations", async (_req, reply) => {
+    try {
+      return reply.send({ attestations: await listAttestations(pool) });
+    } catch (err) {
+      if ((err as { code?: string }).code === "42P01") {
+        return reply.code(503).send({ error: "migration 014 has not been applied to this database" });
+      }
+      throw err;
+    }
+  });
+
+  /**
+   * A challenge for a key about to be enrolled.
+   *
+   * The phone asks its Keystore to attest the key over this value, which is
+   * what stops an attestation made last year, or on another phone, from being
+   * presented now. One per key, used once, gone after ten minutes.
+   */
+  app.post("/devices/challenge", async (req, reply) => {
+    const parsed = ChallengeBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "invalid key" });
+    }
+    const challenge = randomBytes(32);
+    const expiresAt = challenges.issue(parsed.data.pubkeyHex, challenge);
+    return reply.code(201).send({
+      challengeB64: challenge.toString("base64"),
+      expiresAt: expiresAt.toISOString(),
+    });
+  });
+
   /**
    * Enrol a device.
    *
-   * Attestation is accepted but not yet verified — there is no Android Keystore
-   * root-of-trust check in this build. That is a real gap, not a simplification:
-   * until it exists, enrolment trusts whoever can reach this endpoint, which is
-   * why it must stay behind the gateway. See adr/0003.
+   * An attestation, where one is presented, is put to every check in
+   * domain/attestation and the ruling is written down with the device, or
+   * instead of it: a chain that fails any check enrols nothing. A device that
+   * presents none is enrolled as before and recorded as `absent`, unless its
+   * kind is listed in ATTESTATION_REQUIRED_KINDS.
+   *
+   * Nothing in this repository produces an Android attestation yet (the field
+   * app is a web page), so today every real enrolment is `absent` and still
+   * rests on the operator who made it. That is why this stays behind the
+   * gateway. See adr/0003.
    */
   app.post("/devices", async (req, reply) => {
     const parsed = EnrolBody.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid enrolment", detail: parsed.error.issues });
     }
+    const input = parsed.data;
+    const attestation = input.attestationB64
+      ? new Uint8Array(Buffer.from(input.attestationB64, "base64"))
+      : undefined;
+    const ruling = verifyAttestation({
+      attestation,
+      pubkeyHex: input.pubkeyHex,
+      // Taken whether or not it then matches: a challenge is answered once.
+      expectedChallenge: attestation ? challenges.take(input.pubkeyHex) : null,
+      roots: attestationPolicy.roots,
+      revocation: attestationPolicy.revocation,
+    });
+    const required = attestationPolicy.requiredKinds.has(input.kind);
+    const refused = ruling.outcome === "refused" || (ruling.outcome === "absent" && required);
+
     try {
-      const device = await enrolDevice(pool, parsed.data);
-      req.log.info({ deviceId: device.id, kind: device.kind }, "device enrolled");
-      return reply.code(201).send(device);
+      const device = await withTransaction(pool, async (tx) => {
+        const made = refused ? null : await enrolDevice(tx, input);
+        await recordAttestation(tx, {
+          deviceId: made?.id ?? null,
+          pubkeyHex: input.pubkeyHex,
+          kind: input.kind,
+          ruling,
+          attestation,
+        });
+        return made;
+      });
+
+      if (!device) {
+        req.log.warn(
+          { kind: input.kind, outcome: ruling.outcome, facts: ruling.facts },
+          "device enrolment refused on attestation",
+        );
+        return reply.code(422).send({
+          error:
+            ruling.outcome === "absent"
+              ? `a ${input.kind} device is enrolled only with an attestation, and none was presented`
+              : "the attestation presented did not pass, so the device was not enrolled",
+          outcome: "refused",
+          denyReasons: ["device_attestation_invalid"],
+          attestation: ruling,
+        });
+      }
+      req.log.info(
+        { deviceId: device.id, kind: device.kind, attestation: ruling.outcome },
+        "device enrolled",
+      );
+      return reply.code(201).send({ ...device, attestation: ruling });
     } catch (err) {
       // A duplicate public key means this key is already enrolled. Re-enrolling
       // it under a second identity would let one key sign as two devices, which
       // would defeat the two-person rule on handoffs.
       if ((err as { code?: string }).code === "23505") {
         return reply.code(409).send({ error: "this public key is already enrolled" });
+      }
+      if ((err as { code?: string }).code === "42P01") {
+        return reply.code(503).send({ error: "migration 014 has not been applied to this database" });
       }
       throw err;
     }

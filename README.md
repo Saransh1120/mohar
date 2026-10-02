@@ -82,9 +82,12 @@ scans and can report a damaged label; it does not do hand-offs yet.
 Not built: the opening on the ESP32 station (a paired browser stands in for
 it), live video for override approval, and `sealkeys`,
 `unlock`, `notify`, `render` and `trace` as services of their own — what exists
-of the first three runs inside `ledger`. Device attestation is stored and not
-verified. The ledger checks no credential itself, so it is only ever run behind
-the gateway.
+of the first three runs inside `ledger`. An Android Keystore attestation is
+checked at enrolment when a device presents one, and a chain that fails enrols
+nothing; but nothing here produces one yet (the field app is a web page), no
+chain off a real handset has been put to it, and a TPM quote is not understood.
+The ledger checks no credential itself, so it is only ever run behind the
+gateway.
 
 [RUNNING.md](RUNNING.md) carries the honest list of gaps. See
 `docs/09-mvp-plan.md` for the 12-week build order.

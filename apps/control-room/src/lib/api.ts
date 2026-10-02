@@ -369,6 +369,22 @@ export interface Device {
   revokedAt: string | null;
 }
 
+/** What the ledger ruled about a device's key when it was enrolled. */
+export interface DeviceAttestation {
+  deviceId: string;
+  /** `absent`: the device presented nothing, so there was nothing to rule on. */
+  outcome: "verified" | "refused" | "absent";
+  checks: EngineCheck[];
+  facts: {
+    attestationSecurityLevel?: string;
+    keyMintSecurityLevel?: string;
+    verifiedBootState?: string;
+    deviceLocked?: boolean;
+    rootSubject?: string;
+  };
+  recordedAt: string;
+}
+
 export interface Exam {
   id: string;
   name: string;
@@ -1166,6 +1182,7 @@ export const api = {
       { token },
     ),
   devices: () => get<{ devices: Device[] }>("/devices"),
+  deviceAttestations: () => get<{ attestations: DeviceAttestation[] }>("/devices/attestations"),
   revokeDevice: (id: string) => post<{ status: string }>(`/devices/${id}/revoke`),
   exams: () => get<{ exams: Exam[] }>("/exams"),
   centres: (examId?: string) =>

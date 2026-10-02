@@ -1,7 +1,9 @@
-import type { Pool } from "pg";
+import { createHash } from "node:crypto";
+import type { Pool, PoolClient } from "pg";
 import { canTransition, type EventBody, type PackageState } from "@mohar/contracts";
 import { projectCustody, custodyRiskScore, type CustodyProjection } from "../domain/custody.js";
 import { seamTokenMatches } from "@mohar/crypto-core";
+import type { AttestationRuling } from "../domain/attestation.js";
 
 /**
  * Reads over reference data, plus the joins that turn a package into something
@@ -60,7 +62,7 @@ export async function getDevice(pool: Pool, id: string): Promise<DeviceRecord | 
 }
 
 export async function enrolDevice(
-  pool: Pool,
+  pool: Pool | PoolClient,
   input: {
     kind: string;
     pubkeyHex: string;
@@ -88,6 +90,64 @@ export async function enrolDevice(
     enrolledAt: (r.enrolled_at as Date).toISOString(),
     revokedAt: null,
   };
+}
+
+/**
+ * Write down what was ruled about an enrolment's attestation.
+ *
+ * `deviceId` is null when the enrolment was refused: the attempt is kept, the
+ * device is not made.
+ */
+export async function recordAttestation(
+  tx: PoolClient,
+  input: {
+    deviceId: string | null;
+    pubkeyHex: string;
+    kind: string;
+    ruling: AttestationRuling;
+    attestation: Uint8Array | undefined;
+  },
+): Promise<void> {
+  await tx.query(
+    `insert into led.device_attestation
+       (device_id, pubkey, device_kind, outcome, enrolled, checks, facts, attestation_sha256)
+     values ($1::uuid, decode($2,'hex'), $3, $4, $5, $6::jsonb, $7::jsonb, $8)`,
+    [
+      input.deviceId,
+      input.pubkeyHex,
+      input.kind,
+      input.ruling.outcome,
+      input.deviceId !== null,
+      JSON.stringify(input.ruling.checks),
+      JSON.stringify(input.ruling.facts),
+      input.attestation ? createHash("sha256").update(input.attestation).digest("hex") : null,
+    ],
+  );
+}
+
+export interface AttestationRecord {
+  deviceId: string;
+  outcome: "verified" | "refused" | "absent";
+  checks: AttestationRuling["checks"];
+  facts: AttestationRuling["facts"];
+  recordedAt: string;
+}
+
+/** The ruling each device was enrolled under. */
+export async function listAttestations(pool: Pool): Promise<AttestationRecord[]> {
+  const { rows } = await pool.query(
+    `select distinct on (device_id) device_id, outcome, checks, facts, recorded_at
+       from led.device_attestation
+      where device_id is not null
+      order by device_id, recorded_at desc`,
+  );
+  return rows.map((r) => ({
+    deviceId: r.device_id,
+    outcome: r.outcome,
+    checks: r.checks,
+    facts: r.facts,
+    recordedAt: (r.recorded_at as Date).toISOString(),
+  }));
 }
 
 /**
