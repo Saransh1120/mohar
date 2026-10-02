@@ -156,7 +156,7 @@ a genuine cross-check rather than the code agreeing with itself.
 | `tools/seed` | Key generation, device enrolment, and a custody walkthrough driven through the real engine |
 | `tools/label-print` | Prints a packet's two-code seam label and signs its sealing |
 | `tools/seal-lock-command` | Signs a short-lived UART command after a recorded, granted unlock attempt; requires migration 010 |
-| `tools/e2e` | End-to-end checks against a real Postgres: `transfer.mjs`, `seal.mjs`, `sweeps.mjs`, `doors.mjs`, `opening.mjs`, `gateway.mjs`, `device-seq.mjs`, `public-scan.mjs`, `journey.mjs` |
+| `tools/e2e` | End-to-end checks against a real Postgres: `transfer.mjs`, `seal.mjs`, `sweeps.mjs`, `doors.mjs`, `opening.mjs`, `gateway.mjs`, `device-seq.mjs`, `public-scan.mjs`, `journey.mjs`, `attestation.mjs` |
 | `tools/run-gated` | `pnpm start`: the access engine and ledger on loopback with the gateway in front, as one command |
 
 ## Sealing a packet
@@ -394,11 +394,31 @@ a way that "critical" is not.
 
 Stated plainly, so the endpoints that do exist do not imply more than they should:
 
-- **Attestation is accepted but never verified.** `POST /devices` stores an
-  Android Keystore / TPM chain without checking it against a root of trust.
-  Through the gateway, enrolment takes a control room operator's session, so who
-  enrolled a device is known; what hardware holds its key is that operator's
-  word. See `adr/0003`.
+- **An attestation is checked when one is presented, and so far none has
+  been.** `POST /devices` puts an Android Keystore certificate chain to ten
+  checks: it reads, each certificate is signed by the next, all are in date, it
+  ends at a configured root, nothing in it is on a loaded revocation list, the
+  leaf carries a key description, the key is hardware-backed, it answers a
+  challenge this ledger issued for that key (`POST /devices/challenge`, used
+  once, ten minutes), it is over the key being enrolled, and the phone reports
+  a locked, verified boot. Every check is reported; a chain that fails any
+  enrols nothing. The ruling is written to `led.device_attestation` (migration
+  014) with the device, or instead of it, and the Devices page shows it.
+  Roots are every `.pem` in `infra/attestation` (`ATTESTATION_ROOTS_DIR`); with
+  none loaded, a presented chain is refused. A device presenting nothing is
+  enrolled as before and recorded as `absent`, unless its kind is listed in
+  `ATTESTATION_REQUIRED_KINDS`. `ATTESTATION_STATUS_URL` loads a revocation
+  list; without it that check is reported as not evaluated.
+  What this is not: nothing in this repository produces an attestation,
+  because the field app is a web page and cannot ask a Keystore for one, so
+  every real enrolment today is `absent` and what hardware holds the key is
+  still the enrolling operator's word. No chain from a real handset has been
+  put to the verifier; the chains in `attestation.test.ts` and
+  `tools/e2e/attestation.mjs` (23 checks, Oct 2, 2026) are built by a fixture
+  in the shape Android produces. Whether `infra/attestation` holds the
+  vendor's real roots has not been checked. A TPM quote from a centre PC is not
+  understood. Outstanding challenges are held in memory and lost on a restart.
+  See `adr/0003`.
 - **The gateway is the only thing that checks who is asking.** The ledger
   checks no credential of its own beyond the signature on an event and the
   operator's role on the three account routes. Started alone
@@ -518,6 +538,9 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   label), two recorded operator calls, `STORED` and `RELEASED`, strong-room
   visits, roster lock, opening on the real drand round and an overdue leg. Every
   signature and chain hash was checked; the transaction rolled back.
+  Public seam scans now use the same service-signing identity as those engine
+  events. `LEDGER_SERVICE_KEY` in `.env.example` is the stable 64-hex key to
+  provision in Render; without it the process creates a new identity on boot.
 - **The live streams do not work through Netlify.** Its `/api` proxy holds back
   small server-sent frames and answers 504 after about thirty seconds, so on
   the deployed site `GET /alerts/stream` never opens (and `/events/stream` goes
@@ -566,6 +589,11 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   added. `firmware/witness-node/src/main.cpp` was already behind the Arduino
   sketch (it lacks the USB transport), so do not run `sync-arduino.py` over the
   sketch.
+- **Enrolment needs migration 014 and an override decision needs 015.**
+  Without 014 `POST /devices` returns 503; without 015
+  `POST /overrides/:id/decision` returns 503. Both were applied to local
+  Postgres on Oct 2, 2026. Whether they are on Neon has not been checked from
+  here; apply them before deploying a build that includes them.
 - **Alerts need migrations 007 and 008, the four newer pages need 009, and
   Rosters needs 011.**
   Without 007 the Acknowledge button returns 503; without 008 the notifier logs
@@ -609,9 +637,32 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   monitor.** The engine decides and records; nothing physical opens. Footfall
   is checked only for a room registered with a monitor device whose signed
   `ROOM_ENTRY` events are on the chain.
-- **The override's live video is the operator's word.** No call is carried by
-  this system or the field PWA. What is recorded is
-  that two named operators each stated they saw the packet and both officers.
+- **An override is approved over a video call the ledger sets up, and it
+  never sees the picture.** Each operator opens a call from the Override
+  approval page to the phone that made the request (the field app's
+  `/field/call.html`, or the Transfers console standing in for a handheld). The
+  media goes phone to browser directly. `led.override_call` (migration 015)
+  holds what the ledger handled itself (who joined, the phone's offer carried
+  to an operator, the answer carried back) and what each end reported as itself
+  (connected; for an operator, the video frames their browser decoded). An
+  approval is accepted only with all three on record for that operator: the
+  call set up, their browser reporting decoded video in the last fifteen
+  minutes, and the phone confirming its end. Otherwise it is turned away and
+  that attempt is recorded. Each decision keeps the evidence it was made on. A
+  refusal needs no call. `OVERRIDE_CALL_REQUIRED=0` goes back to taking the
+  operator's word, and every decision then says so.
+  What this is not: a recording, or proof of what was in the picture. That
+  both officers were present is still each operator's statement. The reports
+  of "connected" and of frames decoded come from the two ends, not from
+  anything the ledger observed. The call's set-up messages are held in memory,
+  so one ledger process is assumed. There is a public STUN server by default
+  (`CALL_ICE_SERVERS`) and no relay: two networks that both block direct
+  connections will not connect. It was clicked through locally through the
+  gateway on Oct 2, 2026 with a drawn canvas standing in for the camera: two
+  operators each on their own call, video decoded at the operator's end, an
+  approval with no call refused, the second approval approving. It has not been
+  run with a real phone camera, across two networks, or from the field app's
+  call page on an enrolled phone.
 - **Room custody events need an explicit leg-to-room link.** Migration 013
   adds optional `roomId` to a planned leg. A confirmed leg received by a
   custodian appends `STORED` after `HANDOVER_COMPLETED`; a custodian dispatch

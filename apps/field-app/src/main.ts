@@ -300,7 +300,16 @@ async function requestOverride() {
   });
   const data = await response.json() as { overrideId?: string; error?: string };
   if (!response.ok || !data.overrideId) throw new Error(data.error ?? `Override request returned ${response.status}`);
-  label("override-status").textContent = `Request ${data.overrideId} sent. Wait for two control-room decisions before continuing the hand-off.`;
+  // Each of the two operators has to see the packet on a call from this phone
+  // before they can approve, so the way to that call is offered here.
+  const call = document.createElement("a");
+  call.href = `/field/call.html?override=${encodeURIComponent(data.overrideId)}`;
+  call.textContent = "Open the video call";
+  call.style.color = "inherit";
+  label("override-status").replaceChildren(
+    `Request ${data.overrideId} sent. Two control-room operators each have to see the packet on a video call from this phone before they can approve. `,
+    call,
+  );
   await refresh();
 }
 
