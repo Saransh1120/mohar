@@ -156,7 +156,7 @@ a genuine cross-check rather than the code agreeing with itself.
 | `tools/seed` | Key generation, device enrolment, and a custody walkthrough driven through the real engine |
 | `tools/label-print` | Prints a packet's two-code seam label and signs its sealing |
 | `tools/seal-lock-command` | Signs a short-lived UART command after a recorded, granted unlock attempt; requires migration 010 |
-| `tools/e2e` | End-to-end checks against a real Postgres: `transfer.mjs`, `seal.mjs`, `sweeps.mjs`, `doors.mjs`, `opening.mjs`, `gateway.mjs` |
+| `tools/e2e` | End-to-end checks against a real Postgres: `transfer.mjs`, `seal.mjs`, `sweeps.mjs`, `doors.mjs`, `opening.mjs`, `gateway.mjs`, `device-seq.mjs`, `public-scan.mjs`, `journey.mjs` |
 | `tools/run-gated` | `pnpm start`: the access engine and ledger on loopback with the gateway in front, as one command |
 
 ## Sealing a packet
@@ -483,12 +483,16 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   the fingerprint reader — it says so on the page.
 - **The watchdog runs inside the ledger process**, not in `services/watchdog`,
   which does not exist yet. It sweeps every 30 s (`LEG_WATCHDOG_MS`, `0` turns
-  it off) and writes to `led.alert`, not a signed chain event.
+  it off) and records both an alert and a service-signed chain event.
   `PACKET_UNOPENED_OVERDUE` looks back 48 hours and counts as an opening
   either an `OPEN_CEREMONY`, `PACKET_OPENED` or `PRINT_STARTED` event or an
-  `unlock` the access engine granted. No engine emits `OPEN_CEREMONY` yet, so
-  for now the granted unlock is what keeps a packet opened on the Ceremony page
-  from raising this alert.
+  `unlock` the access engine granted. The opening engine now appends
+  `OPEN_CEREMONY` and `PACKET_OPENED` with the ledger's enrolled service key.
+- **The engines' decisions now appear on the signed chain.** The hand-off,
+  strong-room, override and opening routes append service-signed events, as do
+  the overdue sweeps. `tools/e2e/journey.mjs` passed 33 checks on Oct 2, 2026:
+  seal, three hand-offs, strong-room visits, roster lock, opening and an overdue
+  leg, with every signature and chain hash checked. The transaction rolled back.
 - **The live streams do not work through Netlify.** Its `/api` proxy holds back
   small server-sent frames and answers 504 after about thirty seconds, so on
   the deployed site `GET /alerts/stream` never opens (and `/events/stream` goes
@@ -547,8 +551,8 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   Ceremonies and Override approval were opened in a signed-in browser after
   the Neon migrations and returned their empty-state data. The full production
   ceremony and approval forms were not submitted. `doors.mjs` and
-  `opening.mjs` cover those routes against a test database; `opening.mjs`
-  passes 72 checks.
+  `opening.mjs` cover those routes against a test database; `doors.mjs` passed
+  47 checks and `opening.mjs` passed 75 checks on Oct 2, 2026.
 - **The offline opening path exists.** `POST /stations/:deviceId/cache` caches
   an envelope and `POST /ceremonies/offline` records an `envelope-authorized`
   opening. A failing account raises `OFFLINE_OPENING_DISPUTED`. A station
