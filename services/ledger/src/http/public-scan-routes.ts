@@ -49,7 +49,7 @@ export function registerPublicScanRoutes(app: FastifyInstance, pool: Pool): void
       [parsed.data.seamId],
     );
     const packet = rows[0];
-    if (!packet) return reply.code(202).send({ recorded: true });
+    if (!packet) return reply.code(202).send({ status: "received" });
 
     const identity = await serviceIdentity();
     const userAgent = req.headers["user-agent"]?.slice(0, 280);
@@ -92,6 +92,6 @@ export function registerPublicScanRoutes(app: FastifyInstance, pool: Pool): void
           "Check custody and inspect this seam label; a public browser opened its QR link."],
       );
     });
-    return reply.code(202).send({ recorded: true });
+    return reply.code(202).send({ status: "received" });
   });
 }

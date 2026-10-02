@@ -68,7 +68,7 @@ try {
   });
   const first = await scan(label.seamId, "A");
   check("public scan receives a generic response", first.statusCode === 202 &&
-    first.json().recorded === true && !first.body.includes(packet.id));
+    first.json().status === "received" && !first.body.includes(packet.id));
   const [event] = (await client.query(
     "select id,body from led.event where kind = 'UNAUTHORIZED_SCAN' and package_id = $1", [packet.id],
   )).rows;
