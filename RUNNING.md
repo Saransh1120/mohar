@@ -470,8 +470,8 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   attestation, biometric hand-offs or upload photo bytes to the server.
   `centre-client` remains planned.
 - **Sealing registers the seam label and nothing else.** The Opening Key is not
-  split at sealing, because no service exists to hold the parts. There is no
-  PDF output, only SVG. The label comes out 48 x 34 mm at QR version 4, not
+  split at sealing, because no service exists to hold the parts. The label tool
+  writes both PDF and SVG. The label comes out 48 x 34 mm at QR version 4, not
   the 60 x 25 mm at version 3 the physical-layer doc aims for: a seam URL with
   a real host name does not fit version 3. The printed label has not been
   tested on destructible vinyl or scanned off a real packet.
@@ -502,6 +502,20 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   message appeared in the bot chat, and Neon `led.alert_delivery` recorded
   `channel=telegram`, `outcome=sent`, `detail=null` for that alert. Gmail SMTP
   has not been configured or tested; the station buzzer is not wired to alerts.
+- **Device sequence checks are implemented, but coverage is partial.** Migration
+  012 was applied on Neon on Oct 2, 2026. A signed event with `deviceSeq` is
+  checked against that device's previous number; a gap appends a
+  `DEVICE_SEQ_GAP` alert. `tools/e2e/device-seq.mjs` passed 7 checks against
+  local Postgres. The shared ESP32 library persists its counter in NVS but has
+  not been flashed. The schema still accepts events without `deviceSeq`, and
+  the field app and other producers do not yet supply it on every event.
+- **Public seam scans have a signed record and a neutral `/s` page.** A known
+  seam scanned in a public browser posts only its opaque ID and QR half to
+  `POST /public/seam-scan`; the page removes the secret fragment before the
+  request. The ledger appends `UNAUTHORIZED_SCAN` and raises an alert. Unknown
+  IDs receive the same public response. `tools/e2e/public-scan.mjs` passed 8
+  checks against local Postgres. The route has not yet been exercised on the
+  deployed site.
 - **The witness station's token check and single-origin CORS have not been
   compiled or flashed.** The firmware change is written for both the Arduino
   sketch and the `witness-node` source; this machine has no ESP32 toolchain, so
@@ -510,22 +524,28 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   added. `firmware/witness-node/src/main.cpp` was already behind the Arduino
   sketch (it lacks the USB transport), so do not run `sync-arduino.py` over the
   sketch.
-- **Alerts need migrations 007 and 008, and the four newer pages need 009.**
+- **Alerts need migrations 007 and 008, the four newer pages need 009, and
+  Rosters needs 011.**
   Without 007 the Acknowledge button returns 503; without 008 the notifier logs
   an error each round and sends nothing; without 009 the Strong rooms, Rosters,
   Ceremonies and Override approval pages get errors from the ledger. The live
   Neon-backed deployment had those missing relations until migration 009 was
-  applied on Oct 2, 2026. All four pages now load through the gateway.
+  applied on Oct 2, 2026. Migration 011 was applied on Neon as the schema owner
+  on Oct 2, 2026; 012 adds the signed device sequence column. All four pages
+  now load through the gateway.
 - **The newer pages load through the live gateway.** Strong rooms, Rosters,
   Ceremonies and Override approval were opened in a signed-in browser after
   the Neon migrations and returned their empty-state data. The full production
   ceremony and approval forms were not submitted. `doors.mjs` and
-  `opening.mjs` cover those routes against a test database.
-- **The opening is the live path only.** A station opening from a cached
-  envelope with no network (`envelope-authorized`), an opening outside its
-  window with all three officials and the control room's approval, and a
-  roster change after locking are designed and not built. The ceremony window
-  is closed once the exam starts.
+  `opening.mjs` cover those routes against a test database; `opening.mjs`
+  passes 72 checks.
+- **The offline opening path exists.** `POST /stations/:deviceId/cache` caches
+  an envelope and `POST /ceremonies/offline` records an `envelope-authorized`
+  opening. A failing account raises `OFFLINE_OPENING_DISPUTED`. A station
+  holding the cache has all three wrapped shares, so enforcing two officials
+  at the reader is the station's responsibility; the time lock still applies.
+  The beacon is fetched from a public relay, with no LAN cache. Opening
+  outside the ceremony window is still not built.
 - **The opening station is a paired browser, not the ESP32.** The witness
   station firmware does not hold envelopes or unwrap shares. The console's
   fingerprint is simulated, and no face reading is sent, so the engine records
@@ -533,8 +553,12 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
 - **The opening key is made when the roster is locked, not when the packet is
   sealed.** The design splits the key at the press and re-wraps the shares a
   day ahead; here both happen at the lock, so nothing holds role-bound shares
-  in between. The lock is not held to a day ahead either: it can be done any
-  time before the packet's opening minute, and the time is recorded.
+  in between. A lock inside the last day before the exam needs a stated reason
+  and is recorded as late in `led.roster_issue`.
+- **Roster re-issue exists.** `POST /rosters/:centreId/:session/reissue`
+  gives every unopened packet at the centre a new key as the next issue. It is
+  refused after the opening minute; a ceremony begun under the earlier issue
+  must start again.
 - **A station's unwrap key is registered by the station.** The gateway takes
   the device's own signature for it, from the device named in the path. A
   directly reached ledger checks nothing; a second, different key is refused
@@ -555,8 +579,8 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   reports. Migration 010 and `tools/seal-lock-command` issue short-lived commands
   from recent granted unlock attempts. An opened enclosure or a failed closure
   creates an alert when its signed event reaches the ledger. Board flash, electrical tests, UART
-  delivery and secure-boot provisioning are still required. Device sequence
-  numbers are not built.
+  delivery and secure-boot provisioning are still required. The seal-lock
+  sketch does not yet attach a sequence to its signed reports.
 
 The natural next steps are moving the opening onto the ESP32 station, a way
 for a field device to be enrolled without an operator typing its key, and real
