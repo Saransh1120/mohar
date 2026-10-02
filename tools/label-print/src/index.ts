@@ -6,8 +6,8 @@
  *   node tools/label-print/dist/index.js seal  --package <id> --photo <file> [--person <id>]
  *
  * `print` generates the seam secret, splits it across the two QR codes, and
- * writes the label as an SVG at print size. The secret is in that drawing and
- * nowhere else: what is kept beside it is the commitment, which opens nothing.
+ * writes the label at print size, as an SVG and as a PDF. The secret is in
+ * those two drawings and nowhere else: what is kept beside it is the commitment, which opens nothing.
  *
  * `seal` is run once the label is on the closed packet and has been
  * photographed. It signs a SEAL_APPLIED event with this device's key, holding
@@ -95,22 +95,25 @@ try {
     const labels = args.get("labels") ?? "1";
     if (labels !== "1" && labels !== "2") fail("--labels must be 1 or 2");
     const serial = args.get("serial");
-    const { art, pending } = makeLabel(packet, {
+    const { art, pdf, pending } = makeLabel(packet, {
       verifyHost: args.get("verify-host") ?? process.env["VERIFY_HOST"] ?? "https://mohar.example",
       labelsPerPacket: labels === "2" ? 2 : 1,
       ...(serial ? { packetSerial: serial } : {}),
     });
     await mkdir(outDir, { recursive: true });
     const svgPath = join(outDir, `${pending.packetSerial}.svg`);
+    const pdfPath = join(outDir, `${pending.packetSerial}.pdf`);
     await writeFile(svgPath, art.svg);
+    await writeFile(pdfPath, pdf);
     await writeFile(pendingPath, JSON.stringify(pending, null, 2) + "\n");
     console.log(`Label       ${svgPath}`);
+    console.log(`            ${pdfPath}`);
     console.log(`Size        ${art.widthMm} x ${art.heightMm} mm, QR version ${art.qrVersion}, level L, 0.5 mm modules`);
     console.log(`Seam id     ${pending.seamId}`);
     console.log(`Commitment  ${pending.labelCommitment}`);
     console.log(
-      "\nThe SVG is the only copy of the seam secret. Print it, apply it across the flap,\n" +
-        "photograph it, then delete the file and run `seal` with the photograph.",
+      "\nThese two files are the only copies of the seam secret. Print one, apply the label\n" +
+        "across the flap, photograph it, then delete both and run `seal` with the photograph.",
     );
   } else {
     if (!existsSync(pendingPath)) fail(`No printed label on record for this package; run \`print\` first.`);

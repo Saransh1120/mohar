@@ -11,7 +11,7 @@ import {
   seamLabelMatches,
   verifyBodySignature,
 } from "@mohar/crypto-core";
-import { groupSeamId, qrMatrix, renderLabelSvg, MODULE_MM } from "./label.js";
+import { groupSeamId, qrMatrix, renderLabelPdf, renderLabelSvg, MODULE_MM } from "./label.js";
 import { buildSealEvent, makeLabel, type PacketInfo } from "./seal.js";
 
 /**
@@ -158,4 +158,107 @@ test("the sealing event is a valid SEAL_APPLIED signed by the device", () => {
   // Nothing optional is written as null, and no secret is in the event.
   assert.equal(JSON.stringify(signed).includes("null"), false);
   assert.equal("seamSecret" in payload || "shareA" in payload || "shareB" in payload, false);
+});
+
+// ── the PDF ──
+
+/**
+ * Read a label PDF the way a renderer would: take the filled squares out of
+ * its content stream and paint them. Nothing here calls the code that laid the
+ * label out, so a PDF that decodes proves the file, not the layout function.
+ */
+function pdfPage(pdf: Uint8Array): { width: number; height: number; fills: number[][]; text: string[] } {
+  const body = Buffer.from(pdf).toString("latin1");
+  const box = /\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/.exec(body);
+  assert.ok(box, "no MediaBox");
+  const stream = /stream\n([\s\S]*?)endstream/.exec(body);
+  assert.ok(stream, "no content stream");
+  const fills = [...stream[1]!.matchAll(/^([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+) re$/gm)].map((m) =>
+    m.slice(1, 5).map(Number),
+  );
+  const text = [...stream[1]!.matchAll(/\(((?:[^()\\]|\\.)*)\) Tj/g)].map((m) => m[1]!);
+  return { width: Number(box[1]), height: Number(box[2]), fills, text };
+}
+
+/** Paint one half of the page's filled squares and decode what a camera would see. */
+function scanPdfHalf(pdf: Uint8Array, half: "left" | "right", labelHeightPt?: number): string {
+  const page = pdfPage(pdf);
+  const scale = 6;
+  const w = Math.ceil((page.width / 2) * scale);
+  const top = labelHeightPt ?? page.height;
+  const h = Math.ceil(top * scale);
+  const px = new Uint8ClampedArray(w * h * 4).fill(255);
+  const x0 = half === "left" ? 0 : page.width / 2;
+  for (const [x, y, rw, rh] of page.fills as [number, number, number, number][]) {
+    // PDF measures up from the bottom; only the topmost label is painted.
+    const fromTop = page.height - (y + rh);
+    if (fromTop > top) continue;
+    const left = Math.round((x - x0) * scale);
+    const right = Math.round((x - x0 + rw) * scale);
+    for (let py = Math.round(fromTop * scale); py < Math.round((fromTop + rh) * scale); py += 1) {
+      for (let pxl = left; pxl < right; pxl += 1) {
+        if (pxl < 0 || pxl >= w || py < 0 || py >= h) continue;
+        const i = (py * w + pxl) * 4;
+        px[i] = 0;
+        px[i + 1] = 0;
+        px[i + 2] = 0;
+      }
+    }
+  }
+  const decoded = jsQR(px, w, h);
+  assert.ok(decoded, `the ${half} code in the PDF did not decode`);
+  return decoded.data;
+}
+
+const PT_PER_MM = 72 / 25.4;
+
+test("the PDF is one page exactly the size of the label", () => {
+  const { art, pdf } = makeLabel(packet, { verifyHost: HOST, labelsPerPacket: 1 });
+  const page = pdfPage(pdf);
+  assert.equal(Buffer.from(pdf).subarray(0, 8).toString("latin1"), "%PDF-1.4");
+  assert.ok(Math.abs(page.width - art.widthMm * PT_PER_MM) < 0.01, `${page.width}pt wide`);
+  assert.ok(Math.abs(page.height - art.heightMm * PT_PER_MM) < 0.01, `${page.height}pt high`);
+  assert.equal(Buffer.from(pdf).toString("latin1").trimEnd().endsWith("%%EOF"), true);
+});
+
+test("the cross-reference table points at each object", () => {
+  const { pdf } = makeLabel(packet, { verifyHost: HOST, labelsPerPacket: 2 });
+  const body = Buffer.from(pdf).toString("latin1");
+  const at = Number(/startxref\n(\d+)/.exec(body)![1]);
+  assert.equal(body.slice(at, at + 4), "xref");
+  const offsets = [...body.slice(at).matchAll(/^(\d{10}) 00000 n $/gm)].map((m) => Number(m[1]));
+  assert.equal(offsets.length, 6);
+  offsets.forEach((o, i) => assert.equal(body.slice(o, o + `${i + 1} 0 obj`.length), `${i + 1} 0 obj`));
+});
+
+test("both codes scanned off the PDF rebuild a secret that satisfies the commitment", () => {
+  const { pdf, pending } = makeLabel(packet, { verifyHost: HOST, labelsPerPacket: 1 });
+  const a = parseSeamQr(scanPdfHalf(pdf, "left"));
+  const b = parseSeamQr(scanPdfHalf(pdf, "right"));
+  assert.equal(a.which, "A");
+  assert.equal(b.which, "B");
+  const { seamId, seamSecret } = combineScannedPair(a, b);
+  assert.equal(seamId, pending.seamId);
+  assert.equal(seamLabelMatches(seamId, seamSecret, pending.labelCommitment), true);
+});
+
+test("the PDF and the SVG carry the same modules", () => {
+  const { art, pdf } = makeLabel(packet, { verifyHost: HOST, labelsPerPacket: 2 });
+  const inSvg = [...art.svg.matchAll(/M[\d.]+ [\d.]+h/g)].length;
+  assert.equal(pdfPage(pdf).fills.length, inSvg);
+});
+
+test("the PDF prints the seam id, the serial and the instruction", () => {
+  const { pdf, pending } = makeLabel(packet, { verifyHost: HOST, labelsPerPacket: 1 });
+  const { text } = pdfPage(pdf);
+  assert.ok(text.includes(groupSeamId(pending.seamId)));
+  assert.ok(text.includes("SERIAL PKT-JPR-0091"));
+  assert.ok(text.includes("QR 1") && text.includes("QR 2"));
+});
+
+test("a serial with brackets in it cannot break the PDF's text", () => {
+  const odd = { ...packet, sealSerial: "PKT(1)\\X" };
+  const { pdf } = makeLabel(odd, { verifyHost: HOST, labelsPerPacket: 1 });
+  const { text } = pdfPage(pdf);
+  assert.ok(text.includes("SERIAL PKT\\(1\\)\\\\X"), text.join(" | "));
 });

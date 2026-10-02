@@ -6,7 +6,7 @@ import {
   generateSeamLabel,
   signBody,
 } from "@mohar/crypto-core";
-import { renderLabelSvg, type LabelArt } from "./label.js";
+import { renderLabelPdf, renderLabelSvg, type LabelArt, type LabelInput } from "./label.js";
 
 /**
  * ── The press operator's device, as a library ────────────────────────────────
@@ -91,6 +91,8 @@ export interface PendingLabel {
 
 export interface PrintedLabel {
   art: LabelArt;
+  /** The same label as a one-page PDF at print size. */
+  pdf: Uint8Array;
   pending: PendingLabel;
 }
 
@@ -108,15 +110,16 @@ export function makeLabel(
     );
   }
   const label = generateSeamLabel();
-  const art = renderLabelSvg({
+  const drawing: LabelInput = {
     seamId: label.seamId,
     urlA: encodeSeamQr(opts.verifyHost, "A", label.seamId, label.shareA),
     urlB: encodeSeamQr(opts.verifyHost, "B", label.seamId, label.shareB),
     packetSerial,
     copies: opts.labelsPerPacket,
-  });
+  };
   return {
-    art,
+    art: renderLabelSvg(drawing),
+    pdf: renderLabelPdf(drawing),
     pending: {
       packageId: packet.id,
       packetSerial,
