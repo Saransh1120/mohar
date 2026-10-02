@@ -513,9 +513,11 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   `OPEN_CEREMONY` and `PACKET_OPENED` with the ledger's enrolled service key.
 - **The engines' decisions now appear on the signed chain.** The hand-off,
   strong-room, override and opening routes append service-signed events, as do
-  the overdue sweeps. `tools/e2e/journey.mjs` passed 33 checks on Oct 2, 2026:
-  seal, three hand-offs, strong-room visits, roster lock, opening and an overdue
-  leg, with every signature and chain hash checked. The transaction rolled back.
+  the overdue sweeps. `tools/e2e/journey.mjs` passed 38 checks on Oct 2, 2026:
+  seal, four hand-offs (one with a wrong serial and one with an approved damaged
+  label), two recorded operator calls, `STORED` and `RELEASED`, strong-room
+  visits, roster lock, opening on the real drand round and an overdue leg. Every
+  signature and chain hash was checked; the transaction rolled back.
 - **The live streams do not work through Netlify.** Its `/api` proxy holds back
   small server-sent frames and answers 504 after about thirty seconds, so on
   the deployed site `GET /alerts/stream` never opens (and `/events/stream` goes

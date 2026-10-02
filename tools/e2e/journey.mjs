@@ -7,8 +7,8 @@
  *
  * The other scripts each put one engine through its refusals. This one walks a
  * single packet through all of them in order: sealed with a label, the roster
- * locked, handed press to courier to custodian, held in a strong room, handed
- * to the superintendent, and opened by two officials once drand publishes the
+ * locked, handed press to courier to police escort to custodian, held in a
+ * strong room, handed to the superintendent, and opened by two officials once drand publishes the
  * round. Then it reads led.event back and checks that the journey is there as
  * signed events: in order, each signed by the device that may sign it, the
  * chain intact across the whole run, and none of the secrets in any of it.
@@ -20,7 +20,7 @@
  * transaction that is rolled back at the end. Needs the internet for the
  * opening, because the beacon is the real one and the test waits for it.
  *
- * Needs every migration applied, through 012. Build first (`pnpm build`).
+ * Needs every migration applied, through 015. Build first (`pnpm build`).
  */
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -36,6 +36,7 @@ const { registerRoutes } = await import(at("services/ledger/dist/http/routes.js"
 const { registerRegistryRoutes } = await import(at("services/ledger/dist/http/registry-routes.js"));
 const { registerSealRoutes } = await import(at("services/ledger/dist/http/seal-routes.js"));
 const { registerTransferRoutes } = await import(at("services/ledger/dist/http/transfer-routes.js"));
+const { registerOverrideRoutes } = await import(at("services/ledger/dist/http/override-routes.js"));
 const { registerStrongroomRoutes } = await import(at("services/ledger/dist/http/strongroom-routes.js"));
 const { registerOpeningRoutes } = await import(at("services/ledger/dist/http/opening-routes.js"));
 const { sweepOverdueLegs } = await import(at("services/ledger/dist/domain/watchdog.js"));
@@ -83,6 +84,7 @@ registerRoutes(app, pool);
 registerRegistryRoutes(app, pool);
 registerSealRoutes(app, pool);
 registerTransferRoutes(app, pool);
+registerOverrideRoutes(app, pool);
 registerStrongroomRoutes(app, pool);
 registerOpeningRoutes(app, pool);
 await app.ready();
@@ -148,6 +150,12 @@ try {
   const token = randomBytes(24).toString("hex");
   await q(`insert into ref.session (token_hash, account_id, expires_at) values ($1,$2, now() + interval '1 hour')`,
     [createHash("sha256").update(token).digest(), acc.id]);
+  const [acc2] = await q(
+    `insert into ref.account (username, password_hash, password_salt, display_name) values ($1,$2,$3,'Second operator') returning id`,
+    [`jr-second-${tag}`, randomBytes(64), randomBytes(16)]);
+  const token2 = randomBytes(24).toString("hex");
+  await q(`insert into ref.session (token_hash, account_id, expires_at) values ($1,$2, now() + interval '1 hour')`,
+    [createHash("sha256").update(token2).digest(), acc2.id]);
 
   const recorded = (r) => r?.recorded === true;
   const secrets = [];
@@ -188,33 +196,37 @@ try {
 
   // ════ 3. the hand-offs ════
   const now = Date.now();
-  const planLeg = async (legNo, fromRole, toRole, fromPlace, toPlace) =>
+  const room = (await post("/rooms", { name: `Strong room ${tag}`, place: "District treasury", centreId: centre.id })).body.roomId;
+  const planLeg = async (legNo, fromRole, toRole, fromPlace, toPlace, roomId = null) =>
     (await post("/legs", {
       packageId: pkg.id, legNo, fromRole, toRole, fromPlace, toPlace,
+      ...(roomId ? { roomId } : {}),
       windowStart: new Date(now - 3600e3).toISOString(), windowEnd: new Date(now + 3600e3).toISOString(),
       expectedBy: new Date(now + 1800e3).toISOString(),
     })).body.legId;
   const scan = { deviceId: phone, seamSecretHex: secretHex, seamIdRead: label.seamId };
-  const handOff = async (legId, from, to, { wrongSerialFirst = false } = {}) => {
+  const handOff = async (legId, from, to, { wrongSerialFirst = false, overrideId = null } = {}) => {
+    const seam = overrideId ? { deviceId: phone, overrideId } : scan;
     const out = {};
-    out.dispatch = await post(`/legs/${legId}/dispatch`, { ...scan, personId: from, biometricSlot: 3, biometricScore: 190 });
+    out.dispatch = await post(`/legs/${legId}/dispatch`, { ...seam, personId: from, biometricSlot: 3, biometricScore: 190 });
     if (wrongSerialFirst) {
       out.refused = await post(`/legs/${legId}/receive`,
-        { ...scan, personId: to, biometricSlot: 4, biometricScore: 188, packetSerialTyped: "PKT-NOT-THIS" });
+        { ...seam, personId: to, biometricSlot: 4, biometricScore: 188, packetSerialTyped: "PKT-NOT-THIS" });
     }
     out.receive = await post(`/legs/${legId}/receive`,
-      { ...scan, personId: to, biometricSlot: 4, biometricScore: 188, packetSerialTyped: serial });
+      { ...seam, personId: to, biometricSlot: 4, biometricScore: 188, packetSerialTyped: serial });
     if (out.receive.body.transferKey) secrets.push(out.receive.body.transferKey);
     out.confirm = await post(`/legs/${legId}/confirm`,
-      { ...scan, personId: to, biometricSlot: 4, biometricScore: 188, transferKey: out.receive.body.transferKey });
+      { ...seam, personId: to, biometricSlot: 4, biometricScore: 188, transferKey: out.receive.body.transferKey });
     return out;
   };
   const granted = (h) => ["dispatch", "receive", "confirm"].every((s) => h[s].body.outcome === "granted");
   const why = (h) => JSON.stringify(["dispatch", "receive", "confirm"].map((s) => h[s].body.denyReasons));
 
   const leg1 = await planLeg(1, "press_operator", "courier", "Government Press, Jaipur", "Route vehicle");
-  const leg2 = await planLeg(2, "courier", "custodian", "Route vehicle", "District treasury");
-  const leg3 = await planLeg(3, "custodian", "superintendent", "District treasury", `Centre JR-${tag}`);
+  const leg2 = await planLeg(2, "courier", "police_escort", "Route vehicle", "Police checkpoint");
+  const leg3 = await planLeg(3, "police_escort", "custodian", "Police checkpoint", "District treasury", room);
+  const leg4 = await planLeg(4, "custodian", "superintendent", "District treasury", `Centre JR-${tag}`, room);
 
   const h1 = await handOff(leg1, press, courier, { wrongSerialFirst: true });
   expect("leg 1: a wrong serial is refused, then press to courier is granted",
@@ -227,11 +239,47 @@ try {
   expect("a granted receive issues the key and has no event of its own",
     Boolean(h1.receive.body.transferKey) && h1.receive.body.chainEvent === undefined);
 
-  const h2 = await handOff(leg2, courier, custodian);
-  expect("leg 2: courier to custodian is granted", granted(h2), why(h2));
+  // A damaged label on leg 2: the field phone reports it, each operator has
+  // their own recorded call with that phone, and only then is the override
+  // usable. The hand-off engine still decides every other check itself.
+  const overrideRequest = await post(`/legs/${leg2}/override`, {
+    deviceId: phone, personId: courier, seamIdTyped: label.seamId,
+    serialTyped: serial, attemptedSeconds: 17, whichCodes: "both", photoSha256: "cd".repeat(32),
+  });
+  const overrideId = overrideRequest.body.overrideId;
+  expect("a damaged label is reported with a photo hash and stays pending",
+    overrideRequest.status === 201 && overrideRequest.body.standing.status === "pending" &&
+    recorded(overrideRequest.body.chainEvent), JSON.stringify(overrideRequest.body));
+  const callUrl = `/overrides/${overrideId}/call`;
+  const SDP = (who) => `v=0\r\no=- ${who} 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n`;
+  const approve = { decision: "approved", videoConfirmed: true, officersPresent: true,
+    note: "Both officers and the damaged label seen during the call" };
+  const approveOverCall = async (operatorToken, who) => {
+    const joined = await post(`${callUrl}/join`, {}, operatorToken);
+    const operator = joined.body.you;
+    await post(`${callUrl}/device/join`, { deviceId: phone });
+    await post(`${callUrl}/device/offer`, { deviceId: phone, to: operator, sdp: SDP(who) });
+    await post(`${callUrl}/answer`, { sdp: SDP(`answer-${who}`) }, operatorToken);
+    await post(`${callUrl}/state`, { state: "connected", framesDecoded: 120 }, operatorToken);
+    await post(`${callUrl}/device/state`, { deviceId: phone, operator, state: "connected" });
+    return post(`/overrides/${overrideId}/decision`, approve, operatorToken);
+  };
+  const firstApproval = await approveOverCall(token, "first");
+  const secondApproval = await approveOverCall(token2, "second");
+  expect("two different operators approve over their own recorded calls",
+    firstApproval.body.standing?.status === "pending" && secondApproval.body.standing?.status === "approved" &&
+    recorded(secondApproval.body.chainEvent), JSON.stringify([firstApproval.body, secondApproval.body]));
+
+  const h2 = await handOff(leg2, courier, police, { overrideId });
+  expect("leg 2: courier to police escort uses the approved override and is granted",
+    granted(h2) && h2.dispatch.body.checks.some((c) => c.check === "seam_commitment" &&
+      /override approved/.test(c.evidence)), why(h2));
+  const h3 = await handOff(leg3, police, custodian);
+  expect("leg 3: police escort to custodian is granted and stores in the named room",
+    granted(h3) && h3.confirm.body.chainEvents?.[1]?.kind === "STORED" &&
+    recorded(h3.confirm.body.chainEvents[1]), JSON.stringify(h3.confirm.body.chainEvents ?? h3.confirm.body.denyReasons));
 
   // ════ 4. the strong room: in to store it, in again to take it out ════
-  const room = (await post("/rooms", { name: `Strong room ${tag}`, place: "District treasury", centreId: centre.id })).body.roomId;
   const finger = (personId, slot) => ({ personId, biometricSlot: slot, biometricScore: 180, assertedAt: new Date().toISOString() });
   const visit = async (task, touched) => {
     const entry = await post(`/rooms/${room}/entry`,
@@ -251,10 +299,12 @@ try {
       recorded(v.exit.body.chainEvents[0])),
     JSON.stringify([stored.entry.body.chainEvent, stored.exit.body.chainEvents]));
 
-  const h3 = await handOff(leg3, custodian, superintendent);
+  const h4 = await handOff(leg4, custodian, superintendent);
   const [atCentre] = await q(`select state from ref.package where id = $1`, [pkg.id]);
-  expect("leg 3: custodian to superintendent is granted and the packet is at the centre",
-    granted(h3) && atCentre.state === "at_centre", `${why(h3)} ${atCentre.state}`);
+  expect("leg 4: custodian to superintendent is granted, releases from the room and reaches the centre",
+    granted(h4) && h4.dispatch.body.chainEvents?.[1]?.kind === "RELEASED" &&
+    recorded(h4.dispatch.body.chainEvents[1]) && atCentre.state === "at_centre",
+    `${why(h4)} ${JSON.stringify(h4.dispatch.body.chainEvents)} ${atCentre.state}`);
 
   // ════ 5. what a phone may not say ════
   const rogue = generateKeypair();
@@ -265,7 +315,7 @@ try {
     occurredAt: new Date().toISOString(), actorDeviceId: rogueDevice.id, deviceSeq: 1,
     kind: "HANDOVER_COMPLETED",
     payload: {
-      legId: leg3, legNo: 3, fromPersonId: custodian, toPersonId: courier, fromRole: "custodian", toRole: "courier",
+      legId: leg4, legNo: 4, fromPersonId: custodian, toPersonId: courier, fromRole: "custodian", toRole: "courier",
       seamId: label.seamId, packetSerial: serial, biometricSlot: 4, biometricScore: 200, toState: "in_transit", lateBySeconds: 0,
     },
   };
@@ -355,9 +405,11 @@ try {
     "SEAL_APPLIED",
     "CONTROL_ENVELOPE_ISSUED", "SHARES_REWRAPPED",
     "HANDOVER_INITIATED", "HANDOVER_REFUSED", "HANDOVER_COMPLETED",
+    "SEAM_DECODE_FAILED", "SEAM_MANUAL_OVERRIDE",
     "HANDOVER_INITIATED", "HANDOVER_COMPLETED",
+    "HANDOVER_INITIATED", "HANDOVER_COMPLETED", "STORED",
     "STRONGROOM_ENTRY", "STRONGROOM_EXIT", "STRONGROOM_ENTRY", "STRONGROOM_EXIT",
-    "HANDOVER_INITIATED", "HANDOVER_COMPLETED",
+    "HANDOVER_INITIATED", "RELEASED", "HANDOVER_COMPLETED",
     ...(opened ? ["OPEN_CEREMONY", "PACKET_OPENED"] : []),
     "LEG_OVERDUE",
   ];
@@ -390,11 +442,12 @@ try {
 
   // ── the payloads carry what the engines saw ──
   const completed = byKind("HANDOVER_COMPLETED").map((e) => e.body.payload);
-  expect("the three completions name who gave, who took and where the packet then stood",
-    completed.length === 3 &&
+  expect("the four completions name who gave, who took and where the packet then stood",
+    completed.length === 4 &&
     completed[0].fromPersonId === press && completed[0].toPersonId === courier && completed[0].toState === "in_transit" &&
-    completed[1].fromPersonId === courier && completed[1].toPersonId === custodian && completed[1].toState === "at_custodian" &&
-    completed[2].fromPersonId === custodian && completed[2].toPersonId === superintendent && completed[2].toState === "at_centre" &&
+    completed[1].fromPersonId === courier && completed[1].toPersonId === police && completed[1].toState === "in_transit" &&
+    completed[2].fromPersonId === police && completed[2].toPersonId === custodian && completed[2].toState === "at_custodian" &&
+    completed[3].fromPersonId === custodian && completed[3].toPersonId === superintendent && completed[3].toState === "at_centre" &&
     completed.every((p) => p.seamId === label.seamId && p.packetSerial === serial),
     JSON.stringify(completed.map((p) => [p.legNo, p.toState])));
   const refusal = byKind("HANDOVER_REFUSED")[0]?.body.payload;
@@ -409,6 +462,16 @@ try {
   expect("each strong room entry names both people and their fingers, and claims no face reading it did not get",
     entries.length === 2 && entries.every((p) => p.personIds.includes(custodian) && p.personIds.includes(officer) &&
       p.biometricSlots.length === 2 && !("faceMatched" in p)));
+  const storedEvent = byKind("STORED")[0]?.body.payload;
+  const releasedEvent = byKind("RELEASED")[0]?.body.payload;
+  expect("custodian storage and release name the planned room and the real custodian",
+    storedEvent?.roomId === room && storedEvent.custodianPersonId === custodian && storedEvent.sealSerial === serial &&
+    releasedEvent?.roomId === room && releasedEvent.custodianPersonId === custodian && releasedEvent.toLegId === leg4);
+  const overrideEvent = byKind("SEAM_MANUAL_OVERRIDE")[0]?.body.payload;
+  expect("the damaged-label approval names both operator accounts and the reporting courier",
+    overrideEvent?.approverAccountIds.join() === [acc.id, acc2.id].join() &&
+    overrideEvent.fieldPersonIds.join() === courier && overrideEvent.approvalChannel === "live-video" &&
+    overrideEvent.photoSha256 === "cd".repeat(32));
   const envelope = byKind("CONTROL_ENVELOPE_ISSUED")[0]?.body.payload;
   const [envRow] = await q(
     `select ciphertext_sha256 from led.share_envelope where package_id = $1 and kind = 'control_timelock'`, [pkg.id]);
