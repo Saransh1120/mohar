@@ -10,7 +10,12 @@
  * routes are the ledger's own, on a Fastify instance that is never bound to a
  * port.
  *
- * Needs every migration applied, through 009. Build first (`pnpm build`).
+ * The override is approved over a video call. No media can flow in a script, so
+ * the script plays both ends of the call's set-up and reports through the
+ * ledger's own call routes: what is checked here is what the ledger records and
+ * how the approval reads that record, not that a camera works.
+ *
+ * Needs every migration applied, through 015. Build first (`pnpm build`).
  */
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -272,15 +277,99 @@ try {
   const blind = await post(`/overrides/${overrideId}/decision`, { ...approve, videoConfirmed: false }, op1);
   expect("an approval without the video confirmation is not accepted", blind.status === 400);
 
+  // ── the call the approval is given over ──
+  const callUrl = `/overrides/${overrideId}/call`;
+  const failedCall = (r) => (r.body.call?.checks ?? []).filter((c) => !c.passed).map((c) => c.check).join();
+  const SDP = (who) => `v=0\r\no=- ${who} 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n`;
+
+  const noCall = await post(`/overrides/${overrideId}/decision`, approve, op1);
+  expect("an approval with no call on record is turned away, and says what is missing",
+    noCall.status === 409 && failedCall(noCall) === "call_set_up,operator_saw_video,field_confirmed",
+    `${noCall.status} ${failedCall(noCall)}`);
+  expect("that attempt is itself on record",
+    (await q(`select 1 from led.override_call where request_id = $1 and event = 'approval_refused'`, [overrideId])).length === 1);
+  expect("and decided nothing",
+    (await q(`select 1 from led.seam_override_decision where request_id = $1`, [overrideId])).length === 0);
+
+  expect("opening the call needs a signed-in operator", (await post(`${callUrl}/join`, {})).status === 401);
+  const op1Join = await post(`${callUrl}/join`, {}, op1);
+  const op1Id = op1Join.body.you;
+  expect("an operator opens the call and is told the phone is not on it yet",
+    op1Join.status === 200 && op1Join.body.devicePresent === false && Array.isArray(op1Join.body.iceServers));
+
+  const otherPhone = await device("field");
+  expect("a phone that did not make the request cannot be the phone on its call",
+    (await post(`${callUrl}/device/join`, { deviceId: otherPhone })).status === 403);
+  expect("an offer to an operator who has not opened the call is not carried",
+    (await post(`${callUrl}/device/offer`, { deviceId: phone, to: randomUUID(), sdp: SDP("phone") })).status === 409);
+
+  const phoneJoin = await post(`${callUrl}/device/join`, { deviceId: phone });
+  expect("the requesting phone opens the call and is told which operators are waiting",
+    phoneJoin.status === 200 && phoneJoin.body.operators.length === 1 && phoneJoin.body.operators[0].accountId === op1Id);
+  const phoneInbox = await post(`${callUrl}/device/inbox`, { deviceId: phone, after: 0 });
+  expect("the phone's inbox tells it to offer that operator a call",
+    phoneInbox.body.signals.some((s) => s.kind === "operator-joined" && s.from === op1Id));
+  expect("another phone cannot read that inbox",
+    (await post(`${callUrl}/device/inbox`, { deviceId: otherPhone, after: 0 })).status === 403);
+
+  const offered = await post(`${callUrl}/device/offer`, { deviceId: phone, to: op1Id, sdp: SDP("phone") });
+  const op1Inbox = await call("GET", `${callUrl}/inbox?after=0`, undefined, op1);
+  expect("the ledger carries the phone's offer to that operator",
+    offered.status === 202 && op1Inbox.body.signals.some((s) => s.kind === "offer" && s.sdp === SDP("phone")));
+  const answered = await post(`${callUrl}/answer`, { sdp: SDP("op1") }, op1);
+  const phoneInbox2 = await post(`${callUrl}/device/inbox`, { deviceId: phone, after: phoneInbox.body.signals.at(-1).seq });
+  expect("and the operator's answer back to the phone",
+    answered.status === 202 && phoneInbox2.body.signals.length === 1 &&
+    phoneInbox2.body.signals[0].kind === "answer" && phoneInbox2.body.signals[0].from === op1Id);
+
+  await post(`${callUrl}/state`, { state: "connected", framesDecoded: 0 }, op1);
+  const noPicture = await post(`/overrides/${overrideId}/decision`, approve, op1);
+  expect("a call that connected but showed the operator no video does not carry an approval",
+    noPicture.status === 409 && failedCall(noPicture) === "operator_saw_video,field_confirmed", failedCall(noPicture));
+
+  await post(`${callUrl}/state`, { state: "connected", framesDecoded: 214, width: 640, height: 480 }, op1);
+  const oneSided = await post(`/overrides/${overrideId}/decision`, approve, op1);
+  expect("nor does one the phone has not confirmed from its end",
+    oneSided.status === 409 && failedCall(oneSided) === "field_confirmed", failedCall(oneSided));
+
+  await post(`${callUrl}/device/state`, { deviceId: phone, operator: op1Id, state: "connected" });
+
   const first = await post(`/overrides/${overrideId}/decision`, approve, op1);
+  const [firstRow] = await q(
+    `select call_evidence from led.seam_override_decision where request_id = $1`, [overrideId]);
+  expect("with the call set up, video seen and the phone confirming, the approval is recorded with that evidence",
+    first.status === 201 && first.body.call.onRecord === true && firstRow?.call_evidence.required === true &&
+    firstRow.call_evidence.checks.length === 3 && firstRow.call_evidence.checks.every((c) => c.passed),
+    JSON.stringify(first.body));
   expect("one approval leaves it pending", first.status === 201 && first.body.standing.status === "pending" && first.body.standing.approvals === 1);
   const sameAgain = await post(`/overrides/${overrideId}/decision`, approve, op1);
   expect("the same operator cannot be the second approval", sameAgain.status === 409);
   const stillPending = await post(`/legs/${leg}/dispatch`, { ...step, overrideId });
   expect("one approval is not enough for the hand-off", stillPending.body.outcome === "refused");
 
+  const borrowedCall = await post(`/overrides/${overrideId}/decision`, approve, op2);
+  expect("the second operator cannot approve on the first operator's call",
+    borrowedCall.status === 409 && failedCall(borrowedCall) === "call_set_up,operator_saw_video,field_confirmed");
+
+  const op2Id = (await post(`${callUrl}/join`, {}, op2)).body.you;
+  await post(`${callUrl}/device/offer`, { deviceId: phone, to: op2Id, sdp: SDP("phone-2") });
+  await post(`${callUrl}/answer`, { sdp: SDP("op2") }, op2);
+  await post(`${callUrl}/state`, { state: "connected", framesDecoded: 96 }, op2);
+  await post(`${callUrl}/device/state`, { deviceId: phone, operator: op2Id, state: "connected" });
+
   const second = await post(`/overrides/${overrideId}/decision`, approve, op2);
-  expect("a second operator's approval approves it", second.status === 201 && second.body.standing.status === "approved");
+  expect("a second operator's approval, over their own call, approves it",
+    second.status === 201 && second.body.standing.status === "approved", JSON.stringify(second.body));
+
+  const record = await get(callUrl);
+  expect("the call's record names both operators and shows each one's call standing",
+    record.body.operators.length === 2 && record.body.operators.every((o) => o.onRecord) &&
+    record.body.events.filter((e) => e.event === "approval_refused").length === 4 &&
+    record.body.events.filter((e) => e.event === "offered").length === 2);
+  const ownRequests = await post("/overrides/device-requests", { deviceId: phone });
+  expect("the phone can list its own requests and how many approvals each has",
+    ownRequests.body.requests.some((r) => r.id === overrideId && r.approvals === 2) &&
+    (await post("/overrides/device-requests", { deviceId: otherPhone })).body.requests.length === 0);
   const [flag] = await q(`select consequence, evidence from led.alert where kind = 'SEAM_MANUAL_OVERRIDE' and evidence ->> 'overrideId' = $1`, [overrideId]);
   expect("the packet is flagged for inspection, naming both approvers",
     /inspected by hand/.test(flag?.consequence ?? "") && flag.evidence.approvers.length === 2);
@@ -307,8 +396,23 @@ try {
   const no = await post(`/overrides/${refusedReq}/decision`,
     { decision: "refused", videoConfirmed: true, officersPresent: false, note: "only one officer on camera" }, op1);
   expect("one refusal refuses it", no.body.standing.status === "refused");
+  expect("a refusal needs no call", no.status === 201 && no.body.call.onRecord === false);
   const late = await post(`/overrides/${refusedReq}/decision`, approve, op2);
   expect("a refused request cannot then be approved", late.status === 409);
+
+  // A deployment that has turned the call requirement off takes the operator's
+  // word, as before, and every decision says that is what it did.
+  const lax = Fastify({ logger: false });
+  registerOverrideRoutes(lax, pool, { callRequired: false });
+  await lax.ready();
+  const wordOnly = (await post(`/legs/${leg2}/override`, {
+    deviceId: phone, personId: courier, seamIdTyped: label.seamId, attemptedSeconds: 9, whichCodes: "B", photoSha256: photo })).body.overrideId;
+  const laxRes = await lax.inject({
+    method: "POST", url: `/overrides/${wordOnly}/decision`, payload: approve, headers: { authorization: `Bearer ${op1}` } });
+  const [laxRow] = await q(`select call_evidence from led.seam_override_decision where request_id = $1`, [wordOnly]);
+  expect("with the requirement off, an approval with no call is accepted and recorded as exactly that",
+    laxRes.statusCode === 201 && laxRow?.call_evidence.required === false && laxRow.call_evidence.onRecord === false);
+  await lax.close();
 
   const list = await get("/overrides");
   const row = list.body.overrides.find((o) => o.id === overrideId);
@@ -325,7 +429,7 @@ try {
   const grants = await q(
     `select table_name, privilege_type from information_schema.table_privileges
       where table_schema = 'led' and grantee = 'mohar_app'
-        and table_name in ('strongroom_attempt','seam_override_request','seam_override_decision','opening_key')
+        and table_name in ('strongroom_attempt','seam_override_request','seam_override_decision','opening_key','override_call')
         and privilege_type in ('UPDATE','DELETE','TRUNCATE')`);
   expect("mohar_app holds no UPDATE or DELETE on the new led tables", grants.length === 0, JSON.stringify(grants));
 } catch (err) {

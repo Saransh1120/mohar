@@ -127,6 +127,17 @@ export const RULES: readonly Rule[] = Object.freeze([
   r("POST", "/legs/:legId/confirm", "device", "field"),
   r("POST", "/legs/:legId/override", "device", "field"),
   r("POST", "/overrides/:id/decision", "control_room", "write"),
+  // The override's video call. The phone's side is the phone's own signature;
+  // its inbox is polled, so it is counted as a read and not against the limit
+  // that hand-off attempts share.
+  r("POST", "/overrides/device-requests", "device", "read"),
+  r("POST", "/overrides/:id/call/device/join", "device", "field"),
+  r("POST", "/overrides/:id/call/device/inbox", "device", "read"),
+  r("POST", "/overrides/:id/call/device/offer", "device", "field"),
+  r("POST", "/overrides/:id/call/device/state", "device", "field"),
+  r("POST", "/overrides/:id/call/join", "control_room", "write"),
+  r("POST", "/overrides/:id/call/answer", "control_room", "write"),
+  r("POST", "/overrides/:id/call/state", "control_room", "write"),
 
   // ── the strong room door ──
   r("POST", "/rooms", "control_room", "write"),

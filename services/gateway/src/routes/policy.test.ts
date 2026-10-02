@@ -34,6 +34,20 @@ test("the door, the hand-off and the ceremony take a device's signature, not a s
   assert.equal(access.rule.limit, "access", "key guesses have their own, tighter limit");
 });
 
+test("on an override's call the phone signs as itself and an operator uses a session", () => {
+  for (const path of ["/overrides/7b/call/device/join", "/overrides/7b/call/device/offer", "/overrides/7b/call/device/state"]) {
+    assert.equal(rule("POST", path).rule.access, "device", path);
+  }
+  const inbox = rule("POST", "/overrides/7b/call/device/inbox");
+  assert.equal(inbox.rule.access, "device");
+  assert.equal(inbox.rule.limit, "read", "a polled inbox must not eat the hand-off limit");
+  assert.equal(rule("POST", "/overrides/device-requests").rule.access, "device");
+  for (const path of ["/overrides/7b/call/join", "/overrides/7b/call/answer", "/overrides/7b/call/state", "/overrides/7b/decision"]) {
+    assert.equal(rule("POST", path).rule.access, "control_room", path);
+  }
+  assert.equal(rule("GET", "/overrides/7b/call/inbox").rule.access, "account");
+});
+
 test("path parameters are captured by name", () => {
   assert.deepEqual(rule("POST", "/stations/abc/wrap-key").params, { deviceId: "abc" });
   assert.deepEqual(rule("POST", "/rosters/c1/morning/lock").params, {

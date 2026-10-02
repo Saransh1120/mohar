@@ -11,6 +11,8 @@ import {
   rateAgainstBaseline,
   type OverrideDecisionRow,
 } from "../domain/override.js";
+import { CallRooms, judgeCall, loadCallRows, recordCall } from "../domain/override-call.js";
+import { registerCallRoutes } from "./call-routes.js";
 
 /**
  * ── The damaged-label override over HTTP ─────────────────────────────────────
@@ -21,7 +23,9 @@ import {
  *   GET  /overrides/stats            how often it is used, by centre, route and officer
  *
  * A request raises SEAM_DECODE_FAILED so the control room is told. Approval is
- * two decisions from two accounts; the second one raises SEAM_MANUAL_OVERRIDE,
+ * two decisions from two accounts, each given over a video call with the phone
+ * that made the request (call-routes carries the call; an approval with no such
+ * call on record is turned away); the second one raises SEAM_MANUAL_OVERRIDE,
  * which is what flags the packet for inspection at its destination. The
  * override itself is used by the hand-off routes: `overrideId` on a dispatch,
  * receive or confirm stands in for the scan on that leg.
@@ -48,7 +52,23 @@ const DecisionBody = z.object({
 
 const norm = (s: string) => s.replace(/[\s-]/g, "").toUpperCase();
 
-export function registerOverrideRoutes(app: FastifyInstance, pool: Pool): void {
+export interface OverrideOptions {
+  /**
+   * Whether an approval needs a video call on record between that operator and
+   * the requesting phone. On unless OVERRIDE_CALL_REQUIRED=0, which goes back
+   * to taking the operator's word and says so on every decision it records.
+   */
+  callRequired?: boolean;
+}
+
+export function registerOverrideRoutes(
+  app: FastifyInstance,
+  pool: Pool,
+  options: OverrideOptions = {},
+): void {
+  const callRequired = options.callRequired ?? process.env["OVERRIDE_CALL_REQUIRED"] !== "0";
+  registerCallRoutes(app, pool, new CallRooms());
+
   app.post<{ Params: { legId: string } }>("/legs/:legId/override", async (req, reply) => {
     if (!Uuid.safeParse(req.params.legId).success) {
       return reply.code(400).send({ error: "leg id must be a uuid" });
@@ -189,6 +209,7 @@ export function registerOverrideRoutes(app: FastifyInstance, pool: Pool): void {
                          'decision', d.decision,
                          'videoConfirmed', d.video_confirmed,
                          'officersPresent', d.officers_present,
+                         'callEvidence', to_jsonb(d) -> 'call_evidence',
                          'note', d.note,
                          'decidedAt', d.decided_at)
                        order by d.decided_at)
@@ -237,7 +258,7 @@ export function registerOverrideRoutes(app: FastifyInstance, pool: Pool): void {
       });
     }
 
-    const out = await withTransaction(pool, async (tx) => {
+    const decide = () => withTransaction(pool, async (tx) => {
       await tx.query("select pg_advisory_xact_lock(hashtext($1))", [`override:${req.params.id}`]);
       const { rows: reqs } = await tx.query<{
         leg_id: string;
@@ -299,11 +320,35 @@ export function registerOverrideRoutes(app: FastifyInstance, pool: Pool): void {
         };
       }
 
+      // The operator states what they saw. Whether there was a call for them
+      // to see it on is something the ledger has its own record of.
+      const call = judgeCall(await loadCallRows(tx, req.params.id), account.id, new Date());
+      const callEvidence = { required: callRequired, onRecord: call.onRecord, checks: call.checks };
+      if (b.decision === "approved" && callRequired && !call.onRecord) {
+        await recordCall(tx, {
+          requestId: req.params.id, party: "operator", accountId: account.id, deviceId: null,
+          event: "approval_refused", detail: { checks: call.checks },
+        });
+        return {
+          code: 409 as const,
+          body: {
+            error:
+              "An approval is given over a video call with the phone that made this request, " +
+              "and there is no such call on record for this account. Open the call, see the " +
+              "packet and both officers, then decide. A refusal needs no call.",
+            call: callEvidence,
+          },
+        };
+      }
+
       await tx.query(
         `insert into led.seam_override_decision
-           (request_id, account_id, decision, video_confirmed, officers_present, note)
-         values ($1::uuid, $2::uuid, $3, $4, $5, $6)`,
-        [req.params.id, account.id, b.decision, b.videoConfirmed, b.officersPresent, b.note],
+           (request_id, account_id, decision, video_confirmed, officers_present, note, call_evidence)
+         values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::jsonb)`,
+        [
+          req.params.id, account.id, b.decision, b.videoConfirmed, b.officersPresent, b.note,
+          JSON.stringify(callEvidence),
+        ],
       );
       const after = await load();
       const now = standingOf(after);
@@ -330,8 +375,19 @@ export function registerOverrideRoutes(app: FastifyInstance, pool: Pool): void {
           ],
         );
       }
-      return { code: 201 as const, body: { standing: now } };
+      return { code: 201 as const, body: { standing: now, call: callEvidence } };
     });
+
+    let out: Awaited<ReturnType<typeof decide>>;
+    try {
+      out = await decide();
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === "42P01" || code === "42703") {
+        return reply.code(503).send({ error: "migration 015 has not been applied to this database" });
+      }
+      throw err;
+    }
 
     if (out.code === 201) {
       req.log.info(
