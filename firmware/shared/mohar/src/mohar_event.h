@@ -87,6 +87,8 @@ bool identityFromHex(Identity &out, const char *deviceId, const char *examId,
  * `payloadJson` must be a canonical object, normally built with a JsonWriter.
  * `actorPersonId` may be nullptr; `packageId`/`centreId` come from the identity
  * and are omitted when empty.
+ * A device-local sequence number is persisted in NVS before each signature;
+ * a reset can create a visible gap but cannot silently reuse a number.
  */
 String signedEvent(const Identity &id, const char *kind, const char *occurredAt,
                    const char *eventId, const char *payloadJson,

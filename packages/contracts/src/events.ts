@@ -751,6 +751,8 @@ const envelopeShape = {
   /** Device clock at the moment of the act. May be wrong; never silently corrected. */
   occurredAt: Timestamp,
   actorDeviceId: Uuid,
+  /** Monotonic counter from this device, persisted before the event is signed. */
+  deviceSeq: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
   actorPersonId: Uuid.optional(),
   geo: GeoPoint.optional(),
 };
@@ -777,6 +779,7 @@ export type EventBody = {
     centreId?: string;
     occurredAt: Timestamp;
     actorDeviceId: string;
+    deviceSeq?: number;
     actorPersonId?: string;
     geo?: z.infer<typeof GeoPoint>;
     kind: K;

@@ -13,6 +13,7 @@ import {
   GENESIS_HASH,
 } from "@mohar/crypto-core";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
+import { observeDeviceSequence } from "./domain/device-seq.js";
 
 /**
  * ── The one principle this module exists to enforce ──────────────────────────
@@ -52,7 +53,9 @@ export interface PolicyFlag {
     | "occurred_in_future"
     | "geo_missing"
     | "geo_accuracy_poor"
-    | "backdated_beyond_window";
+    | "backdated_beyond_window"
+    | "device_seq_missing"
+    | "device_seq_regression";
   detail: string;
 }
 
@@ -183,6 +186,20 @@ export async function appendEvent(
   // One tail, one writer. hashtext() of a fixed string gives a stable lock key.
   await tx.query("select pg_advisory_xact_lock(hashtext('led.event.chain'))");
   const prevHash = await loadChainTail(tx);
+  const sequenceRows = await tx.query<{ last_seq: string | null }>(
+    "select max(device_seq)::text as last_seq from led.event where actor_device = $1",
+    [body.actorDeviceId],
+  );
+  const lastSeenSeq = Number(sequenceRows.rows[0]?.last_seq ?? 0);
+  const sequence = observeDeviceSequence(lastSeenSeq, body.deviceSeq);
+  if (sequence.kind === "missing" && device.kind !== "service") {
+    flags.push({ code: "device_seq_missing", detail: "device event has no signed deviceSeq" });
+  } else if (sequence.kind === "regression") {
+    flags.push({
+      code: "device_seq_regression",
+      detail: `device sequence ${sequence.receivedSeq} is not above ${sequence.lastSeenSeq}`,
+    });
+  }
 
   const bh = bodyHash(body);
   const h = chainHashFromHashes(prevHash, bh);
@@ -194,14 +211,14 @@ export async function appendEvent(
        actor_person, actor_device,
        lat, lon, geo_accuracy_m,
        body, device_sig, cosign_device, cosign_sig,
-       body_hash, prev_hash, hash
+       body_hash, prev_hash, hash, device_seq
      ) values (
        $1,$2,$3,$4,$5,
        $6,$7,$8,
        $9,$10,
        $11,$12,$13,
        $14,$15,$16,$17,
-       $18,$19,$20
+       $18,$19,$20,$21
      ) returning seq, received_at`,
     [
       body.id,
@@ -224,10 +241,20 @@ export async function appendEvent(
       Buffer.from(bh),
       Buffer.from(prevHash),
       Buffer.from(h),
+      body.deviceSeq ?? null,
     ],
   );
 
   const row = inserted.rows[0]!;
+  if (sequence.kind === "gap") {
+    await tx.query(
+      `insert into led.alert (kind, package_id, centre_id, device_id, evidence, requires_decision, consequence)
+       values ('DEVICE_SEQ_GAP', $1::uuid, $2::uuid, $3::uuid, $4::jsonb, true, $5)`,
+      [body.packageId ?? null, body.centreId ?? null, body.actorDeviceId,
+        JSON.stringify({ eventId: body.id, ...sequence }),
+        "Inspect this device's local spool for the missing signed event numbers before relying on its account."],
+    );
+  }
   const payload = body.payload as Record<string, unknown>;
   const lockAlert = body.kind === "ENCLOSURE_OPENED" && payload["tamperSwitchOpen"] === true
     ? { kind: "SEAL_LOCK_TAMPER", consequence: "Quarantine this packet and inspect the enclosure before any opening." }
