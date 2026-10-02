@@ -60,7 +60,9 @@ the control-room UI. On top of that: sealing a packet with a two-code seam label
 (dispatch, receive, confirm, with a Transfer Key per leg), the strong room door
 (two verified people, every entry and exit recorded), the damaged-label override
 (two operators approve it), roster lock and the opening ceremony (the control
-room's part time-locked to drand, two officials' shares wrapped to the station),
+room's part time-locked to drand, two officials' shares wrapped to the station;
+a roster re-issue when an official changes; an opening with no link to the ledger,
+reported and ruled on afterwards),
 the watchdog that raises a late hand-off, an unopened packet, an overlong visit
 or an unfinished opening, and alerts sent out by Telegram and email. A gateway
 stands in front of all of it: operator sessions, device signatures and rate
@@ -75,7 +77,7 @@ station's token check. A courier phone app (`apps/field-app`) records signed
 scans and can report a damaged label; it does not do hand-offs yet.
 
 Not built: the opening on the ESP32 station (a paired browser stands in for
-it), device sequence numbers, live video for override approval, and `sealkeys`,
+it), live video for override approval, and `sealkeys`,
 `unlock`, `notify`, `render` and `trace` as services of their own — what exists
 of the first three runs inside `ledger`. Device attestation is stored and not
 verified. The ledger checks no credential itself, so it is only ever run behind
