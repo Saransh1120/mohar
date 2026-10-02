@@ -64,7 +64,10 @@ room's part time-locked to drand, two officials' shares wrapped to the station;
 a roster re-issue when an official changes; an opening with no link to the ledger,
 reported and ruled on afterwards),
 the watchdog that raises a late hand-off, an unopened packet, an overlong visit
-or an unfinished opening, and alerts sent out by Telegram and email. A gateway
+or an unfinished opening, and alerts sent out by Telegram and email. What those
+engines rule goes on the chain as events the ledger signs with its own service
+key, next to what the devices signed, and `tools/e2e/journey.mjs` walks one
+packet from the press to the exam hall and checks the chain afterwards. A gateway
 stands in front of all of it: operator sessions, device signatures and rate
 limits, with the ledger and the access engine on loopback behind it. Each day's
 Merkle root is sent to an RFC 3161 timestamp authority, and `/verify` is a
