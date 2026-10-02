@@ -514,8 +514,18 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   `POST /public/seam-scan`; the page removes the secret fragment before the
   request. The ledger appends `UNAUTHORIZED_SCAN` and raises an alert. Unknown
   IDs receive the same public response. `tools/e2e/public-scan.mjs` passed 8
-  checks against local Postgres. The route has not yet been exercised on the
-  deployed site.
+  checks against local Postgres. A same-tab second QR scan initially left the
+  fragment in the address bar; commit `a8d5a50` handles `hashchange`. Both a
+  first scan and a second scan stripped a synthetic test fragment in the local
+  browser, and the latest Netlify deploy preview showed the same result. The
+  live API route returned 400 for an invalid body, as expected; no real label
+  was scanned on production.
+- **Netlify production deploys are paused by the team's credit limit.** On Oct
+  2, 2026 the Netlify dashboard showed the latest branch deploy preview ready
+  and the production deploy failed immediately. Production still serves commit
+  `898a241`; the `/s` path there redirects to sign-in. Netlify says production
+  deploys resume after a plan upgrade or the next billing cycle. No upgrade was
+  made.
 - **The witness station's token check and single-origin CORS have not been
   compiled or flashed.** The firmware change is written for both the Arduino
   sketch and the `witness-node` source; this machine has no ESP32 toolchain, so
