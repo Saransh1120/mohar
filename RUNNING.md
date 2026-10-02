@@ -484,8 +484,14 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   the PWA, the service worker's offline cache and the browser's own
   online/offline events were not exercised, and the timestamp response was not
   downloaded or checked with an RFC 3161 verifier from that page. The field PWA
-  does not provide hardware attestation, biometric hand-offs or upload photo
-  bytes to the server. `centre-client` remains planned.
+  does not provide hardware attestation, real biometric capture or upload photo
+  bytes to the server. The new hand-off screens sign GET `/legs` and the
+  dispatch, receive and confirm requests as an enrolled field device. They
+  decode both QR images, show all engine checks and each chain event result,
+  and hold a granted receive's transfer key in memory until confirm. The
+  fingerprint slot and score are explicitly simulated. The hand-off screens
+  have passed a build, but have not yet been clicked through against a planned
+  leg in a desktop browser or on a phone. `centre-client` remains planned.
 - **Sealing registers the seam label and nothing else.** The Opening Key is not
   split at sealing, because no service exists to hold the parts. The label tool
   writes both PDF and SVG. The label comes out 48 x 34 mm at QR version 4, not

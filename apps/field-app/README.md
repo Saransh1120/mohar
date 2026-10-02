@@ -20,11 +20,26 @@ request includes the retained photo hash and a device-signed request to
 hand-off may proceed. The photo bytes remain on the phone for export; the
 server receives the hash, not the file.
 
+For a hand-off, enter the package ID and load its legs with a device-signed
+`GET /legs`. Choose a leg, capture both QR images, and use Dispatch. The
+receiver selects the leg, captures both codes, types the packet serial and
+uses Receive. A granted receive returns a transfer key once; this page holds
+it only in memory, then sends it with Confirm and clears it. Closing or
+reloading the page loses the key. An approved damaged-label override ID may be
+entered instead of both QR images. Each engine response shows the outcome,
+all checks with their exact evidence, and the signed chain event result. A
+refused outcome is shown as a ruling and is not retried automatically.
+
+The fingerprint selector supplies simulated slot/score values for testing the
+engine, and the screen labels them as simulated. It is not a fingerprint
+capture. The phone has no reader integration yet.
+
 This is a browser field client. WebCrypto keys do not give Android hardware
-attestation, and this app does not perform fingerprint login, NFC reading or
+attestation, and this app does not perform fingerprint capture, NFC reading or
 dual-signature handoff. Those remain for a native Android implementation. No
 claim of hardware-backed phone identity should be made for this PWA.
 
-What was and was not run is in `RUNNING.md`. In short: every flow above was
-clicked through in a desktop browser against the gateway and the ledger, and
-none of it on a phone.
+What was and was not run is in `RUNNING.md`. The earlier enrolment, scan,
+offline queue, override request and public verify flows were clicked through
+on a desktop browser. The hand-off screens still need a desktop and phone
+click-through with a planned leg and enrolled field devices.

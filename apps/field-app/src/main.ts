@@ -1,9 +1,13 @@
-import { canonicalBytes, requestSigningBytes, REQUEST_SIGNATURE_HEADERS } from "@mohar/crypto-core";
+import { canonicalBytes, combineScannedPair, parseSeamQr, requestSigningBytes, REQUEST_SIGNATURE_HEADERS } from "@mohar/crypto-core";
 import jsQR from "jsqr";
 import "./style.css";
 
 interface Identity { deviceId: string; examId: string; centreId: string; personId: string; }
 interface Queued { id: string; signed: { body: Record<string, unknown>; deviceSig: string }; error?: string; }
+interface Leg { id: string; leg_no: number; from_role: string; to_role: string; dispatched: boolean; completed: boolean; key_issued_at: string | null; refused_attempts: number; overdue: boolean; }
+interface TransferCheck { check: string; passed?: boolean; evidence: string; reason?: string; }
+interface ChainEvent { recorded: boolean; kind: string; eventId?: string; reason?: string; }
+interface TransferResult { outcome: "granted" | "refused"; step: "dispatch" | "receive" | "confirm"; checks: TransferCheck[]; denyReasons: string[]; attemptNo: number; chainEvent?: ChainEvent; transferKey?: string; keyFingerprint?: string; }
 const DB = "mohar-field-v1";
 
 /**
@@ -60,7 +64,7 @@ const hex = (b: ArrayBufferLike) => Array.from(new Uint8Array(b), (v) => v.toStr
 const validId = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
 const app = document.querySelector<HTMLElement>("#app")!;
-app.innerHTML = `<header><strong>Mohar Field</strong><span id="online"></span></header><section><h1>Courier scan</h1><p>Signed on this phone when observed. Queued records keep their original time and ID while offline.</p><p>A control-room operator enrols this phone by entering their own username and password below. They are used once, for the enrolment, and the session is ended straight away: nothing of the operator's stays on this phone.</p><label>Exam ID<input id="exam" autocomplete="off"></label><label>Centre ID<input id="centre" autocomplete="off"></label><label>Person ID<input id="person" autocomplete="off"></label><label>Operator username<input id="op-user" autocomplete="off" autocapitalize="none" spellcheck="false"></label><label>Operator password<input id="op-pass" type="password" autocomplete="off"></label><button id="enrol">Enrol this phone</button><p id="device"></p><p id="enrol-status" role="status"></p></section><section><label>Package ID<input id="package" autocomplete="off"></label><label>Seal photo<input id="photo" type="file" accept="image/*" capture="environment"></label><label>QR code<input id="qr" type="file" accept="image/*" capture="environment"></label><label>Identifier read<input id="raw" autocomplete="off" placeholder="QR or NFC text"></label><button id="record">Record signed scan</button><p id="photo-status"></p></section><section><h2>Damaged label</h2><p>After trying both codes, retain a photo and request a control-room decision. The hand-off stays blocked until approved.</p><label>Leg ID<input id="leg" autocomplete="off"></label><label>Seam ID typed from label<input id="seam" autocomplete="off"></label><label>Printed serial<input id="serial" autocomplete="off"></label><label>Seconds spent trying both codes<input id="attempt-seconds" type="number" min="1" max="3600" value="10"></label><label>Unreadable codes<select id="codes"><option value="both">Both</option><option value="A">A</option><option value="B">B</option></select></label><button id="override">Request override using seal photo above</button><p id="override-status"></p></section><section><h2>Offline queue</h2><p id="queue-count"></p><button id="sync">Sync now</button><p id="status" role="status"></p><ul id="queued"></ul></section><section><h2>Photos on this phone</h2><p>Export these before clearing browser storage or replacing the phone.</p><ul id="photos"></ul></section>`;
+app.innerHTML = `<header><strong>Mohar Field</strong><span id="online"></span></header><section><h1>Courier scan</h1><p>Signed on this phone when observed. Queued records keep their original time and ID while offline.</p><p>A control-room operator enrols this phone by entering their own username and password below. They are used once, for the enrolment, and the session is ended straight away: nothing of the operator's stays on this phone.</p><label>Exam ID<input id="exam" autocomplete="off"></label><label>Centre ID<input id="centre" autocomplete="off"></label><label>Person ID<input id="person" autocomplete="off"></label><label>Operator username<input id="op-user" autocomplete="off" autocapitalize="none" spellcheck="false"></label><label>Operator password<input id="op-pass" type="password" autocomplete="off"></label><button id="enrol">Enrol this phone</button><p id="device"></p><p id="enrol-status" role="status"></p></section><section><label>Package ID<input id="package" autocomplete="off"></label><label>Seal photo<input id="photo" type="file" accept="image/*" capture="environment"></label><label>QR code<input id="qr" type="file" accept="image/*" capture="environment"></label><label>Identifier read<input id="raw" autocomplete="off" placeholder="QR or NFC text"></label><button id="record">Record signed scan</button><p id="photo-status"></p></section><section><h2>Hand-off</h2><p>These three steps are signed by this enrolled phone. This browser has no fingerprint reader: the selected slot and score are simulated, not biometric proof.</p><button id="load-legs">Load legs for package above</button><label>Leg<select id="handoff-leg"></select></label><ul id="leg-list"></ul><label>QR A image<input id="handoff-qr-a" type="file" accept="image/*" capture="environment"></label><label>QR B image<input id="handoff-qr-b" type="file" accept="image/*" capture="environment"></label><label>Simulated fingerprint<select id="fingerprint"><option value="match">Simulated match (slot 3, score 180)</option><option value="mismatch">Simulated mismatch (slot 3, score 40)</option><option value="none">Not read</option></select></label><label>Packet serial typed by receiver<input id="handoff-serial" autocomplete="off"></label><label>Approved damaged-label override ID (in place of both QR scans)<input id="handoff-override" autocomplete="off"></label><button id="dispatch">Dispatch</button> <button id="receive">Receive</button> <button id="confirm">Confirm with key held in memory</button><p id="handoff-key"></p><div id="handoff-result" role="status"></div></section><section><h2>Damaged label</h2><p>After trying both codes, retain a photo and request a control-room decision. The hand-off stays blocked until approved.</p><label>Leg ID<input id="leg" autocomplete="off"></label><label>Seam ID typed from label<input id="seam" autocomplete="off"></label><label>Printed serial<input id="serial" autocomplete="off"></label><label>Seconds spent trying both codes<input id="attempt-seconds" type="number" min="1" max="3600" value="10"></label><label>Unreadable codes<select id="codes"><option value="both">Both</option><option value="A">A</option><option value="B">B</option></select></label><button id="override">Request override using seal photo above</button><p id="override-status"></p></section><section><h2>Offline queue</h2><p id="queue-count"></p><button id="sync">Sync now</button><p id="status" role="status"></p><ul id="queued"></ul></section><section><h2>Photos on this phone</h2><p>Export these before clearing browser storage or replacing the phone.</p><ul id="photos"></ul></section>`;
 const input = (id: string) => document.querySelector<HTMLInputElement>(`#${id}`)!;
 const label = (id: string) => document.querySelector<HTMLElement>(`#${id}`)!;
 const say = (message: string) => { label("status").textContent = message; };
@@ -130,22 +134,118 @@ async function photoHash(file: File): Promise<string> {
   return hex(await crypto.subtle.digest("SHA-256", await file.arrayBuffer()));
 }
 
-async function signedPost(path: string, body: Record<string, unknown>): Promise<Response> {
+async function signedRequest(method: "GET" | "POST", path: string, body?: Record<string, unknown>): Promise<Response> {
   const identity = await get<Identity>("settings", "identity");
   const key = await get<CryptoKey>("settings", "privateKey");
   if (!identity || !key) throw new Error("Enrol this phone first");
-  const json = JSON.stringify({ ...body, deviceId: identity.deviceId });
+  const json = method === "POST" ? JSON.stringify({ ...body, deviceId: identity.deviceId }) : "";
   const timestamp = new Date().toISOString();
   const nonce = hex(crypto.getRandomValues(new Uint8Array(16)).buffer);
-  const signed = requestSigningBytes({ method: "POST", path, timestamp, nonce, body: new TextEncoder().encode(json) });
+  const signed = requestSigningBytes({ method, path, timestamp, nonce, body: new TextEncoder().encode(json) });
   const signature = hex(await crypto.subtle.sign("Ed25519", key, Uint8Array.from(signed)));
-  return fetch(`/api${path}`, { method: "POST", headers: {
-    "content-type": "application/json",
+  return fetch(`/api${path}`, { method, headers: {
+    ...(method === "POST" ? { "content-type": "application/json" } : {}),
     [REQUEST_SIGNATURE_HEADERS.device]: identity.deviceId,
     [REQUEST_SIGNATURE_HEADERS.timestamp]: timestamp,
     [REQUEST_SIGNATURE_HEADERS.nonce]: nonce,
     [REQUEST_SIGNATURE_HEADERS.signature]: signature,
-  }, body: json });
+  }, ...(method === "POST" ? { body: json } : {}) });
+}
+const signedPost = (path: string, body: Record<string, unknown>) => signedRequest("POST", path, body);
+
+// The issued key is a one-response secret. It is never put in DOM, IndexedDB,
+// localStorage, a console message or a queued request.
+let heldTransferKey: string | null = null;
+let heldLegId: string | null = null;
+
+async function loadLegs(showStatus = true) {
+  const packageId = input("package").value.trim();
+  if (!validId(packageId)) throw new Error("Enter the package ID above first");
+  const response = await signedRequest("GET", `/legs?packageId=${encodeURIComponent(packageId)}`);
+  const data = await response.json() as { legs?: Leg[]; error?: string };
+  if (!response.ok || !data.legs) throw new Error(data.error ?? `Leg list returned ${response.status}`);
+  const select = document.querySelector<HTMLSelectElement>("#handoff-leg")!;
+  select.replaceChildren(...data.legs.map((leg) => {
+    const option = document.createElement("option");
+    option.value = leg.id;
+    option.textContent = `${leg.leg_no}: ${leg.from_role} → ${leg.to_role} (${leg.id.slice(0, 8)})`;
+    return option;
+  }));
+  label("leg-list").replaceChildren(...data.legs.map((leg) => {
+    const item = document.createElement("li");
+    item.textContent = `Leg ${leg.leg_no}: ${leg.from_role} → ${leg.to_role}; dispatched ${leg.dispatched}; key issued ${Boolean(leg.key_issued_at)}; completed ${leg.completed}; refused attempts ${leg.refused_attempts}; overdue ${leg.overdue}`;
+    return item;
+  }));
+  if (showStatus) label("handoff-result").textContent = `${data.legs.length} leg(s) returned by ledger.`;
+}
+
+async function handoff(step: "dispatch" | "receive" | "confirm") {
+  if (!navigator.onLine) throw new Error("A hand-off needs a live connection to the engine");
+  const identity = await get<Identity>("settings", "identity");
+  if (!identity) throw new Error("Enrol this phone first");
+  const legId = document.querySelector<HTMLSelectElement>("#handoff-leg")!.value;
+  if (!validId(legId)) throw new Error("Load and choose a leg first");
+  const body: Record<string, unknown> = { personId: identity.personId, occurredAt: new Date().toISOString() };
+  if (step !== "confirm") {
+    const overrideId = input("handoff-override").value.trim();
+    if (overrideId) {
+      if (!validId(overrideId)) throw new Error("Override ID must be a UUID");
+      body.overrideId = overrideId;
+    } else {
+      const a = input("handoff-qr-a").files?.[0];
+      const b = input("handoff-qr-b").files?.[0];
+      if (!a || !b) throw new Error("Scan both QR codes or enter an approved override ID");
+      const pair = combineScannedPair(parseSeamQr(await decodeQr(a)), parseSeamQr(await decodeQr(b)));
+      body.seamIdRead = pair.seamId;
+      body.seamSecretHex = hex(pair.seamSecret.slice().buffer);
+    }
+  }
+  const finger = document.querySelector<HTMLSelectElement>("#fingerprint")!.value;
+  if (finger !== "none") {
+    body.biometricSlot = 3;
+    body.biometricScore = finger === "match" ? 180 : 40;
+  }
+  if (step === "receive") body.packetSerialTyped = input("handoff-serial").value.trim();
+  if (step === "confirm") {
+    if (!heldTransferKey || heldLegId !== legId) throw new Error("No transfer key held for this leg. It is only available in a granted receive response.");
+    body.transferKey = heldTransferKey;
+  }
+  const response = await signedPost(`/legs/${legId}/${step}`, body);
+  const data = await response.json() as TransferResult & { error?: string; detail?: string };
+  if (!response.ok) throw new Error(data.error ?? data.detail ?? `Hand-off returned ${response.status}`);
+  const result = label("handoff-result");
+  result.replaceChildren();
+  const summary = document.createElement("p");
+  summary.textContent = `${data.step}: ${data.outcome}; attempt ${data.attemptNo}; deny reasons: ${data.denyReasons.join(", ") || "none"}`;
+  result.append(summary);
+  const checks = document.createElement("ul");
+  for (const check of data.checks) {
+    const row = document.createElement("li");
+    row.className = check.passed === true ? "pass" : check.passed === false ? "fail" : "skip";
+    row.textContent = `${check.check}: ${check.passed === true ? "passed" : check.passed === false ? "failed" : "not evaluated"} — ${check.evidence}${check.reason ? ` (${check.reason})` : ""}`;
+    checks.append(row);
+  }
+  result.append(checks);
+  const chain = document.createElement("p");
+  chain.textContent = data.chainEvent
+    ? `Chain event ${data.chainEvent.kind}: ${data.chainEvent.recorded ? `recorded ${data.chainEvent.eventId ?? ""}` : `not recorded — ${data.chainEvent.reason ?? "no reason returned"}`}`
+    : "Chain event: not returned by engine for this step";
+  result.append(chain);
+  if (data.outcome === "granted" && step === "receive" && data.transferKey) {
+    heldTransferKey = data.transferKey;
+    heldLegId = legId;
+    label("handoff-key").textContent = `Transfer key held in memory for leg ${legId.slice(0, 8)}. It will be sent by Confirm and lost if this page closes.`;
+  }
+  if (data.outcome === "granted" && step === "confirm") {
+    heldTransferKey = null;
+    heldLegId = null;
+    label("handoff-key").textContent = "Transfer key consumed and cleared from memory.";
+  }
+  if (step === "receive" && data.outcome === "refused") {
+    heldTransferKey = null;
+    heldLegId = null;
+  }
+  await loadLegs(false);
 }
 
 async function requestOverride() {
@@ -251,6 +351,10 @@ function run(action: () => Promise<void>, where = "status") {
 }
 label("enrol").addEventListener("click", () => run(enrol, "enrol-status"));
 label("record").addEventListener("click", () => run(record, "photo-status"));
+label("load-legs").addEventListener("click", () => run(loadLegs, "handoff-result"));
+for (const step of ["dispatch", "receive", "confirm"] as const) {
+  label(step).addEventListener("click", () => run(() => handoff(step), "handoff-result"));
+}
 label("override").addEventListener("click", () => run(requestOverride, "override-status"));
 label("sync").addEventListener("click", () => run(sync));
 addEventListener("online", () => { void refresh(); run(sync); });

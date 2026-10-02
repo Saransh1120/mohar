@@ -121,6 +121,7 @@ export const RULES: readonly Rule[] = Object.freeze([
 
   // ── hand-offs ──
   r("POST", "/legs", "control_room", "write"),
+  r("GET", "/legs", "device", "read"),
   r("POST", "/legs/:legId/dispatch", "device", "field"),
   r("POST", "/legs/:legId/receive", "device", "field"),
   r("POST", "/legs/:legId/confirm", "device", "field"),
