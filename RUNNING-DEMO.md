@@ -1,4 +1,156 @@
-# The unlock-ceremony demo
+# Demo runbook
+
+Two demos. **Part A** is the whole custody story and needs no hardware: a
+laptop, a database and an internet connection. **Part B** is the unlock
+ceremony on the ESP32 witness station. If the hardware fails on stage, Part A
+still runs.
+
+# Part A: the custody story, no hardware
+
+Sealed, handed over, held in a strong room, roster locked, opened by two
+officials when the public beacon allows it. Every step is put to the real
+engine and the page shows what the engine ruled.
+
+Each page demonstrates its stage on a packet of its own: the Transfers page
+makes one to hand over, the Ceremonies page makes one to open. One packet
+taken through every stage in order, with the chain checked afterwards, is
+`tools/e2e/journey.mjs` (step 9).
+
+Steps 1, 2, 6, 7 and 8, and the granted entry and exit in step 5, were clicked
+through against the gateway on a laptop on Oct 3, 2026; the words in capitals
+are what the pages showed. Step 4 was clicked through the day before with a
+drawn canvas standing in for the camera, not a real one. The refusals in step
+5 and the alert in step 3 were not clicked this time: `tools/e2e/doors.mjs`
+and `sweeps.mjs` cover them, and the alert was seen on the live deployment on
+Oct 2.
+
+## Before anyone is watching
+
+| # | Terminal | Command |
+| --- | --- | --- |
+| 1 | gateway, ledger, access | `DATABASE_URL=postgres://mohar_app:change_me_in_deployment@localhost:5432/mohar pnpm start` |
+| 2 | control room | `pnpm --filter @mohar/control-room dev` |
+
+- Every migration applied, through 015 (`pnpm migrate` as `mohar_migrator`).
+- Sign in at `http://localhost:5173` as a control room operator.
+- The internet has to be reachable: the opening waits for a real drand round.
+- For step 4 only: a second operator signed in in a second browser profile,
+  and a camera on the machine that plays the phone.
+- In the consoles the fingerprint is simulated, and the consoles say so. A
+  browser stands in for the courier's phone, the door device and the opening
+  station. Everything else is the engine's.
+
+## The script
+
+**1 · A hand-off.** Transfers → *New packet to hand off*. In the hand-off
+console press *Dispatch*. `DISPATCH GRANTED`, with sixteen checks listed. Point
+at the three that say *not evaluated*, each with its reason: a check that was
+not run is never shown as passed.
+
+**2 · A refusal.** The console now reads *Next: receive by the courier*. Change
+*Serial typed* to anything else and press *Receive*. `RECEIVE REFUSED`,
+*Refused for: packet_serial_mismatch*, and the line reads what was typed
+against what is registered. Put the serial back and press *Receive* again:
+`RECEIVE GRANTED`, and only now is a key *released to the receiver's phone
+only*. The sender never sees it and the server keeps its hash. *Confirm with
+key* → `LEG CLOSED`.
+
+Say: the refusal was written down before the answer came back, and three wrong
+serials or keys on a leg raise an alert.
+
+**3 · A hand-off that never happens.** Set *Leg 1 due in* to *1 minute*, make
+another packet and leave it. Within about a minute and a half the Alerts page
+shows `LEG_OVERDUE`, saying how far the leg got and who was last verified with
+the packet. If Telegram is configured the same alert arrives there.
+
+**4 · A label that will not scan** (needs the second operator and a camera).
+On a fresh packet set *Label scanned* to *damaged, will not scan*, choose a
+photograph, *Report the damaged label*, then *Open the camera and call*. On the
+Overrides page each operator presses *Open the call*, sees the phone's camera,
+ticks both statements, writes what was seen and approves. Show first that an
+operator who approves without opening the call is turned away: *there is no
+such call on record for this account*. After the second approval, *Dispatch*
+with the damaged label is granted and the packet is flagged for inspection
+where it arrives.
+
+Say: the ledger set the call up and recorded that it connected and carried
+video. It never saw the picture and nothing of it is kept. What was in the
+picture is each operator's statement.
+
+**5 · The strong room.** Strong rooms → *New strong room to try*. Set *Second
+person* to *nobody: one person alone* and press *Present at the door*: refused,
+`two_person_required`. Choose a second person: `ENTRY GRANTED`. Try *Apart: 200
+seconds* on another attempt: refused, the two fingers were not within 120
+seconds. *Record the exit* closes the visit with how long it lasted.
+
+**6 · The roster is locked.** Ceremonies → set *Exam starts in* to *20 minutes:
+opens in 5* → *New packet due to open*. Then Rosters: the station is filled in,
+type why the roster is being locked inside the last day, and press *Lock the
+roster and issue the keys*. `LOCKED LATE · 1 KEY ISSUED`, with the drand round
+the control room's part is locked to. Do this within the five minutes: once
+the opening time has passed there is no future round to lock a key to and the
+engine says so.
+
+Say: the key was made and taken apart in that one request. Nothing readable is
+kept, so nobody can open the packet early, including whoever runs the server.
+
+**7 · The opening.** Back on Ceremonies: *Scan the packet and ask to begin* →
+`SCAN AND AUTHORISATION PASSED`. *Identify official 1*, choose the observer or
+the police escort at the reader, *Identify official 2*. The check
+`different_institution` names both institutions. *Confirm the packet serial*.
+
+Now press *Try to open it now* before the time. `THE CONTROL ROOM'S PART IS
+STILL LOCKED`: *drand has not published round N yet. Nobody can shorten this
+wait.* That refusal is the strongest control in the system and it is not
+ours.
+
+When the countdown ends the button becomes *Fetch the round and assemble the
+key*. `GRANTED — THE PACKET MAY BE OPENED`, and the check `key_commitment`
+reads *the key the station assembled hashes to the commitment made when it was
+split*. Choose a photograph and *Record the opening* → `PACKET OPENED`.
+
+**8 · What the chain says.** Activity → choose the opening run in the exam
+filter. `CONTROL_ENVELOPE_ISSUED`, `SHARES_REWRAPPED`, `OPEN_CEREMONY`,
+`PACKET_OPENED`, each signed by the ledger's service key. Choose the hand-off
+run: `HANDOVER_INITIATED`, `HANDOVER_REFUSED` with the wrong serial in it,
+`HANDOVER_COMPLETED`. Then Integrity → *Verify now*, and `/verify` for the
+public check of one record.
+
+**9 · One packet, start to finish.**
+
+```bash
+E2E_OWNER_URL=postgres://mohar_migrator:dev_only_password@localhost:5432/mohar node tools/e2e/journey.mjs
+```
+
+Sealed with a signed label, roster locked, four hand-offs with a refusal and a
+damaged-label override, two strong room visits, opened on the real round, a
+leg nobody completed. Then it reads the chain back: every signature, every
+hash, no secret in any event. 38 checks; it takes about a minute because it
+waits for drand. Everything it writes is rolled back.
+
+## Part A's own limits
+
+- The fingerprint in every console is simulated. The engines check a slot and
+  a score as a reader would send them; no reader is attached.
+- A browser stands in for the phone, the door and the opening station, with a
+  key the browser holds. A device in the field would hold its key in its own
+  hardware, and nothing here has attested that.
+- The Transfers page seals its packet through `POST /demo/journey`, which
+  records the label's commitment without a signed sealing event. The signed
+  sealing is `tools/label-print`, and `journey.mjs` uses it.
+- The demonstration strong room is attached to no centre, so its entries and
+  exits are in the page's own record and not on the chain. A room registered
+  with a centre puts them on the chain.
+- The override's call has no relay. Two networks that both block direct
+  connections will not connect; try it on the venue's network beforehand. With
+  `OVERRIDE_CALL_REQUIRED=0` an approval is the operator's word again and each
+  decision says so.
+- The opening on stage is locked minutes ahead, not a day ahead, so it is
+  recorded as a late lock with the reason typed.
+
+---
+
+# Part B: the unlock ceremony on the witness station
 
 Four things run, then a five-minute script.
 
@@ -101,8 +253,9 @@ mention will assume there are others you are hiding.
   time.
 - The browser's signing key is a non-extractable key held by the browser, not
   the TPM. Script on the page cannot read it out, but anyone at this unlocked
-  machine can still have the browser sign. `adr/0003` records that attestation
-  verification does not exist yet.
+  machine can still have the browser sign. An Android attestation is checked
+  at enrolment when a device presents one, but nothing here produces one, so
+  every device in this demo rests on the operator who enrolled it (`adr/0003`).
 - Two authorised officials who collude at a legitimate opening pass every
   check. Mohar does not stop them; it narrows the enquiry to two named people
   and a signed time.
@@ -115,8 +268,9 @@ mention will assume there are others you are hiding.
   investigators can work from, and no more is claimed.
 - The station has no card fitted, so records buffer in RAM and do not survive a
   power cut. The device says so in the ledger on every boot.
-- The electronic seal lock is not built, so check 20 reports "not evaluated" on
-  every unlock rather than quietly passing.
+- The seal lock's sketch is written and has not been flashed to a board, so no
+  lock has reported for any packet and check 20 says "not evaluated" on every
+  unlock rather than quietly passing.
 - And the one that matters most: at Hazaribagh the principal was *authorised*
   to be in that room. Biometrics and occupancy sensing are detective controls
   against unauthorised entry and close to useless against authorised betrayal.

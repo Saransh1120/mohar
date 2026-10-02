@@ -145,6 +145,9 @@ const EVENT_MEANING: Record<string, EventMeaning> = {
   CEREMONY_INCOMPLETE: { act: "Opening not finished by the scheduled time" },
   PACKET_UNOPENED_OVERDUE: { act: "Packet not opened by its opening time" },
   SEAM_DECODE_FAILED: { act: "Seam label would not scan" },
+  SEAM_MANUAL_OVERRIDE: { act: "Hand-off approved without a scan of the label" },
+  STORED: { act: "Packet placed in a strong room" },
+  RELEASED: { act: "Packet taken out of a strong room" },
   UNAUTHORIZED_SCAN: { act: "Seam label opened in a public browser" },
 };
 
@@ -310,6 +313,19 @@ function factsForEvent(kind: string, payload: Record<string, unknown>): string[]
     case "PACKET_UNOPENED_OVERDUE":
       f.push(`Was due to open at ${p("scheduledOpenAt")}`);
       f.push(`${p("overdueBySeconds")} s past that when the watchdog looked`);
+      break;
+    case "SEAM_MANUAL_OVERRIDE":
+      f.push(
+        p("approvalChannel") === "live-video"
+          ? "Two operators approved, each over a video call with the phone that asked"
+          : "Two operators approved on their own statement; the video call was not required",
+      );
+      f.push(`Seam id typed: ${p("seamIdTyped")}`);
+      f.push(`Photo SHA-256 ${String(p("photoSha256")).slice(0, 24)}…`);
+      f.push("The label was not checked by the system on this leg; the packet is to be inspected where it arrives");
+      break;
+    case "STORED":
+      f.push(`Seal serial ${p("sealSerial")}`);
       break;
     case "SEAM_DECODE_FAILED":
       f.push(`Tried for ${p("attemptedSeconds")} s; code(s) ${p("whichCodes")} would not read`);
