@@ -273,16 +273,21 @@ export async function buildGateway(opts: GatewayOptions): Promise<FastifyInstanc
     what: string,
   ): Refused {
     failedCredential(req);
+    const reason = verdict.reasons[0] ?? "signature_invalid";
+    // Said as what was found. A revoked device's signature may be perfectly
+    // good; telling its holder that it "did not verify" sends them looking for
+    // a fault that is not there.
+    const error =
+      reason === "device_revoked"
+        ? "This device has been revoked."
+        : reason === "device_unknown"
+          ? "No enrolled device has this id."
+          : `${what} did not verify.`;
     return {
-      refused: refuse(
-        req,
-        reply,
-        path,
-        401,
-        verdict.reasons[0] ?? "signature_invalid",
-        `${what} did not verify.`,
-        { ...verdict.detail, findings: verdict.reasons },
-      ),
+      refused: refuse(req, reply, path, 401, reason, error, {
+        ...verdict.detail,
+        findings: verdict.reasons,
+      }),
     };
   }
 

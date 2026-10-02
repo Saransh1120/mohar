@@ -5,14 +5,26 @@ import "./style.css";
 interface Identity { deviceId: string; examId: string; centreId: string; personId: string; }
 interface Queued { id: string; signed: { body: Record<string, unknown>; deviceSig: string }; error?: string; }
 const DB = "mohar-field-v1";
-const operatorHeaders = () => {
+
+/**
+ * Enrolling a device is a control-room operator's act, so the operator types
+ * their own username and password here, once. The session that yields is used
+ * for the enrolment and ended in the same breath: it is never written to this
+ * phone's storage. A courier's phone that kept an operator's session could
+ * issue custody keys for twelve hours.
+ */
+async function withOperator<T>(username: string, password: string, action: (headers: Record<string, string>) => Promise<T>): Promise<T> {
+  const signIn = await fetch("/api/auth/signin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password }) });
+  const session = await signIn.json().catch(() => ({})) as { token?: string; account?: { role?: string }; error?: string };
+  if (!signIn.ok || !session.token) throw new Error(session.error ?? `Operator sign-in returned ${signIn.status}`);
+  const headers = { authorization: `Bearer ${session.token}` };
   try {
-    const token = localStorage.getItem("mohar.session");
-    return token ? { authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
+    if (session.account?.role !== "control_room") throw new Error("Enrolling a phone takes a control-room operator's account");
+    return await action(headers);
+  } finally {
+    await fetch("/api/auth/signout", { method: "POST", headers }).catch(() => undefined);
   }
-};
+}
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -48,7 +60,7 @@ const hex = (b: ArrayBufferLike) => Array.from(new Uint8Array(b), (v) => v.toStr
 const validId = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
 const app = document.querySelector<HTMLElement>("#app")!;
-app.innerHTML = `<header><strong>Mohar Field</strong><span id="online"></span></header><section><h1>Courier scan</h1><p>Signed on this phone when observed. Queued records keep their original time and ID while offline.</p><p>A control-room operator must <a href="/signin">sign in</a> on this phone before enrolling it, then return to /field/.</p><label>Exam ID<input id="exam" autocomplete="off"></label><label>Centre ID<input id="centre" autocomplete="off"></label><label>Person ID<input id="person" autocomplete="off"></label><button id="enrol">Enrol this phone</button><p id="device"></p></section><section><label>Package ID<input id="package" autocomplete="off"></label><label>Seal photo<input id="photo" type="file" accept="image/*" capture="environment"></label><label>QR code<input id="qr" type="file" accept="image/*" capture="environment"></label><label>Identifier read<input id="raw" autocomplete="off" placeholder="QR or NFC text"></label><button id="record">Record signed scan</button><p id="photo-status"></p></section><section><h2>Damaged label</h2><p>After trying both codes, retain a photo and request a control-room decision. The hand-off stays blocked until approved.</p><label>Leg ID<input id="leg" autocomplete="off"></label><label>Seam ID typed from label<input id="seam" autocomplete="off"></label><label>Printed serial<input id="serial" autocomplete="off"></label><label>Seconds spent trying both codes<input id="attempt-seconds" type="number" min="1" max="3600" value="10"></label><label>Unreadable codes<select id="codes"><option value="both">Both</option><option value="A">A</option><option value="B">B</option></select></label><button id="override">Request override using seal photo above</button><p id="override-status"></p></section><section><h2>Offline queue</h2><p id="queue-count"></p><button id="sync">Sync now</button><p id="status" role="status"></p><ul id="queued"></ul></section><section><h2>Photos on this phone</h2><p>Export these before clearing browser storage or replacing the phone.</p><ul id="photos"></ul></section>`;
+app.innerHTML = `<header><strong>Mohar Field</strong><span id="online"></span></header><section><h1>Courier scan</h1><p>Signed on this phone when observed. Queued records keep their original time and ID while offline.</p><p>A control-room operator enrols this phone by entering their own username and password below. They are used once, for the enrolment, and the session is ended straight away: nothing of the operator's stays on this phone.</p><label>Exam ID<input id="exam" autocomplete="off"></label><label>Centre ID<input id="centre" autocomplete="off"></label><label>Person ID<input id="person" autocomplete="off"></label><label>Operator username<input id="op-user" autocomplete="off" autocapitalize="none" spellcheck="false"></label><label>Operator password<input id="op-pass" type="password" autocomplete="off"></label><button id="enrol">Enrol this phone</button><p id="device"></p><p id="enrol-status" role="status"></p></section><section><label>Package ID<input id="package" autocomplete="off"></label><label>Seal photo<input id="photo" type="file" accept="image/*" capture="environment"></label><label>QR code<input id="qr" type="file" accept="image/*" capture="environment"></label><label>Identifier read<input id="raw" autocomplete="off" placeholder="QR or NFC text"></label><button id="record">Record signed scan</button><p id="photo-status"></p></section><section><h2>Damaged label</h2><p>After trying both codes, retain a photo and request a control-room decision. The hand-off stays blocked until approved.</p><label>Leg ID<input id="leg" autocomplete="off"></label><label>Seam ID typed from label<input id="seam" autocomplete="off"></label><label>Printed serial<input id="serial" autocomplete="off"></label><label>Seconds spent trying both codes<input id="attempt-seconds" type="number" min="1" max="3600" value="10"></label><label>Unreadable codes<select id="codes"><option value="both">Both</option><option value="A">A</option><option value="B">B</option></select></label><button id="override">Request override using seal photo above</button><p id="override-status"></p></section><section><h2>Offline queue</h2><p id="queue-count"></p><button id="sync">Sync now</button><p id="status" role="status"></p><ul id="queued"></ul></section><section><h2>Photos on this phone</h2><p>Export these before clearing browser storage or replacing the phone.</p><ul id="photos"></ul></section>`;
 const input = (id: string) => document.querySelector<HTMLInputElement>(`#${id}`)!;
 const label = (id: string) => document.querySelector<HTMLElement>(`#${id}`)!;
 const say = (message: string) => { label("status").textContent = message; };
@@ -58,13 +70,18 @@ async function refresh() {
   const identity = await get<Identity>("settings", "identity");
   label("device").textContent = identity ? `Device ${identity.deviceId}` : "Phone not enrolled. Enrol while online.";
   const queue = await all<Queued>("queue");
-  label("queue-count").textContent = `${queue.length} record(s) waiting`;
+  // A rejected record is not waiting for anything: it stays so that it can be
+  // seen, and is counted apart from the ones that will be sent.
+  const rejected = queue.filter((q) => q.error).length;
+  label("queue-count").textContent = `${queue.length - rejected} record(s) waiting to be sent` + (rejected ? `, ${rejected} rejected and kept` : "");
   label("queued").replaceChildren(...queue.map((q) => { const li = document.createElement("li"); li.textContent = `${q.id}${q.error ? ` — ${q.error}` : ""}`; return li; }));
   const photos = await all<{ file: File; sha256: string; eventId: string }>("photos");
   label("photos").replaceChildren(...photos.map((p) => {
     const li = document.createElement("li");
     const button = document.createElement("button");
-    button.textContent = `Export ${p.eventId.slice(0, 8)}…`;
+    button.textContent = p.eventId.startsWith("override-")
+      ? `Export damaged-label photo ${p.eventId.slice(9, 17)}…`
+      : `Export seal photo ${p.eventId.slice(0, 8)}…`;
     button.onclick = () => {
       const url = URL.createObjectURL(p.file);
       const a = document.createElement("a");
@@ -80,13 +97,32 @@ async function enrol() {
   if (await get<Identity>("settings", "identity")) throw new Error("This phone is already enrolled");
   const examId = input("exam").value.trim(), centreId = input("centre").value.trim(), personId = input("person").value.trim();
   if (![examId, centreId, personId].every(validId)) throw new Error("Enter valid exam, centre and person IDs");
+  const username = input("op-user").value.trim(), password = input("op-pass").value;
+  if (!username || !password) throw new Error("A control-room operator enters their username and password to enrol this phone");
   const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"]);
   const pubkeyHex = hex(await crypto.subtle.exportKey("raw", pair.publicKey));
-  const response = await fetch("/api/devices", { method: "POST", headers: { "content-type": "application/json", ...operatorHeaders() }, body: JSON.stringify({ kind: "field", centreId, pubkeyHex }) });
-  const data = await response.json() as { id?: string; error?: string };
-  if (!response.ok || !data.id) throw new Error(response.status === 401 || response.status === 403 ? "Ask a control-room operator to sign in on this phone before enrolment" : data.error ?? `Enrolment returned ${response.status}`);
+  const deviceId = await withOperator(username, password, async (headers) => {
+    // Every event this phone signs names these three. One that the ledger does
+    // not know would be refused later, in the field, with nobody to fix it: so
+    // they are checked now, while the operator is here.
+    const list = async <T>(path: string): Promise<T> => {
+      const res = await fetch(`/api${path}`, { headers });
+      if (!res.ok) throw new Error(`Could not read ${path.split("?")[0]} (${res.status})`);
+      return await res.json() as T;
+    };
+    const { centres } = await list<{ centres: { id: string; examId: string }[] }>(`/centres?examId=${examId}`);
+    if (!centres.some((c) => c.id === centreId)) throw new Error("That centre is not a centre of that exam");
+    const { persons } = await list<{ persons: { id: string }[] }>("/persons");
+    if (!persons.some((p) => p.id === personId)) throw new Error("No person on the register has that ID");
+    const response = await fetch("/api/devices", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ kind: "field", centreId, pubkeyHex }) });
+    const data = await response.json().catch(() => ({})) as { id?: string; error?: string };
+    if (!response.ok || !data.id) throw new Error(data.error ?? `Enrolment returned ${response.status}`);
+    return data.id;
+  });
   await put("settings", pair.privateKey, "privateKey");
-  await put("settings", { deviceId: data.id, examId, centreId, personId } satisfies Identity, "identity");
+  await put("settings", { deviceId, examId, centreId, personId } satisfies Identity, "identity");
+  input("op-user").value = ""; input("op-pass").value = "";
+  label("enrol-status").textContent = "Enrolled. The operator's session has been ended.";
   await refresh();
 }
 
@@ -176,16 +212,32 @@ async function record() {
 
 async function sync() {
   const queue = await all<Queued>("queue");
+  // What the last attempt said is not what this one will find.
+  say("");
+  let sent = 0;
   for (const item of queue) {
     if (item.error) continue;
     let response: Response;
     try { response = await fetch("/api/events", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(item.signed) }); }
     catch { say("Network unavailable. Signed records remain queued."); break; }
-    if (response.status === 200 || response.status === 201) { await remove("queue", item.id); continue; }
-    if (response.status === 422) {
-      const detail = await response.text();
-      await put("queue", { ...item, error: `Ledger rejected: ${detail.slice(0, 200)}` });
+    if (response.status === 200 || response.status === 201) {
+      await remove("queue", item.id);
+      sent += 1;
+      say(`${sent} record(s) accepted by the ledger.`);
       continue;
+    }
+    // 422 is the ledger saying the event cannot be authenticated; 401 is the
+    // gateway saying the same thing before the ledger saw it (the device is
+    // unknown or revoked, or the signature does not verify). Neither will
+    // change on a retry, so the record is kept, marked, and the queue moves on.
+    if (response.status === 422 || response.status === 401) {
+      const detail = await response.text();
+      await put("queue", { ...item, error: `${response.status === 422 ? "Ledger" : "Gateway"} rejected: ${detail.slice(0, 200)}` });
+      continue;
+    }
+    if (response.status === 429) {
+      say(`The gateway is limiting this phone. Retry in ${response.headers.get("retry-after") ?? "a few"} s; records stay queued.`);
+      break;
     }
     say(`Server returned ${response.status}. Remaining records stay queued.`);
     break;
@@ -193,10 +245,13 @@ async function sync() {
   await refresh();
 }
 
-function run(action: () => Promise<void>) { void action().catch((err: unknown) => say((err as Error).message)); }
-label("enrol").addEventListener("click", () => run(enrol));
-label("record").addEventListener("click", () => run(record));
-label("override").addEventListener("click", () => run(requestOverride));
+// A failure is said beside the button that was pressed, not at the foot of the page.
+function run(action: () => Promise<void>, where = "status") {
+  void action().catch((err: unknown) => { label(where).textContent = (err as Error).message; });
+}
+label("enrol").addEventListener("click", () => run(enrol, "enrol-status"));
+label("record").addEventListener("click", () => run(record, "photo-status"));
+label("override").addEventListener("click", () => run(requestOverride, "override-status"));
 label("sync").addEventListener("click", () => run(sync));
 addEventListener("online", () => { void refresh(); run(sync); });
 addEventListener("offline", () => { void refresh(); });
