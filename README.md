@@ -59,7 +59,9 @@ the control-room UI. On top of that: sealing a packet with a two-code seam label
 (`tools/label-print` and `POST /packages/:id/seal`), the hand-off engine
 (dispatch, receive, confirm, with a Transfer Key per leg), the strong room door
 (two verified people, every entry and exit recorded), the damaged-label override
-(two operators approve it), roster lock and the opening ceremony (the control
+(two operators approve it, each over a video call with the officer's phone
+that the ledger sets up and records, without seeing or keeping the picture),
+roster lock and the opening ceremony (the control
 room's part time-locked to drand, two officials' shares wrapped to the station;
 a roster re-issue when an official changes; an opening with no link to the ledger,
 reported and ruled on afterwards),
@@ -80,7 +82,7 @@ station's token check. A courier phone app (`apps/field-app`) records signed
 scans and can report a damaged label; it does not do hand-offs yet.
 
 Not built: the opening on the ESP32 station (a paired browser stands in for
-it), live video for override approval, and `sealkeys`,
+it), and `sealkeys`,
 `unlock`, `notify`, `render` and `trace` as services of their own — what exists
 of the first three runs inside `ledger`. An Android Keystore attestation is
 checked at enrolment when a device presents one, and a chain that fails enrols

@@ -709,6 +709,14 @@ export interface OverrideStanding {
   detail: string;
 }
 
+/** What the ledger had on record about an operator's call when they decided. */
+export interface CallEvidence {
+  /** False where the deployment has turned the call requirement off. */
+  required: boolean;
+  onRecord: boolean;
+  checks: EngineCheck[];
+}
+
 export interface OverrideDecision {
   accountId: string;
   accountName: string;
@@ -716,8 +724,32 @@ export interface OverrideDecision {
   decision: "approved" | "refused";
   videoConfirmed: boolean;
   officersPresent: boolean;
+  /** Null on a decision made before calls were recorded. */
+  callEvidence: CallEvidence | null;
   note: string;
   decidedAt: string;
+}
+
+/** One set-up message of an override's call, as the ledger carries it. */
+export interface CallSignal {
+  seq: number;
+  kind: "operator-joined" | "device-joined" | "offer" | "answer" | "bye";
+  /** `device`, or an operator's account id. */
+  from: string;
+  fromName?: string;
+  sdp?: string;
+}
+
+export interface CallRecord {
+  events: {
+    party: "operator" | "field";
+    accountId: string | null;
+    accountName: string | null;
+    event: string;
+    detail: { framesDecoded?: number; seconds?: number };
+    recordedAt: string;
+  }[];
+  operators: { accountId: string; accountName: string; onRecord: boolean; checks: EngineCheck[] }[];
 }
 
 export interface OverrideRequest {
@@ -1298,7 +1330,34 @@ export const api = {
       officersPresent: boolean;
       note: string;
     },
-  ) => post<{ standing: OverrideStanding }>(`/overrides/${id}/decision`, input),
+  ) => post<{ standing: OverrideStanding; call: CallEvidence }>(`/overrides/${id}/decision`, input),
+
+  /** The video call an override is approved over. See lib/overrideCall. */
+  overrideCall: {
+    join: (id: string) =>
+      post<{ you: string; devicePresent: boolean; iceServers: RTCIceServer[] }>(`/overrides/${id}/call/join`, {}),
+    inbox: (id: string, after: number) =>
+      get<{ signals: CallSignal[] }>(`/overrides/${id}/call/inbox?after=${after}`),
+    answer: (id: string, sdp: string) => post<{ carried: boolean }>(`/overrides/${id}/call/answer`, { sdp }),
+    state: (
+      id: string,
+      body: { state: "connected" | "ended"; framesDecoded?: number; width?: number; height?: number; seconds?: number },
+    ) => post<{ recorded: boolean }>(`/overrides/${id}/call/state`, body),
+    record: (id: string) => get<CallRecord>(`/overrides/${id}/call`),
+    // The phone's end, signed by the device as every other act of its is.
+    deviceJoin: (id: string, deviceId: string) =>
+      postAsDevice<{ operators: { accountId: string; name: string }[]; iceServers: RTCIceServer[] }>(
+        deviceId, `/overrides/${id}/call/device/join`, { deviceId }),
+    deviceInbox: (id: string, deviceId: string, after: number) =>
+      postAsDevice<{ signals: CallSignal[] }>(deviceId, `/overrides/${id}/call/device/inbox`, { deviceId, after }),
+    deviceOffer: (id: string, deviceId: string, to: string, sdp: string) =>
+      postAsDevice<{ carried: boolean }>(deviceId, `/overrides/${id}/call/device/offer`, { deviceId, to, sdp }),
+    deviceState: (
+      id: string,
+      deviceId: string,
+      body: { operator: string; state: "connected" | "ended"; seconds?: number },
+    ) => postAsDevice<{ recorded: boolean }>(deviceId, `/overrides/${id}/call/device/state`, { deviceId, ...body }),
+  },
 
   // ── rosters and the opening ──
   rosters: (centreId?: string) =>

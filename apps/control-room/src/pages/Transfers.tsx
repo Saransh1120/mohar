@@ -12,6 +12,7 @@ import {
 import { formatTime, relativeTime, useAsync } from "../lib/hooks";
 import { Card, Empty, ErrorNote } from "../components/ui";
 import { sha256OfFile } from "../components/CheckList";
+import { PhoneCallPanel } from "../components/OverrideCall";
 
 /**
  * ── Hand-offs ────────────────────────────────────────────────────────────────
@@ -491,7 +492,9 @@ function Console({ leg, journey, onDone }: { leg: Leg; journey: DemoJourney; onD
                 <>
                   Override <span className="mono">{overrideId.slice(0, 8)}</span> was requested for this
                   leg. It stands in for the scan only once two operators have approved it on the{" "}
-                  <Link to="/overrides">Override approval</Link> page; until then the engine refuses.
+                  <Link to="/overrides">Override approval</Link> page, each over a video call with
+                  this device; until then the engine refuses.
+                  <PhoneCallPanel overrideId={overrideId} deviceId={journey.deviceId} />
                 </>
               ) : (
                 <>

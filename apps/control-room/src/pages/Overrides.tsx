@@ -5,20 +5,24 @@ import { useAuth } from "../lib/auth";
 import { formatTime, relativeTime, useAsync } from "../lib/hooks";
 import { Card, Empty, ErrorNote } from "../components/ui";
 import { roleText } from "../components/CheckList";
+import { OperatorCallPanel } from "../components/OverrideCall";
 
 /**
  * ── Override approval ────────────────────────────────────────────────────────
  *
  * A seam label that will not scan stops a hand-off. The officer photographs it
  * and types the seam id printed on it, and the request lands here. Two
- * operators, each signed in as themselves, each state that they saw the packet
- * and both officers on live video, and approve or refuse.
+ * operators, each signed in as themselves, each open a video call to the phone
+ * that made the request, see the packet and both officers, and approve or
+ * refuse.
  *
- * What this page cannot do is see that video. There is no field app to place
- * the call from and no call is carried here: the operator makes it by whatever
- * line exists, and what is recorded is that a named operator said they saw it.
- * That is weaker than a recording, and the page says so rather than showing a
- * video frame that is not there.
+ * The call is set up through the ledger and the picture goes from the phone to
+ * this browser directly. The ledger never sees it. What it records is that it
+ * carried the call's set-up between this operator and that phone, and what
+ * each end reported: here, how many video frames this browser decoded. An
+ * approval with no such call on record is turned away. What was in the picture
+ * is still the operator's statement, nothing is recorded of it, and the page
+ * says so.
  *
  * Underneath is how often the override is used, by centre, route and officer.
  * A label failing is ordinary. One centre's labels failing five times as often
@@ -50,10 +54,13 @@ export default function Overrides() {
       <div className="note">
         A label that will not scan is also what a swapped label looks like, so this is{" "}
         <strong>a recorded override, not a bypass</strong>. It needs <strong>two operators</strong>,
-        each signed in as themselves, each stating they saw the packet and both field officers on
-        live video. Once approved it stands in for the scan on that one leg, every other check on
-        the leg still runs, and the packet is flagged for inspection where it arrives. A request is
-        made from the <Link to="/transfers">Transfers</Link> console by choosing a damaged label.
+        each signed in as themselves, each on their own video call with the phone that made the
+        request, each stating they saw the packet and both field officers. The ledger sets the call
+        up and records that it connected and carried video; it does not see or keep the picture.
+        Once approved it stands in for the scan on that one leg, every other check on the leg still
+        runs, and the packet is flagged for inspection where it arrives. A request is made from the
+        field app, or from the <Link to="/transfers">Transfers</Link> console by choosing a damaged
+        label.
       </div>
 
       <div className="toolbar">
@@ -213,7 +220,12 @@ function RequestRow({ request: o, onDecided }: { request: OverrideRequest; onDec
                   <span>
                     {" "}
                     · {d.decision}
-                    {d.decision === "approved" && " over live video, both officers present"}
+                    {d.decision === "approved" &&
+                      (d.callEvidence?.onRecord
+                        ? ", with a video call to the phone on record; states both officers were present"
+                        : d.callEvidence
+                          ? "; states it was seen on live video, with no call on record (the call was not required)"
+                          : "; states it was seen on live video (decided before calls were recorded)")}
                   </span>
                   <span title={formatTime(d.decidedAt)}> · {relativeTime(d.decidedAt)}</span>
                   <div className="alert-ack-note">{d.note}</div>
@@ -232,7 +244,8 @@ function RequestRow({ request: o, onDecided }: { request: OverrideRequest; onDec
               </div>
             ) : (
               <div style={{ marginTop: 10 }}>
-                <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>
+                <OperatorCallPanel overrideId={o.id} accountId={account.id} />
+                <label style={{ display: "block", fontSize: 12, margin: "10px 0 4px" }}>
                   <input type="checkbox" checked={video} onChange={(e) => setVideo(e.target.checked)} /> I saw
                   this packet and its label on a live video call
                 </label>
