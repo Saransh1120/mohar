@@ -64,6 +64,7 @@ const StepBody = z.object({
 
 const LegBody = z.object({
   packageId: z.string().uuid(),
+  roomId: z.string().uuid().optional(),
   legNo: z.number().int().positive(),
   fromRole: z.string().min(1),
   toRole: z.string().min(1),
@@ -119,13 +120,14 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
     const { rows } = await pool.query<{ id: string }>(
       `insert into ref.route_leg
          (package_id, leg_no, from_role, to_role, from_place, to_place,
-          window_start, window_end, expected_by, geo_lat, geo_lon, geo_radius_m)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          window_start, window_end, expected_by, geo_lat, geo_lon, geo_radius_m, room_id)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        returning id`,
       [
         b.packageId, b.legNo, b.fromRole, b.toRole, b.fromPlace, b.toPlace,
         b.windowStart, b.windowEnd, b.expectedBy,
         b.geo?.lat ?? null, b.geo?.lon ?? null, b.geo?.radiusM ?? null,
+        b.roomId ?? null,
       ],
     );
     return reply.code(201).send({ legId: rows[0]?.id });
@@ -134,7 +136,7 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
   app.get<{ Querystring: { packageId?: string } }>("/legs", async (req, reply) => {
     const { rows } = await pool.query(
       `select r.id, r.package_id, r.leg_no, r.from_role, r.to_role, r.from_place, r.to_place,
-              r.window_start, r.window_end, r.expected_by,
+              r.window_start, r.window_end, r.expected_by, r.room_id,
               p.seal_serial, p.state as package_state, c.code as centre_code,
               exists (select 1 from led.transfer_attempt a
                        where a.leg_id = r.id and a.outcome = 'granted'
@@ -220,7 +222,7 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
           if (already.length > 0) {
             // led.* takes no UPDATE, and re-issuing would let a second device
             // obtain a key after the first. The control room resolves this.
-            return { decision, issuedKey, keyFingerprint, conflict: true, chainEvent: null };
+            return { decision, issuedKey, keyFingerprint, conflict: true, chainEvent: null, chainEvents: null };
           }
           const { rows } = await tx.query<{ seam_id: string | null; window_end: Date }>(
             `select l.seam_id, r.window_end
@@ -255,9 +257,9 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
         }
 
         // Last, so the event describes the packet as this step left it.
-        const chainEvent = await recordHandoverEvent(tx, input, decision);
+        const chainEvents = await recordHandoverEvent(tx, input, decision);
 
-        return { decision, issuedKey, keyFingerprint, conflict: false, chainEvent };
+        return { decision, issuedKey, keyFingerprint, conflict: false, chainEvent: chainEvents?.[0] ?? null, chainEvents };
       });
 
       req.log.info(
@@ -291,6 +293,7 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
         attemptNo: result.decision.attemptNo,
         alertRaised: result.decision.raisesAlert,
         ...(result.chainEvent ? { chainEvent: result.chainEvent } : {}),
+        ...(result.chainEvents && result.chainEvents.length > 1 ? { chainEvents: result.chainEvents } : {}),
         // Present only on a granted receive, and only in this one response.
         ...(result.issuedKey ? { transferKey: result.issuedKey } : {}),
         ...(result.keyFingerprint ? { keyFingerprint: result.keyFingerprint } : {}),

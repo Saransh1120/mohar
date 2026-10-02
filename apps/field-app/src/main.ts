@@ -7,7 +7,7 @@ interface Queued { id: string; signed: { body: Record<string, unknown>; deviceSi
 interface Leg { id: string; leg_no: number; from_role: string; to_role: string; dispatched: boolean; completed: boolean; key_issued_at: string | null; refused_attempts: number; overdue: boolean; }
 interface TransferCheck { check: string; passed?: boolean; evidence: string; reason?: string; }
 interface ChainEvent { recorded: boolean; kind: string; eventId?: string; reason?: string; }
-interface TransferResult { outcome: "granted" | "refused"; step: "dispatch" | "receive" | "confirm"; checks: TransferCheck[]; denyReasons: string[]; attemptNo: number; chainEvent?: ChainEvent; transferKey?: string; keyFingerprint?: string; }
+interface TransferResult { outcome: "granted" | "refused"; step: "dispatch" | "receive" | "confirm"; checks: TransferCheck[]; denyReasons: string[]; attemptNo: number; chainEvent?: ChainEvent; chainEvents?: ChainEvent[]; transferKey?: string; keyFingerprint?: string; }
 const DB = "mohar-field-v1";
 
 /**
@@ -251,11 +251,17 @@ async function handoff(step: "dispatch" | "receive" | "confirm") {
     checks.append(row);
   }
   result.append(checks);
-  const chain = document.createElement("p");
-  chain.textContent = data.chainEvent
-    ? `Chain event ${data.chainEvent.kind}: ${data.chainEvent.recorded ? `recorded ${data.chainEvent.eventId ?? ""}` : `not recorded — ${data.chainEvent.reason ?? "no reason returned"}`}`
-    : "Chain event: not returned by engine for this step";
-  result.append(chain);
+  const chainEvents = data.chainEvents ?? (data.chainEvent ? [data.chainEvent] : []);
+  if (chainEvents.length === 0) {
+    const chain = document.createElement("p");
+    chain.textContent = "Chain event: not returned by engine for this step";
+    result.append(chain);
+  }
+  for (const event of chainEvents) {
+    const chain = document.createElement("p");
+    chain.textContent = `Chain event ${event.kind}: ${event.recorded ? `recorded ${event.eventId ?? ""}` : `not recorded — ${event.reason ?? "no reason returned"}`}`;
+    result.append(chain);
+  }
   if (data.outcome === "granted" && step === "receive" && data.transferKey) {
     heldTransferKey = data.transferKey;
     heldLegId = legId;

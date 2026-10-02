@@ -610,11 +610,17 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
 - **The override's live video is the operator's word.** No call is carried by
   this system or the field PWA. What is recorded is
   that two named operators each stated they saw the packet and both officers.
-- **Some service events are still absent from the signed chain.** `STORED`,
-  `RELEASED` and `SEAM_MANUAL_OVERRIDE` are not appended: nothing links a leg
-  to a room, and override approvers are operator accounts while the contract
-  names a person. A strong room attached to no centre has no exam to file
-  under, so its events are not written.
+- **Room custody events need an explicit leg-to-room link.** Migration 013
+  adds optional `roomId` to a planned leg. A confirmed leg received by a
+  custodian appends `STORED` after `HANDOVER_COMPLETED`; a custodian dispatch
+  appends `RELEASED` after `HANDOVER_INITIATED`, only when the leg names a room
+  attached to the packet's centre. The response reports why a room event was
+  not recorded otherwise. 013 was applied to local Postgres and Neon production
+  on Oct 2, 2026; the hosted `schema_migrations` record and `room_id` column
+  were checked in Neon SQL Editor. `SEAM_MANUAL_OVERRIDE` is still absent because
+  override approvers are operator accounts while the contract names a person.
+  A strong room attached to no centre has no exam to file under, so its events
+  are not written.
 - **The seal-lock sketch is not a field-tested lock.** The ESP32-C6 source and
   Arduino sketch verify signed, expiring, one-use commands and spool signed
   reports. Migration 010 and `tools/seal-lock-command` issue short-lived commands
@@ -622,7 +628,7 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   creates an alert when its signed event reaches the ledger. The seal-lock
   sketch does not yet attach a sequence to its signed reports.
   The sketch compiles for `esp32:esp32:esp32c6` with arduino-cli 1.5.1, core
-  3.3.11, Crypto 0.4.0 and RTClib 2.1.4, with no warnings: 447294 bytes, 34% of
+  3.3.11, Crypto 0.4.0 and RTClib 2.1.4, with no warnings: 447222 bytes, 34% of
   program storage. A review for hardware safety changed four things. The coil
   is cut by a one-shot hardware timer armed before it is energised, as well as
   by the loop. The board does no Wi-Fi join and no HTTP while the coil is on,
