@@ -151,13 +151,17 @@ try {
   // An alert's raised_at is the database's own clock, not the sweep's "now",
   // so delivery is measured from the real time.
   const TODAY = new Date();
+  // The database this runs against may hold real alerts raised in the last day.
+  // The notifier offers those to these channels too, inside the transaction, so
+  // the stand-ins only count and only fail the alert this test raised.
+  const ours = (n) => n.text.includes(`PKT-SW-${tag}-A`);
   const sent = [];
   let failNext = 2;
-  const good = { name: "e2e-good", send: async (n) => void sent.push(n) };
+  const good = { name: "e2e-good", send: async (n) => { if (ours(n)) sent.push(n); } };
   const flaky = {
     name: "e2e-flaky",
-    send: async () => {
-      if (failNext > 0) { failNext -= 1; throw new Error("far end refused"); }
+    send: async (n) => {
+      if (ours(n) && failNext > 0) { failNext -= 1; throw new Error("far end refused"); }
     },
   };
   const dead = { name: "e2e-dead", send: async () => { throw new Error("no route"); } };

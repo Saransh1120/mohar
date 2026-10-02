@@ -768,8 +768,40 @@ export interface DutyRoster {
     stationDeviceId: string;
     issuedAt: string;
     keyCommitment: string;
+    issueNo: number;
   }[];
+  /** Every lock and re-issue of this roster, oldest first. */
+  issues: RosterIssue[];
   packets: number;
+}
+
+export interface RosterIssue {
+  issueNo: number;
+  kind: "lock" | "reissue";
+  issuedAt: string;
+  late: boolean;
+  /** Seconds before the exam's start that it was done. */
+  leadSeconds: number;
+  reason: string | null;
+  packets: number;
+  changes: { role: DutyRole; fromPersonId: string; toPersonId: string }[];
+  by: string | null;
+  byUsername: string | null;
+}
+
+export interface ReissueResult {
+  outcome: "reissued" | "refused";
+  denyReasons: string[];
+  checks: EngineCheck[];
+  issueNo: number | null;
+  reissuedBy: string | null;
+  changes: { role: DutyRole; fromPersonId: string; toPersonId: string }[];
+  packets: {
+    packageId: string;
+    packetSerial: string | null;
+    drandRound: number;
+    scheduledOpenAt: string;
+  }[];
 }
 
 export interface ListedAccount extends Account {
@@ -804,6 +836,9 @@ export interface LockResult {
   checks: EngineCheck[];
   lockedAt: string | null;
   lockedBy: string | null;
+  issueNo: number | null;
+  /** True when it was locked inside the last day before the exam. */
+  late: boolean;
   packets: {
     packageId: string;
     packetSerial: string | null;
@@ -1202,8 +1237,17 @@ export const api = {
     session: string,
     assignments: { role: DutyRole; personId: string }[],
   ) => put<{ status: string }>(`/rosters/${centreId}/${session}`, { assignments }),
-  lockRoster: (centreId: string, session: string, stationDeviceId: string) =>
-    post<LockResult>(`/rosters/${centreId}/${session}/lock`, { stationDeviceId }),
+  lockRoster: (centreId: string, session: string, stationDeviceId: string, lateReason?: string) =>
+    post<LockResult>(`/rosters/${centreId}/${session}/lock`, {
+      stationDeviceId,
+      ...(lateReason?.trim() ? { lateReason: lateReason.trim() } : {}),
+    }),
+  reissueRoster: (
+    centreId: string,
+    session: string,
+    changes: { role: DutyRole; personId: string }[],
+    reason: string,
+  ) => post<ReissueResult>(`/rosters/${centreId}/${session}/reissue`, { changes, reason }),
   registerWrapKey: (deviceId: string, x25519PubHex: string) =>
     postAsDevice<{ status: string }>(deviceId, `/stations/${deviceId}/wrap-key`, { x25519PubHex }),
   ceremonies: (packageId?: string) =>

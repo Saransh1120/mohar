@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { describeDwell, describeFootfall, dwellLimitSeconds, type DwellFacts } from "./strongroom.js";
 import { overrideStanding, rateAgainstBaseline, type OverrideDecisionRow } from "./override.js";
-import { describeIncomplete, institutionOf, stateFromSteps } from "./opening.js";
+import { describeIncomplete, institutionOf, judgeLead, stateFromSteps } from "./opening.js";
 
 /**
  * ── The door, the override and the opening, from facts to rulings ────────────
@@ -148,6 +148,32 @@ test("each official answers to a different body", () => {
   const all = (["superintendent", "observer", "police_escort"] as const).map((r) => institutionOf(r, "JPR-014"));
   assert.equal(new Set(all).size, 3);
   assert.match(all[0]!, /JPR-014/);
+});
+
+test("a lock a day or more ahead passes with no reason asked for", () => {
+  const starts = new Date(NOW.getTime() + 30 * 3600_000);
+  const lead = judgeLead(starts, NOW, undefined);
+  assert.equal(lead.late, false);
+  assert.equal(lead.passed, true);
+  assert.equal(lead.leadSeconds, 30 * 3600);
+});
+
+test("a lock inside the last day is refused until it says why", () => {
+  const starts = new Date(NOW.getTime() + 5 * 3600_000 + 20 * 60_000);
+  const silent = judgeLead(starts, NOW, undefined);
+  assert.equal(silent.late, true);
+  assert.equal(silent.passed, false);
+  assert.match(silent.evidence, /5 h 20 min before the exam starts/);
+  assert.equal(judgeLead(starts, NOW, "ok").passed, false);
+
+  const explained = judgeLead(starts, NOW, "exam moved forward by the board");
+  assert.equal(explained.passed, true);
+  assert.equal(explained.late, true);
+  assert.match(explained.evidence, /inside the last day, with the reason given: "exam moved forward by the board"/);
+});
+
+test("exactly a day ahead is on time", () => {
+  assert.equal(judgeLead(new Date(NOW.getTime() + 24 * 3600_000), NOW, undefined).late, false);
 });
 
 const step = (s: string, outcome: "passed" | "refused", officials: unknown[] = []) =>

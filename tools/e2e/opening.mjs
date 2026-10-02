@@ -86,7 +86,7 @@ try {
   const tag = randomBytes(3).toString("hex");
   // Due to open about 20 s from now: long enough to walk the ceremony up to
   // the release, short enough to wait out.
-  const OPEN_IN_S = 20;
+  const OPEN_IN_S = 40;
   const [auth] = await q(`insert into ref.authority (name) values ($1) returning id`, [`opening e2e ${tag}`]);
   const [exam] = await q(
     `insert into ref.exam (authority_id, name, mode, starts_at, drand_round, sides_per_copy)
@@ -122,6 +122,7 @@ try {
   const observer = await person("O. Khan", "observer", 11);
   const police = await person("P. Yadav", "police_escort", 21);
   const stranger = await person("X. Other", "observer", 31);
+  const police2 = await person("R. Gurjar", "police_escort", 22);
 
   const [acc] = await q(
     `insert into ref.account (username, password_hash, password_salt, display_name) values ($1,$2,$3,'Operator') returning id`,
@@ -155,7 +156,23 @@ try {
   const swap = await post(`/stations/${station}/wrap-key`, { x25519PubHex: generateWrapKeypair().publicKeyHex });
   expect("a different unwrap key is not accepted in its place", swap.status === 409);
 
-  const lock = await post(`${rosterUrl}/lock`, { stationDeviceId: station }, token);
+  // The exam is fifteen minutes away, so this lock is inside the last day.
+  const unexplained = await post(`${rosterUrl}/lock`, { stationDeviceId: station }, token);
+  expect("a lock inside the last day with no reason is refused",
+    unexplained.body.outcome === "refused" && unexplained.body.denyReasons.includes("roster_lock_late") &&
+    unexplained.body.denyReasons.length === 1, JSON.stringify(unexplained.body.denyReasons));
+  expect("and issues nothing",
+    (await q(`select 1 from led.opening_key where package_id = $1`, [pkg.id])).length === 0);
+
+  const lock = await post(`${rosterUrl}/lock`,
+    { stationDeviceId: station, lateReason: "exam moved forward by the board this morning" }, token);
+  const [firstIssue] = await q(
+    `select issue_no, kind, late, reason, lead_seconds, account_id, packets from led.roster_issue where centre_id = $1`, [centre.id]);
+  expect("with a reason it locks, and the lock is on record as late, by whom, and why",
+    lock.body.late === true && firstIssue?.kind === "lock" && firstIssue.late === true &&
+    /moved forward/.test(firstIssue.reason) && firstIssue.account_id === acc.id &&
+    firstIssue.lead_seconds > 800 && firstIssue.lead_seconds < 1000 && firstIssue.packets === 1,
+    JSON.stringify(firstIssue));
   expect("the roster locks and a key is issued for the packet",
     lock.body.outcome === "locked" && lock.body.packets.length === 1 && lock.body.packets[0].packageId === pkg.id,
     JSON.stringify(lock.body.denyReasons ?? lock.body));
@@ -172,7 +189,7 @@ try {
   const [keyRow] = await q(`select * from led.opening_key where package_id = $1`, [pkg.id]);
   expect("the commitments are on record", /^[0-9a-f]{64}$/.test(keyRow?.key_commitment ?? ""));
 
-  const relock = await post(`${rosterUrl}/lock`, { stationDeviceId: station }, token);
+  const relock = await post(`${rosterUrl}/lock`, { stationDeviceId: station, lateReason: "trying a second time" }, token);
   expect("a locked roster does not lock again", relock.body.outcome === "refused" && failed(relock, "roster_unlocked"));
   expect("a locked roster cannot be reassigned",
     (await call("PUT", rosterUrl, { assignments: [{ role: "observer", personId: stranger }] })).status === 409);
@@ -181,9 +198,62 @@ try {
   expect("the station can fetch its envelope a day ahead",
     held.body.envelopes.length === 1 && held.body.envelopes[0].envelope.round === round);
 
-  // ════ the ceremony ════
+
   const start = (over = {}) => post("/ceremonies", {
     packageId: pkg.id, deviceId: station, seamIdRead: label.seamId, seamSecretHex: secretHex, ...over });
+
+  // ════ a re-issue ════
+  // A ceremony is begun and one official identified under the first issue.
+  const abandoned = await start();
+  const oldShare = await post(`/ceremonies/${abandoned.body.ceremonyId}/official`,
+    { personId: superintendent, biometricSlot: 1, biometricScore: 181 });
+  expect("a ceremony begins under the first issue and hands over a share",
+    abandoned.body.outcome === "passed" && Boolean(oldShare.body.share));
+
+  const swapOut = { changes: [{ role: "police_escort", personId: police2 }], reason: "police escort reassigned by the district" };
+  expect("a re-issue needs a signed-in operator",
+    (await post(`${rosterUrl}/reissue`, swapOut)).status === 401);
+  const noReason = await post(`${rosterUrl}/reissue`, { ...swapOut, reason: "" }, token);
+  expect("a re-issue with no reason is refused", noReason.body.outcome === "refused" && failed(noReason, "reason_given"));
+  const wrongRole = await post(`${rosterUrl}/reissue`,
+    { changes: [{ role: "police_escort", personId: stranger }], reason: "trying an observer as the escort" }, token);
+  expect("a replacement on record in another role is refused",
+    wrongRole.body.outcome === "refused" && failed(wrongRole, "roles_match"));
+  const noChange = await post(`${rosterUrl}/reissue`,
+    { changes: [{ role: "police_escort", personId: police }], reason: "the same person as before" }, token);
+  expect("a re-issue that changes nobody is refused", noChange.body.outcome === "refused" && failed(noChange, "changes_named"));
+  expect("no refused re-issue made a key",
+    (await q(`select 1 from led.opening_key where package_id = $1`, [pkg.id])).length === 1);
+
+  const reissue = await post(`${rosterUrl}/reissue`, swapOut, token);
+  expect("a re-issue with a reason replaces the official and makes issue 2",
+    reissue.body.outcome === "reissued" && reissue.body.issueNo === 2 && reissue.body.packets.length === 1 &&
+    reissue.body.changes[0].fromPersonId === police && reissue.body.changes[0].toPersonId === police2,
+    JSON.stringify(reissue.body.denyReasons ?? reissue.body));
+  const keys = await q(`select issue_no, key_commitment, field_shares from led.opening_key where package_id = $1 order by issue_no`, [pkg.id]);
+  expect("the packet has a new key, and the first issue is still on record",
+    keys.length === 2 && keys[0].key_commitment !== keys[1].key_commitment &&
+    keys[1].field_shares.some((s) => s.personId === police2) && !keys[1].field_shares.some((s) => s.personId === police));
+  const allEnvelopes = await q(`select kind, issue_no from led.share_envelope where package_id = $1`, [pkg.id]);
+  expect("all three shares and the envelope were made again, none of the old ones removed",
+    allEnvelopes.filter((e) => e.issue_no === 2).length === 4 && allEnvelopes.filter((e) => e.issue_no === 1).length === 4);
+  const [second] = await q(`select kind, reason, changes from led.roster_issue where centre_id = $1 and issue_no = 2`, [centre.id]);
+  expect("the re-issue is on record with its reason and who changed",
+    second?.kind === "reissue" && /reassigned/.test(second.reason) && second.changes[0].toPersonId === police2);
+  const [dutyNow] = await q(`select person_id from ref.duty_roster where centre_id = $1 and role = 'police_escort'`, [centre.id]);
+  expect("the duty roster names the replacement", dutyNow.person_id === police2);
+
+  const carriedOn = await post(`/ceremonies/${abandoned.body.ceremonyId}/official`,
+    { personId: observer, biometricSlot: 11, biometricScore: 181 });
+  expect("the ceremony begun under the first issue cannot carry on",
+    carriedOn.body.outcome === "refused" && failed(carriedOn, "current_issue") && !carriedOn.body.share);
+
+  const rosterView = await call("GET", `/rosters?centreId=${centre.id}`);
+  const rv = rosterView.body.rosters[0];
+  expect("the roster view shows the key in force and both issues",
+    rv.issued.length === 1 && rv.issued[0].issueNo === 2 && rv.issues.length === 2 && rv.issues[1].kind === "reissue");
+
+  // ════ the ceremony ════
 
   const swapped = await start({ seamSecretHex: "ab".repeat(16) });
   expect("a label that does not match what was sealed stops the ceremony",
@@ -299,6 +369,12 @@ try {
 
     const twice = await post(`/ceremonies/${cid}/release`, { openingKeyHex: keyHex });
     expect("the key is released once", twice.body.outcome === "refused");
+
+    const tooLate = await post(`${rosterUrl}/reissue`,
+      { changes: [{ role: "police_escort", personId: police }], reason: "changing it back after the opening" }, token);
+    expect("after the opening minute the roster is not re-issued",
+      tooLate.body.outcome === "refused" && failed(tooLate, "opening_in_future") && failed(tooLate, "packets_to_rekey"),
+      JSON.stringify(tooLate.body.denyReasons));
 
     const opened = await post(`/ceremonies/${cid}/opened`, { photoSha256: "ef".repeat(32), candidateWitnesses: 2 });
     const [state] = await q(`select state from ref.package where id = $1`, [pkg.id]);

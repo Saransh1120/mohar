@@ -94,6 +94,8 @@ export const DenyReason = z.enum([
    *  2-of-3 split exists to force two institutions, not merely two people. */
   "same_institution_pair",
   "roster_not_locked",
+  /** A roster locked inside the last day, or re-issued, without a stated reason. */
+  "roster_lock_late",
   // ── assertion freshness ──
   "assertion_stale",
   "assertion_nonce_mismatch",

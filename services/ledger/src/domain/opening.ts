@@ -109,10 +109,20 @@ function hexToBytes(hex: string): Uint8Array | null {
 
 // ── locking the roster ──────────────────────────────────────────────────────
 
+/** A roster is locked this long before the exam starts. */
+export const LOCK_LEAD_MS = 24 * 3600_000;
+
 export interface LockRequest {
   centreId: string;
   examSession: string;
   stationDeviceId: string;
+  /** The operator locking it, where there is one. Recorded on the issue. */
+  accountId?: string | undefined;
+  /**
+   * Why it is being locked inside the last day. Required then, and recorded;
+   * ignored when the lock is on time.
+   */
+  lateReason?: string | undefined;
 }
 
 export interface LockedPacket {
@@ -126,53 +136,66 @@ export interface LockedPacket {
 export interface LockResult {
   decision: StepDecision;
   lockedAt: string | null;
+  issueNo: number | null;
+  late: boolean;
   packets: LockedPacket[];
 }
 
-/**
- * Decide whether a roster can be locked and, if it can, lock it and issue the
- * opening key for each of the centre's packets. One transaction.
- */
-export async function lockRoster(tx: PoolClient, req: LockRequest): Promise<LockResult> {
-  const c = new Checks();
-  const now = new Date();
+interface CentreRow {
+  id: string;
+  code: string;
+  exam_id: string;
+  starts_at: Date;
+  suspended_at: Date | null;
+}
 
-  const { rows: centres } = await tx.query<{
-    id: string;
-    code: string;
-    exam_id: string;
-    starts_at: Date;
-    suspended_at: Date | null;
-  }>(
+interface DutyRow {
+  role: string;
+  person_id: string;
+  locked_at: Date | null;
+  display_name: string;
+  person_role: string;
+}
+
+interface StationRow {
+  id: string;
+  kind: string;
+  revoked_at: Date | null;
+  centre_id: string | null;
+  wrap_pub: Buffer | null;
+}
+
+async function loadCentre(tx: PoolClient, centreId: string): Promise<CentreRow | undefined> {
+  const { rows } = await tx.query<CentreRow>(
     `select c.id, c.code, c.exam_id, e.starts_at, e.suspended_at
        from ref.centre c join ref.exam e on e.id = c.exam_id where c.id = $1::uuid`,
-    [req.centreId],
+    [centreId],
   );
-  const centre = centres[0];
-  c.add(
-    "centre_known",
-    Boolean(centre) && centre?.exam_id === req.examSession,
-    !centre
-      ? `no centre with id ${req.centreId}`
-      : centre.exam_id === req.examSession
-        ? `centre ${centre.code}`
-        : `centre ${centre.code} belongs to a different exam session`,
-    "person_not_on_roster",
-  );
+  return rows[0];
+}
 
-  // ── the three officials ──
-  const { rows: duty } = await tx.query<{
-    role: string;
-    person_id: string;
-    locked_at: Date | null;
-    display_name: string;
-    person_role: string;
-  }>(
+async function loadDuty(tx: PoolClient, centreId: string, session: string): Promise<DutyRow[]> {
+  const { rows } = await tx.query<DutyRow>(
     `select d.role, d.person_id, d.locked_at, p.display_name, p.role as person_role
        from ref.duty_roster d join ref.person p on p.id = d.person_id
       where d.centre_id = $1::uuid and d.exam_session = $2`,
-    [req.centreId, req.examSession],
+    [centreId, session],
   );
+  return rows;
+}
+
+async function loadStation(tx: PoolClient, deviceId: string): Promise<StationRow | undefined> {
+  const { rows } = await tx.query<StationRow>(
+    `select d.id, d.kind, d.revoked_at, d.centre_id, w.x25519_pub as wrap_pub
+       from ref.device d left join ref.device_wrap_key w on w.device_id = d.id
+      where d.id = $1::uuid`,
+    [deviceId],
+  );
+  return rows[0];
+}
+
+/** The checks a roster of three has to pass, whether it is being locked or re-issued. */
+function rosterChecks(c: Checks, duty: DutyRow[]): void {
   const byRole = new Map(duty.map((d) => [d.role, d]));
   const missing = DUTY_ROLES.filter((r) => !byRole.has(r));
   c.add(
@@ -207,31 +230,14 @@ export async function lockRoster(tx: PoolClient, req: LockRequest): Promise<Lock
             .join("; "),
     "person_role_not_permitted",
   );
-  const alreadyLocked = duty.find((d) => d.locked_at);
-  c.add(
-    "roster_unlocked",
-    !alreadyLocked,
-    alreadyLocked
-      ? `this roster was locked at ${alreadyLocked.locked_at!.toISOString()}; a change after ` +
-        "locking is a re-issue, which is not built"
-      : "the roster has not been locked before",
-    "duplicate_session",
-  );
+}
 
-  // ── the station ──
-  const { rows: stations } = await tx.query<{
-    id: string;
-    kind: string;
-    revoked_at: Date | null;
-    centre_id: string | null;
-    wrap_pub: Buffer | null;
-  }>(
-    `select d.id, d.kind, d.revoked_at, d.centre_id, w.x25519_pub as wrap_pub
-       from ref.device d left join ref.device_wrap_key w on w.device_id = d.id
-      where d.id = $1::uuid`,
-    [req.stationDeviceId],
-  );
-  const station = stations[0];
+function stationChecks(
+  c: Checks,
+  station: StationRow | undefined,
+  centre: CentreRow | undefined,
+  deviceId: string,
+): void {
   c.add(
     "station_enrolled",
     Boolean(station) && !station?.revoked_at,
@@ -239,7 +245,7 @@ export async function lockRoster(tx: PoolClient, req: LockRequest): Promise<Lock
       ? station.revoked_at
         ? `station ${station.id} was revoked at ${station.revoked_at.toISOString()}`
         : `station ${station.id} (${station.kind}) is enrolled`
-      : `device ${req.stationDeviceId} is not enrolled`,
+      : `device ${deviceId} is not enrolled`,
     station?.revoked_at ? "device_revoked" : "device_unknown",
   );
   c.add(
@@ -264,6 +270,196 @@ export async function lockRoster(tx: PoolClient, req: LockRequest): Promise<Lock
           : "the station is bound to a different centre",
     "device_not_bound_to_centre",
   );
+}
+
+function hoursAndMinutes(ms: number): string {
+  const m = Math.max(0, Math.round(ms / 60_000));
+  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+}
+
+export interface LeadTime {
+  leadSeconds: number;
+  /** Inside the last day before the exam. */
+  late: boolean;
+  passed: boolean;
+  evidence: string;
+}
+
+/**
+ * Is this lock a day ahead, and if it is not, was a reason given.
+ *
+ * The procedure locks a roster twenty-four hours before the exam, so that the
+ * names are fixed while there is still a day in which to notice a wrong one. A
+ * lock inside that day is not forbidden - an exam moved at short notice is a
+ * real thing - but it is no longer routine: it has to say why, and the record
+ * keeps both how late it was and the reason given. Pure, so it can be tested.
+ */
+export function judgeLead(startsAt: Date, now: Date, lateReason: string | undefined): LeadTime {
+  const lead = startsAt.getTime() - now.getTime();
+  const late = lead < LOCK_LEAD_MS;
+  const reason = lateReason?.trim() ?? "";
+  const before = `${hoursAndMinutes(lead)} before the exam starts`;
+  if (!late) {
+    return {
+      leadSeconds: Math.round(lead / 1000),
+      late,
+      passed: true,
+      evidence: `locked ${before}; the procedure asks for at least 24 h`,
+    };
+  }
+  return {
+    leadSeconds: Math.round(lead / 1000),
+    late,
+    passed: reason.length >= 10,
+    evidence:
+      reason.length >= 10
+        ? `locked ${before}, inside the last day, with the reason given: "${reason}"`
+        : `this is ${before}; a roster is locked 24 h ahead, and a lock inside the last day ` +
+          "has to state why in at least a few words",
+  };
+}
+
+/**
+ * Make an opening key for each packet and take it apart: time-lock the control
+ * room's part, wrap each official's share to the station, write the
+ * commitments, keep nothing readable.
+ */
+async function issueKeys(
+  tx: PoolClient,
+  centre: CentreRow,
+  station: StationRow & { wrap_pub: Buffer },
+  duty: DutyRow[],
+  packets: { id: string; seal_serial: string | null; issue_no: number }[],
+  examSession: string,
+): Promise<LockedPacket[]> {
+  const openAt = new Date(centre.starts_at.getTime() - OPEN_LEAD_MS);
+  const byRole = new Map(duty.map((d) => [d.role, d]));
+  const wrapPubHex = station.wrap_pub.toString("hex");
+  const institutions = Object.fromEntries(
+    DUTY_ROLES.map((r) => [r, institutionOf(r, centre.code)]),
+  ) as Record<FieldHolder, string>;
+  const issued: LockedPacket[] = [];
+
+  for (const p of packets) {
+    // The key lives for the length of this loop body and is never written.
+    const openingKey = new Uint8Array(randomBytes(32));
+    const split = await splitOpeningKey(openingKey, institutions);
+    const envelope = await wrapControlPart(split.controlPart, openAt, {
+      packageId: p.id,
+      centreId: centre.id,
+      // There is no room record for an exam hall; the station is the place.
+      roomId: station.id,
+      windowStart: new Date(centre.starts_at.getTime() - CEREMONY_LEAD_MS).toISOString(),
+      windowEnd: centre.starts_at.toISOString(),
+      eligibleRoles: DUTY_ROLES,
+    });
+    const envelopeText = JSON.stringify(envelope);
+    await tx.query(
+      `insert into led.share_envelope
+         (package_id, kind, holder, ciphertext, ciphertext_sha256, drand_round, policy_sha256, issue_no)
+       values ($1::uuid, 'control_timelock', $2, $3, $4, $5, $6, $7)`,
+      [p.id, station.id, envelopeText, sha256Hex(envelopeText), envelope.round, envelope.policySha256, p.issue_no],
+    );
+
+    const meta = [];
+    for (const share of split.fieldShares) {
+      const official = byRole.get(share.holder)!;
+      const wrapped = JSON.stringify(
+        wrapShare(share.share, wrapPubHex, shareContext(p.id, share.holder, official.person_id)),
+      );
+      await tx.query(
+        `insert into led.share_envelope (package_id, kind, holder, ciphertext, ciphertext_sha256, issue_no)
+         values ($1::uuid, 'field_person', $2, $3, $4, $5)`,
+        [p.id, official.person_id, wrapped, sha256Hex(wrapped), p.issue_no],
+      );
+      meta.push({
+        holder: share.holder,
+        institution: share.institution,
+        index: share.index,
+        commitment: share.commitment,
+        personId: official.person_id,
+      });
+    }
+
+    await tx.query(
+      `insert into led.opening_key
+         (package_id, key_commitment, control_commitment, field_shares, drand_round,
+          scheduled_open_at, station_device_id, exam_session, issue_no)
+       values ($1::uuid, $2, $3, $4::jsonb, $5, $6, $7::uuid, $8, $9)`,
+      [
+        p.id, split.keyCommitment, split.controlCommitment, JSON.stringify(meta),
+        envelope.round, openAt, station.id, examSession, p.issue_no,
+      ],
+    );
+    openingKey.fill(0);
+    split.controlPart.fill(0);
+    for (const s of split.fieldShares) s.share.fill(0);
+
+    issued.push({
+      packageId: p.id,
+      packetSerial: p.seal_serial,
+      drandRound: envelope.round,
+      scheduledOpenAt: openAt.toISOString(),
+      keyCommitment: split.keyCommitment,
+    });
+  }
+  return issued;
+}
+
+async function nextIssueNo(tx: PoolClient, centreId: string, session: string): Promise<number> {
+  const { rows } = await tx.query<{ n: number }>(
+    `select coalesce(max(issue_no), 0)::int + 1 as n from led.roster_issue
+      where centre_id = $1::uuid and exam_session = $2`,
+    [centreId, session],
+  );
+  return rows[0]?.n ?? 1;
+}
+
+/**
+ * Decide whether a roster can be locked and, if it can, lock it and issue the
+ * opening key for each of the centre's packets. One transaction.
+ */
+export async function lockRoster(
+  tx: PoolClient,
+  req: LockRequest,
+  now: Date = new Date(),
+): Promise<LockResult> {
+  const c = new Checks();
+  const refused = (decision: StepDecision): LockResult => ({
+    decision,
+    lockedAt: null,
+    issueNo: null,
+    late: false,
+    packets: [],
+  });
+
+  const centre = await loadCentre(tx, req.centreId);
+  c.add(
+    "centre_known",
+    Boolean(centre) && centre?.exam_id === req.examSession,
+    !centre
+      ? `no centre with id ${req.centreId}`
+      : centre.exam_id === req.examSession
+        ? `centre ${centre.code}`
+        : `centre ${centre.code} belongs to a different exam session`,
+    "person_not_on_roster",
+  );
+
+  const duty = await loadDuty(tx, req.centreId, req.examSession);
+  rosterChecks(c, duty);
+  const alreadyLocked = duty.find((d) => d.locked_at);
+  c.add(
+    "roster_unlocked",
+    !alreadyLocked,
+    alreadyLocked
+      ? `this roster was locked at ${alreadyLocked.locked_at!.toISOString()}; a change after ` +
+        "locking is a re-issue, which states its reason and is recorded as one"
+      : "the roster has not been locked before",
+    "duplicate_session",
+  );
+
+  const station = await loadStation(tx, req.stationDeviceId);
+  stationChecks(c, station, centre, req.stationDeviceId);
 
   // ── the exam and its packets ──
   const openAt = centre ? new Date(centre.starts_at.getTime() - OPEN_LEAD_MS) : null;
@@ -280,6 +476,14 @@ export async function lockRoster(tx: PoolClient, req: LockRequest): Promise<Lock
           : `the opening time ${openAt!.toISOString()} has already passed; a key time-locked ` +
             "to a round already published is locked to nothing",
     centre?.suspended_at ? "exam_suspended" : "ceremony_window_closed",
+  );
+
+  const lead = centre ? judgeLead(centre.starts_at, now, req.lateReason) : null;
+  c.add(
+    "lock_lead_time",
+    lead ? lead.passed : undefined,
+    lead ? lead.evidence : "not evaluated: the centre is unknown",
+    "roster_lock_late",
   );
 
   const { rows: packets } = centre
@@ -303,87 +507,260 @@ export async function lockRoster(tx: PoolClient, req: LockRequest): Promise<Lock
   );
 
   const decision = c.decide();
-  if (decision.outcome !== "passed" || !centre || !station?.wrap_pub || !openAt) {
-    return { decision, lockedAt: null, packets: [] };
-  }
+  if (decision.outcome !== "passed" || !centre || !station?.wrap_pub || !lead) return refused(decision);
 
-  // ── issue ──
-  const wrapPubHex = station.wrap_pub.toString("hex");
-  const institutions = Object.fromEntries(
-    DUTY_ROLES.map((r) => [r, institutionOf(r, centre.code)]),
-  ) as Record<FieldHolder, string>;
-  const issued: LockedPacket[] = [];
-
-  for (const p of packets) {
-    // The key lives for the length of this loop body and is never written.
-    const openingKey = new Uint8Array(randomBytes(32));
-    const split = await splitOpeningKey(openingKey, institutions);
-    const envelope = await wrapControlPart(split.controlPart, openAt, {
-      packageId: p.id,
-      centreId: centre.id,
-      // There is no room record for an exam hall; the station is the place.
-      roomId: station.id,
-      windowStart: new Date(centre.starts_at.getTime() - CEREMONY_LEAD_MS).toISOString(),
-      windowEnd: centre.starts_at.toISOString(),
-      eligibleRoles: DUTY_ROLES,
-    });
-    const envelopeText = JSON.stringify(envelope);
-    await tx.query(
-      `insert into led.share_envelope
-         (package_id, kind, holder, ciphertext, ciphertext_sha256, drand_round, policy_sha256)
-       values ($1::uuid, 'control_timelock', $2, $3, $4, $5, $6)`,
-      [p.id, station.id, envelopeText, sha256Hex(envelopeText), envelope.round, envelope.policySha256],
-    );
-
-    const meta = [];
-    for (const share of split.fieldShares) {
-      const official = byRole.get(share.holder)!;
-      const wrapped = JSON.stringify(
-        wrapShare(share.share, wrapPubHex, shareContext(p.id, share.holder, official.person_id)),
-      );
-      await tx.query(
-        `insert into led.share_envelope (package_id, kind, holder, ciphertext, ciphertext_sha256)
-         values ($1::uuid, 'field_person', $2, $3, $4)`,
-        [p.id, official.person_id, wrapped, sha256Hex(wrapped)],
-      );
-      meta.push({
-        holder: share.holder,
-        institution: share.institution,
-        index: share.index,
-        commitment: share.commitment,
-        personId: official.person_id,
-      });
-    }
-
-    await tx.query(
-      `insert into led.opening_key
-         (package_id, key_commitment, control_commitment, field_shares, drand_round,
-          scheduled_open_at, station_device_id, exam_session)
-       values ($1::uuid, $2, $3, $4::jsonb, $5, $6, $7::uuid, $8)`,
-      [
-        p.id, split.keyCommitment, split.controlCommitment, JSON.stringify(meta),
-        envelope.round, openAt, station.id, req.examSession,
-      ],
-    );
-    openingKey.fill(0);
-    split.controlPart.fill(0);
-    for (const s of split.fieldShares) s.share.fill(0);
-
-    issued.push({
-      packageId: p.id,
-      packetSerial: p.seal_serial,
-      drandRound: envelope.round,
-      scheduledOpenAt: openAt.toISOString(),
-      keyCommitment: split.keyCommitment,
-    });
-  }
+  const issueNo = await nextIssueNo(tx, centre.id, req.examSession);
+  const issued = await issueKeys(
+    tx,
+    centre,
+    { ...station, wrap_pub: station.wrap_pub },
+    duty,
+    packets.map((p) => ({ ...p, issue_no: 1 })),
+    req.examSession,
+  );
 
   const { rows: locked } = await tx.query<{ locked_at: Date }>(
     `update ref.duty_roster set locked_at = now()
       where centre_id = $1::uuid and exam_session = $2 returning locked_at`,
     [req.centreId, req.examSession],
   );
-  return { decision, lockedAt: locked[0]?.locked_at.toISOString() ?? null, packets: issued };
+  await tx.query(
+    `insert into led.roster_issue
+       (centre_id, exam_session, issue_no, kind, account_id, station_device_id, roster,
+        packets, lead_seconds, late, reason)
+     values ($1::uuid, $2, $3, 'lock', $4::uuid, $5::uuid, $6::jsonb, $7, $8, $9, $10)`,
+    [
+      centre.id, req.examSession, issueNo, req.accountId ?? null, station.id,
+      JSON.stringify(duty.map((d) => ({ role: d.role, personId: d.person_id }))),
+      issued.length, lead.leadSeconds, lead.late, lead.late ? req.lateReason!.trim() : null,
+    ],
+  );
+  return {
+    decision,
+    lockedAt: locked[0]?.locked_at.toISOString() ?? null,
+    issueNo,
+    late: lead.late,
+    packets: issued,
+  };
+}
+
+// ── re-issuing a locked roster ──────────────────────────────────────────────
+
+export interface ReissueRequest {
+  centreId: string;
+  examSession: string;
+  /** Who replaces whom: the role, and the person now holding it. */
+  changes: { role: string; personId: string }[];
+  /** Always required. A re-issue is never routine. */
+  reason: string;
+  accountId?: string | undefined;
+}
+
+export interface ReissueResult {
+  decision: StepDecision;
+  issueNo: number | null;
+  changes: { role: string; fromPersonId: string; toPersonId: string }[];
+  packets: LockedPacket[];
+}
+
+/**
+ * Change who holds a share after the roster was locked.
+ *
+ * The share wrapped for the official who is no longer coming cannot be handed
+ * to their replacement, because nothing readable was kept when it was made. So
+ * every packet at the centre that has not been opened gets a new key: a new
+ * split, new wrapped shares for all three, a new time-locked envelope, as the
+ * next issue. The earlier issue is not deleted - nothing here can be - but the
+ * engine reads the latest, and a key assembled from the superseded shares no
+ * longer hashes to the commitment it is checked against.
+ *
+ * It is refused once the opening minute has passed. By then the earlier
+ * envelope can be opened by whoever holds it, and replacing the key afterwards
+ * would be changing the lock on a door that may already be open.
+ */
+export async function reissueRoster(
+  tx: PoolClient,
+  req: ReissueRequest,
+  now: Date = new Date(),
+): Promise<ReissueResult> {
+  const c = new Checks();
+  const refused = (decision: StepDecision): ReissueResult => ({
+    decision,
+    issueNo: null,
+    changes: [],
+    packets: [],
+  });
+
+  const centre = await loadCentre(tx, req.centreId);
+  c.add(
+    "centre_known",
+    Boolean(centre) && centre?.exam_id === req.examSession,
+    !centre
+      ? `no centre with id ${req.centreId}`
+      : centre.exam_id === req.examSession
+        ? `centre ${centre.code}`
+        : `centre ${centre.code} belongs to a different exam session`,
+    "person_not_on_roster",
+  );
+
+  const before = await loadDuty(tx, req.centreId, req.examSession);
+  const lockedAt = before.find((d) => d.locked_at)?.locked_at ?? null;
+  c.add(
+    "roster_locked",
+    Boolean(lockedAt),
+    lockedAt
+      ? `the roster was locked at ${lockedAt.toISOString()}`
+      : "this roster has not been locked; assign it and lock it instead",
+    "roster_not_locked",
+  );
+
+  const reason = req.reason.trim();
+  c.add(
+    "reason_given",
+    reason.length >= 10,
+    reason.length >= 10
+      ? `reason given: "${reason}"`
+      : "a re-issue has to state why in at least a few words",
+    "roster_lock_late",
+  );
+
+  // ── the people coming in ──
+  const { rows: incoming } = await tx.query<{ id: string; display_name: string; role: string }>(
+    "select id, display_name, role from ref.person where id = any($1::uuid[])",
+    [req.changes.map((ch) => ch.personId)],
+  );
+  const person = new Map(incoming.map((p) => [p.id, p]));
+  const unknown = req.changes.filter((ch) => !person.has(ch.personId));
+  const notDuty = req.changes.filter((ch) => !(DUTY_ROLES as readonly string[]).includes(ch.role));
+  const same = req.changes.filter(
+    (ch) => before.find((d) => d.role === ch.role)?.person_id === ch.personId,
+  );
+  c.add(
+    "changes_named",
+    req.changes.length > 0 && unknown.length === 0 && notDuty.length === 0 && same.length === 0,
+    req.changes.length === 0
+      ? "no change was named; a re-issue replaces at least one official"
+      : unknown.length > 0
+        ? `not registered: ${unknown.map((u) => u.personId).join(", ")}`
+        : notDuty.length > 0
+          ? `${notDuty.map((n) => n.role).join(", ")} is not one of the three officials' roles`
+          : same.length > 0
+            ? `${same.map((x) => x.role.replace(/_/g, " ")).join(", ")} already is that person; nothing would change`
+            : req.changes
+                .map((ch) => `${ch.role.replace(/_/g, " ")}: ${person.get(ch.personId)!.display_name}`)
+                .join("; "),
+    "person_not_on_roster",
+  );
+
+  // The roster as it would stand after the change, judged like any roster.
+  const after: DutyRow[] = before.map((d) => {
+    const ch = req.changes.find((x) => x.role === d.role);
+    const p = ch ? person.get(ch.personId) : undefined;
+    return p ? { ...d, person_id: p.id, display_name: p.display_name, person_role: p.role } : d;
+  });
+  rosterChecks(c, after);
+
+  // ── the station the first issue was wrapped to ──
+  const { rows: stationOf } = centre
+    ? await tx.query<{ station_device_id: string }>(
+        `select station_device_id from led.roster_issue
+          where centre_id = $1::uuid and exam_session = $2 order by issue_no desc limit 1`,
+        [centre.id, req.examSession],
+      )
+    : { rows: [] };
+  // A roster locked before issues were recorded has its station on its keys.
+  const { rows: stationOfKey } = centre && !stationOf[0]
+    ? await tx.query<{ station_device_id: string }>(
+        `select k.station_device_id from led.opening_key k join ref.package p on p.id = k.package_id
+          where p.centre_id = $1::uuid order by k.issued_at desc limit 1`,
+        [centre.id],
+      )
+    : { rows: [] };
+  const stationId = stationOf[0]?.station_device_id ?? stationOfKey[0]?.station_device_id ?? null;
+  const station = stationId ? await loadStation(tx, stationId) : undefined;
+  stationChecks(c, station, centre, stationId ?? "(none on record)");
+
+  // ── still time ──
+  const openAt = centre ? new Date(centre.starts_at.getTime() - OPEN_LEAD_MS) : null;
+  c.add(
+    "opening_in_future",
+    centre ? openAt!.getTime() > now.getTime() && !centre.suspended_at : undefined,
+    !centre
+      ? "not evaluated: the centre is unknown"
+      : centre.suspended_at
+        ? "the exam is suspended"
+        : openAt!.getTime() > now.getTime()
+          ? `the packets open at ${openAt!.toISOString()}, ` +
+            `${hoursAndMinutes(openAt!.getTime() - now.getTime())} from now`
+          : `the opening time ${openAt!.toISOString()} has passed; the earlier envelope can ` +
+            "already be opened, so the key is not replaced now",
+    centre?.suspended_at ? "exam_suspended" : "ceremony_window_closed",
+  );
+
+  // Every packet with a key that no ceremony has released. An opened packet
+  // keeps the key it was opened with.
+  const { rows: packets } = centre
+    ? await tx.query<{ id: string; seal_serial: string | null; issue_no: number }>(
+        `select p.id, p.seal_serial,
+                (select max(k.issue_no)::int + 1 from led.opening_key k where k.package_id = p.id) as issue_no
+           from ref.package p
+          where p.centre_id = $1::uuid
+            and exists (select 1 from led.opening_key k where k.package_id = p.id)
+            and not exists (
+              select 1 from led.ceremony cy join led.ceremony_step s on s.ceremony_id = cy.id
+               where cy.package_id = p.id and s.step = 'release' and s.outcome = 'passed')
+          order by p.id`,
+        [centre.id],
+      )
+    : { rows: [] };
+  c.add(
+    "packets_to_rekey",
+    centre ? packets.length > 0 : undefined,
+    !centre
+      ? "not evaluated: the centre is unknown"
+      : packets.length > 0
+        ? `${packets.length} packet${packets.length === 1 ? "" : "s"} at this centre with a key and no opening`
+        : "no packet at this centre has a key that has not already been used",
+    "package_already_opened",
+  );
+
+  const decision = c.decide();
+  if (decision.outcome !== "passed" || !centre || !station?.wrap_pub) return refused(decision);
+
+  const changes = req.changes.map((ch) => ({
+    role: ch.role,
+    fromPersonId: before.find((d) => d.role === ch.role)!.person_id,
+    toPersonId: ch.personId,
+  }));
+  for (const ch of req.changes) {
+    await tx.query(
+      `update ref.duty_roster set person_id = $4::uuid
+        where centre_id = $1::uuid and exam_session = $2 and role = $3`,
+      [centre.id, req.examSession, ch.role, ch.personId],
+    );
+  }
+  const issueNo = await nextIssueNo(tx, centre.id, req.examSession);
+  const issued = await issueKeys(
+    tx,
+    centre,
+    { ...station, wrap_pub: station.wrap_pub },
+    after,
+    packets,
+    req.examSession,
+  );
+  const lead = centre.starts_at.getTime() - now.getTime();
+  await tx.query(
+    `insert into led.roster_issue
+       (centre_id, exam_session, issue_no, kind, account_id, station_device_id, roster, changes,
+        packets, lead_seconds, late, reason)
+     values ($1::uuid, $2, $3, 'reissue', $4::uuid, $5::uuid, $6::jsonb, $7::jsonb, $8, $9, $10, $11)`,
+    [
+      centre.id, req.examSession, issueNo, req.accountId ?? null, station.id,
+      JSON.stringify(after.map((d) => ({ role: d.role, personId: d.person_id }))),
+      JSON.stringify(changes), issued.length, Math.round(lead / 1000), lead < LOCK_LEAD_MS, reason,
+    ],
+  );
+  return { decision, issueNo, changes, packets: issued };
 }
 
 // ── the ceremony ────────────────────────────────────────────────────────────
@@ -411,6 +788,8 @@ interface KeyRow {
   scheduled_open_at: Date;
   station_device_id: string;
   exam_session: string;
+  issue_no: number;
+  issued_at: Date;
 }
 
 interface StepRow {
@@ -432,6 +811,12 @@ export interface CeremonyState {
   officials: StepRow["officials"];
   /** The furthest step that has passed. Null before the scan passes. */
   reached: CeremonyStep | null;
+  /**
+   * The issue of the packet's key this ceremony began under, as its scan step
+   * recorded it. Null where no key had been issued, or for a ceremony recorded
+   * before issues were numbered.
+   */
+  issueNo: number | null;
 }
 
 const ORDER: CeremonyStep[] = ["scan", "authorize", "identify", "confirm", "release", "opened"];
@@ -480,17 +865,46 @@ export async function loadCeremony(tx: PoolClient | Pool, id: string): Promise<C
     startedAt: c.started_at,
     steps,
     ...stateFromSteps(steps),
+    issueNo: (() => {
+      const n = steps.find((x) => x.step === "scan")?.evidence["issueNo"];
+      return typeof n === "number" ? n : null;
+    })(),
   };
 }
 
 async function loadKey(tx: PoolClient, packageId: string): Promise<KeyRow | undefined> {
   const { rows } = await tx.query<KeyRow>(
+    // The latest issue. An earlier one stays on record and is no longer read.
     `select package_id, key_commitment, field_shares, drand_round, scheduled_open_at,
-            station_device_id, exam_session
-       from led.opening_key where package_id = $1::uuid`,
+            station_device_id, exam_session, issue_no, issued_at
+       from led.opening_key where package_id = $1::uuid
+      order by issue_no desc limit 1`,
     [packageId],
   );
   return rows[0];
+}
+
+/**
+ * A ceremony carries on only under the issue it began with.
+ *
+ * If the roster was re-issued after this ceremony started, the shares already
+ * handed to the station belong to a key that is no longer the packet's. Mixing
+ * them with the new issue's would assemble nothing, so the ceremony is told to
+ * start again rather than left to fail at the last step.
+ */
+function currentIssue(c: Checks, key: KeyRow | undefined, ceremony: CeremonyState): void {
+  if (!key || ceremony.issueNo === null) return;
+  const stale = key.issue_no !== ceremony.issueNo;
+  c.add(
+    "current_issue",
+    !stale,
+    stale
+      ? `this ceremony began under issue ${ceremony.issueNo}; the roster was re-issued at ` +
+        `${key.issued_at.toISOString()} and the packet's key is now issue ${key.issue_no}. ` +
+        "Its shares belong to the earlier issue and it has to be started again"
+      : `this ceremony began under issue ${key.issue_no}, which is still the packet's`,
+    "ceremony_step_out_of_order",
+  );
 }
 
 /** Write one step down. Called before the step is answered. */
@@ -526,6 +940,8 @@ export interface StartDecision {
   centreId: string | null;
   scheduledOpenAt: Date | null;
   drandRound: number | null;
+  /** The issue of the key this ceremony begins under. Null if none is issued. */
+  issueNo: number | null;
   /** True when the scan found a label that reads cleanly and is not this packet's. */
   sealMismatch: boolean;
 }
@@ -674,6 +1090,7 @@ export async function decideStart(
     centreId: pkg?.centre_id ?? null,
     scheduledOpenAt: key?.scheduled_open_at ?? (pkg ? new Date(pkg.starts_at.getTime() - OPEN_LEAD_MS) : null),
     drandRound: key ? Number(key.drand_round) : null,
+    issueNo: key?.issue_no ?? null,
     sealMismatch,
   };
 }
@@ -716,6 +1133,7 @@ export async function decideOfficial(
     released ? "this ceremony has already released its key" : "the key has not been released yet",
     "package_already_opened",
   );
+  currentIssue(c, key, ceremony);
 
   const share = key?.field_shares.find((s) => s.personId === req.personId);
   const { rows: people } = await tx.query<{ display_name: string; role: string }>(
@@ -846,9 +1264,9 @@ export async function wrappedShareFor(
   if (!meta) return null;
   const { rows } = await tx.query<{ ciphertext: string }>(
     `select ciphertext from led.share_envelope
-      where package_id = $1::uuid and kind = 'field_person' and holder = $2
+      where package_id = $1::uuid and kind = 'field_person' and holder = $2 and issue_no = $3
       order by issued_at desc limit 1`,
-    [packageId, personId],
+    [packageId, personId, key!.issue_no],
   );
   if (!rows[0]) return null;
   return {
@@ -878,6 +1296,7 @@ export async function decideConfirm(
     `${ceremony.officials.length} of 2 officials identified`,
     "ceremony_step_out_of_order",
   );
+  currentIssue(c, await loadKey(tx, ceremony.packageId), ceremony);
 
   const { rows } = await tx.query<{ seal_serial: string | null }>(
     "select seal_serial from ref.package where id = $1::uuid",
@@ -923,7 +1342,8 @@ export async function commitmentsFor(
   packageId: string,
 ): Promise<{ controlCommitment: string; keyCommitment: string } | null> {
   const { rows } = await tx.query<{ control_commitment: string; key_commitment: string }>(
-    "select control_commitment, key_commitment from led.opening_key where package_id = $1::uuid",
+    `select control_commitment, key_commitment from led.opening_key
+      where package_id = $1::uuid order by issue_no desc limit 1`,
     [packageId],
   );
   return rows[0]
@@ -939,7 +1359,7 @@ export async function controlEnvelopeFor(
   const { rows } = await tx.query<{ ciphertext: string }>(
     `select ciphertext from led.share_envelope
       where package_id = $1::uuid and kind = 'control_timelock'
-      order by issued_at desc limit 1`,
+      order by issue_no desc, issued_at desc limit 1`,
     [packageId],
   );
   return rows[0] ? (JSON.parse(rows[0].ciphertext) as ControlEnvelope) : null;
@@ -975,6 +1395,7 @@ export async function decideRelease(
     released ? "this ceremony has already released its key" : "no key has been released in this ceremony",
     "package_already_opened",
   );
+  currentIssue(c, key, ceremony);
 
   if (!key) {
     c.add("round_published", undefined, "not evaluated: no opening key was issued for this packet");

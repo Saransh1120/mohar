@@ -15,6 +15,7 @@ import {
   loadCeremony,
   lockRoster,
   recordStep,
+  reissueRoster,
   wrappedShareFor,
   type CeremonyState,
 } from "../domain/opening.js";
@@ -25,6 +26,8 @@ import {
  *   GET  /rosters?centreId=                 duty rosters and what has been issued
  *   PUT  /rosters/:centreId/:session        assign the three officials (before locking)
  *   POST /rosters/:centreId/:session/lock   lock it, and issue each packet's opening key
+ *   POST /rosters/:centreId/:session/reissue  replace an official after the lock: a new key
+ *                                           for every unopened packet, with a stated reason
  *   POST /stations/:deviceId/wrap-key       a station registers the key it unwraps with
  *   GET  /stations/:deviceId/envelopes      the time-locked envelopes issued to a station
  *
@@ -49,7 +52,19 @@ const AssignBody = z.object({
     .max(3),
 });
 
-const LockBody = z.object({ stationDeviceId: Uuid });
+const LockBody = z.object({
+  stationDeviceId: Uuid,
+  // Why it is being locked inside the last day. The engine asks for it then.
+  lateReason: z.string().trim().max(500).optional(),
+});
+
+const ReissueBody = z.object({
+  changes: z
+    .array(z.object({ role: z.enum(["superintendent", "observer", "police_escort"]), personId: Uuid }))
+    .min(1)
+    .max(3),
+  reason: z.string().trim().max(500),
+});
 
 const WrapKeyBody = z.object({
   x25519PubHex: z.string().regex(/^[0-9a-f]{64}$/, "expected a 32-byte hex X25519 public key"),
@@ -119,9 +134,20 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
                          'packageId', k.package_id, 'packetSerial', pk.seal_serial,
                          'drandRound', k.drand_round, 'scheduledOpenAt', k.scheduled_open_at,
                          'stationDeviceId', k.station_device_id, 'issuedAt', k.issued_at,
-                         'keyCommitment', k.key_commitment) order by k.issued_at)
+                         'keyCommitment', k.key_commitment, 'issueNo', k.issue_no) order by k.issued_at)
                   from led.opening_key k join ref.package pk on pk.id = k.package_id
-                 where pk.centre_id = c.id), '[]'::jsonb) as issued,
+                 where pk.centre_id = c.id
+                   -- Only the issue in force. Earlier ones are in the history below.
+                   and k.issue_no = (select max(k2.issue_no) from led.opening_key k2
+                                      where k2.package_id = k.package_id)), '[]'::jsonb) as issued,
+              coalesce((
+                select jsonb_agg(jsonb_build_object(
+                         'issueNo', i.issue_no, 'kind', i.kind, 'issuedAt', i.issued_at,
+                         'late', i.late, 'leadSeconds', i.lead_seconds, 'reason', i.reason,
+                         'packets', i.packets, 'changes', i.changes,
+                         'by', a.display_name, 'byUsername', a.username) order by i.issue_no)
+                  from led.roster_issue i left join ref.account a on a.id = i.account_id
+                 where i.centre_id = c.id and i.exam_session = c.exam_id::text), '[]'::jsonb) as issues,
               (select count(*)::int from ref.package pk where pk.centre_id = c.id) as packets
          from ref.centre c
          join ref.exam e on e.id = c.exam_id
@@ -166,7 +192,7 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
         return reply.code(409).send({
           error:
             "This roster is locked: shares have been wrapped to the officials on it. A change " +
-            "after locking is a re-issue, which is not built.",
+            "after locking is a re-issue, which states its reason and makes new keys.",
         });
       }
       return reply.send({ status: "assigned" });
@@ -195,6 +221,8 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
           centreId: req.params.centreId,
           examSession: req.params.session,
           stationDeviceId: parsed.data.stationDeviceId,
+          accountId: account.id,
+          ...(parsed.data.lateReason ? { lateReason: parsed.data.lateReason } : {}),
         });
       });
       req.log.info(
@@ -212,6 +240,55 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
         checks: result.decision.checks,
         lockedAt: result.lockedAt,
         lockedBy: result.lockedAt ? account.username : null,
+        issueNo: result.issueNo,
+        late: result.late,
+        packets: result.packets,
+      });
+    },
+  );
+
+  app.post<{ Params: { centreId: string; session: string } }>(
+    "/rosters/:centreId/:session/reissue",
+    async (req, reply) => {
+      if (!Uuid.safeParse(req.params.centreId).success) {
+        return reply.code(400).send({ error: "centre id must be a uuid" });
+      }
+      const account = await accountForToken(pool, bearerToken(req));
+      if (!account) return reply.code(401).send({ error: "Sign in to re-issue a roster." });
+
+      const parsed = ReissueBody.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "invalid request", detail: parsed.error.issues });
+      }
+      const result = await withTransaction(pool, async (tx) => {
+        await tx.query("select pg_advisory_xact_lock(hashtext($1))", [
+          `roster:${req.params.centreId}`,
+        ]);
+        return reissueRoster(tx, {
+          centreId: req.params.centreId,
+          examSession: req.params.session,
+          changes: parsed.data.changes,
+          reason: parsed.data.reason,
+          accountId: account.id,
+        });
+      });
+      req.log.info(
+        {
+          centreId: req.params.centreId,
+          username: account.username,
+          outcome: result.decision.outcome,
+          issueNo: result.issueNo,
+          packets: result.packets.length,
+        },
+        `roster re-issue ${result.decision.outcome}`,
+      );
+      return reply.send({
+        outcome: result.decision.outcome === "passed" ? "reissued" : "refused",
+        denyReasons: result.decision.denyReasons,
+        checks: result.decision.checks,
+        issueNo: result.issueNo,
+        reissuedBy: result.issueNo ? account.username : null,
+        changes: result.changes,
         packets: result.packets,
       });
     },
@@ -279,6 +356,8 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
          join ref.centre c on c.id = pk.centre_id
          join ref.exam e on e.id = pk.exam_id
         where k.station_device_id = $1::uuid
+          and k.issue_no = (select max(k2.issue_no) from led.opening_key k2
+                             where k2.package_id = k.package_id)
         order by k.scheduled_open_at desc
         limit 100`,
       [req.params.deviceId],
@@ -311,7 +390,11 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
         [input.packageId, d.centreId, d.scheduledOpenAt],
       );
       const id = rows[0]!.id;
-      const extra = { deviceId: input.deviceId, ...(input.seamIdRead ? { seamIdRead: input.seamIdRead } : {}) };
+      const extra = {
+        deviceId: input.deviceId,
+        ...(input.seamIdRead ? { seamIdRead: input.seamIdRead } : {}),
+        ...(d.issueNo === null ? {} : { issueNo: d.issueNo }),
+      };
       await recordStep(tx, id, "scan", d.scan, extra);
       await recordStep(tx, id, "authorize", d.authorize, extra);
 
