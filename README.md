@@ -24,9 +24,9 @@ pretend to remove them.
 | --- | --- |
 | `docs/` | Architecture, threat model, crypto design, data model, runbooks |
 | `services/` | Backend services (TypeScript / Fastify / Postgres) |
-| `apps/` | Control room, verify portal, centre client, Android field app |
+| `apps/` | Control room (with the public `/verify` page) and the courier field app |
 | `packages/` | Shared contracts, crypto primitives, ledger client, UI kit |
-| `firmware/` | ESP32 room-monitor firmware — the only hardware we build |
+| `firmware/` | ESP32 sketches: room monitor, witness station, seal lock |
 | `infra/` | Docker compose, SQL migrations, Terraform, attestation roots |
 | `tools/` | Seed data, label printing and sealing, device provisioning, end-to-end checks |
 | `tests/` | End-to-end, load, and shared fixtures |
@@ -40,9 +40,9 @@ pnpm install
 pnpm build
 MIGRATE_DATABASE_URL=postgres://mohar_migrator:dev_only_password@localhost:5432/mohar pnpm migrate
 
-# terminal 1 — the ledger and access engine
+# terminal 1 — the gateway on :8081, with the ledger and access engine behind it on loopback
 DATABASE_URL=postgres://mohar_app:change_me_in_deployment@localhost:5432/mohar \
-  node services/ledger/dist/index.js
+  pnpm start
 
 # terminal 2 — seed a pilot exam (optional; the UI is empty without it)
 node tools/seed/dist/index.js
@@ -62,16 +62,24 @@ the control-room UI. On top of that: sealing a packet with a two-code seam label
 (two operators approve it), roster lock and the opening ceremony (the control
 room's part time-locked to drand, two officials' shares wrapped to the station),
 the watchdog that raises a late hand-off, an unopened packet, an overlong visit
-or an unfinished opening, and alerts sent out by Telegram and email. The seed tool drives five centres through the real engine — it
-presents credentials and accepts whatever the engine rules, rather than
-asserting outcomes.
+or an unfinished opening, and alerts sent out by Telegram and email. A gateway
+stands in front of all of it: operator sessions, device signatures and rate
+limits, with the ledger and the access engine on loopback behind it. Each day's
+Merkle root is sent to an RFC 3161 timestamp authority, and `/verify` is a
+public page that checks a record's inclusion proof in the browser. The seed
+tool drives five centres through the real engine — it presents credentials and
+accepts whatever the engine rules, rather than asserting outcomes.
 
-Not built: the seal lock, the opening on the ESP32 station (a paired browser
-stands in for it), the offline opening, and the services `sealkeys`,
-`unlock`, `render`, `trace`, `notify` and `gateway` as services of their own —
-what exists of them runs inside `ledger`. No client exists except the control
-room. **There is no authentication anywhere** — `gateway` owns that and does not
-exist, so nothing here may be exposed beyond localhost.
+Written and not yet run on hardware: the seal lock firmware, and the witness
+station's token check. A courier phone app (`apps/field-app`) records signed
+scans and can report a damaged label; it does not do hand-offs yet.
+
+Not built: the opening on the ESP32 station (a paired browser stands in for
+it), device sequence numbers, live video for override approval, and `sealkeys`,
+`unlock`, `notify`, `render` and `trace` as services of their own — what exists
+of the first three runs inside `ledger`. Device attestation is stored and not
+verified. The ledger checks no credential itself, so it is only ever run behind
+the gateway.
 
 [RUNNING.md](RUNNING.md) carries the honest list of gaps. See
 `docs/09-mvp-plan.md` for the 12-week build order.
