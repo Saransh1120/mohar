@@ -34,9 +34,14 @@ void Clock::nowIso(char out[25]) {
   uint32_t frac = millis() - lastTickMs_;
   if (frac > 999) frac = 999;
 
-  snprintf(out, 25, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ", now.year(), now.month(),
+  // Formatted into a buffer with room to spare and then copied: a field wider
+  // than expected (an RTC returning a five-digit year after losing power) is
+  // cut off at 24 characters rather than written past the caller's buffer.
+  char full[40];
+  snprintf(full, sizeof(full), "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ", now.year(), now.month(),
            now.day(), now.hour(), now.minute(), now.second(),
            static_cast<unsigned>(frac));
+  strlcpy(out, full, 25);
 }
 
 }  // namespace mohar

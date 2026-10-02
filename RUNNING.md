@@ -436,10 +436,14 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   `provision-device` and `monitor-watchdog` speak to the ledger directly on
   loopback (`LEDGER_URL=http://127.0.0.1:8091`). With `GATEWAY_SECRET` set they
   are refused, and there is no credential to give them.
-- **The field app cannot enrol itself through the gateway.** `apps/field-app`
-  posts its own key to `POST /devices` with no session, which the gateway
-  refuses: enrolment is an operator's. Its signed events pass once an operator
-  has enrolled the key. Nothing in the app asks an operator to.
+- **A field phone is enrolled by an operator standing at it.** The operator
+  types their own username and password into the field app. It signs in,
+  checks that the centre belongs to the exam and that the person is on the
+  register, posts the phone's public key to `POST /devices`, and signs out
+  again. The session is never written to the phone's storage. What this is not:
+  the operator's password is typed on a phone the courier keeps, and nothing
+  attests what hardware holds the key. A revoked phone cannot be enrolled again
+  without clearing the app's storage, which also removes its retained photos.
 
 - **The Render web service now starts through the gateway** with
   `node tools/run-gated/index.mjs` (deployed at `5a66964`). The access engine
@@ -464,11 +468,24 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   runs the unit suites (crypto-core, the access engine's checks, the hand-off
   engine, the watchdog and notifier wording, the label tool). The checks that
   need Postgres are in `tools/e2e` and are run by hand.
-- **The public verify page and field PWA exist.** The field PWA records signed
-  observations, can send a device-signed damaged-label override request, and
-  retains photos locally. It does not yet provide hardware
-  attestation, biometric hand-offs or upload photo bytes to the server.
-  `centre-client` remains planned.
+- **The public verify page and field PWA exist, and were clicked through in a
+  desktop browser against the gateway and the ledger on Oct 2, 2026.** On the
+  field app: enrolment (a wrong operator password and an unknown person were
+  each refused), a scan whose QR image was decoded and whose `SCAN_OBSERVED`
+  event was appended to the chain with the photo's hash, a damaged-label
+  request recorded by the override engine as pending, a scan made while the API
+  was stopped that stayed queued and was accepted under the same event ID once
+  it was back, and a scan from a revoked phone that the gateway refused and the
+  queue kept with the reason. On `/verify`: an event of an anchored day verified
+  in the browser, first with its timestamp pending and then with the RFC 3161
+  response attached; a root that was not the served one was reported as such,
+  apart from the inclusion check; an event whose day has no anchor said so.
+  Not done: none of this was run on a phone, so the camera capture, installing
+  the PWA, the service worker's offline cache and the browser's own
+  online/offline events were not exercised, and the timestamp response was not
+  downloaded or checked with an RFC 3161 verifier from that page. The field PWA
+  does not provide hardware attestation, biometric hand-offs or upload photo
+  bytes to the server. `centre-client` remains planned.
 - **Sealing registers the seam label and nothing else.** The Opening Key is not
   split at sealing, because no service exists to hold the parts. The label tool
   writes both PDF and SVG. The label comes out 48 x 34 mm at QR version 4, not
@@ -584,17 +601,36 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
 - **The override's live video is the operator's word.** No call is carried by
   this system or the field PWA. What is recorded is
   that two named operators each stated they saw the packet and both officers.
-- **The door, the override and the ceremony write to their own append-only
-  tables, not to the signed chain.** No `STRONGROOM_ENTRY`, `OPEN_CEREMONY` or
-  `SEAM_MANUAL_OVERRIDE` event is appended, because the ledger has no key of
-  its own to sign one with. The hand-off engine is the same.
+- **Some service events are still absent from the signed chain.** `STORED`,
+  `RELEASED` and `SEAM_MANUAL_OVERRIDE` are not appended: nothing links a leg
+  to a room, and override approvers are operator accounts while the contract
+  names a person. A strong room attached to no centre has no exam to file
+  under, so its events are not written.
 - **The seal-lock sketch is not a field-tested lock.** The ESP32-C6 source and
   Arduino sketch verify signed, expiring, one-use commands and spool signed
   reports. Migration 010 and `tools/seal-lock-command` issue short-lived commands
   from recent granted unlock attempts. An opened enclosure or a failed closure
-  creates an alert when its signed event reaches the ledger. Board flash, electrical tests, UART
-  delivery and secure-boot provisioning are still required. The seal-lock
+  creates an alert when its signed event reaches the ledger. The seal-lock
   sketch does not yet attach a sequence to its signed reports.
+  The sketch compiles for `esp32:esp32:esp32c6` with arduino-cli 1.5.1, core
+  3.3.11, Crypto 0.4.0 and RTClib 2.1.4, with no warnings: 447294 bytes, 34% of
+  program storage. A review for hardware safety changed four things. The coil
+  is cut by a one-shot hardware timer armed before it is energised, as well as
+  by the loop. The board does no Wi-Fi join and no HTTP while the coil is on,
+  where before a ledger that did not answer could hold it energised for up to
+  24 seconds. The output latch is set before the pin becomes an output. The
+  example pins moved off GPIO 4 and 5, which are ESP32-C6 strapping pins, and
+  the sketch will not compile with the solenoid on one.
+  **No board was available, so nothing has been flashed or measured.** Pending
+  on hardware: driver polarity and the gate's pull resistor holding the coil
+  off through reset and flashing; the pulse length on a scope and the coil's
+  temperature over repeated pulses; a brown-out when the coil pulls in; power
+  cut mid-pulse and after the counter write; tamper open during a pulse;
+  counter persistence across resets and a replayed command being refused; a
+  full or failed LittleFS partition; DS3231 power loss; a command sent over a
+  real UART; and secure boot with flash encryption. A refused command is said
+  on the UART only and leaves no signed record, because there is no event kind
+  for one.
 
 The natural next steps are moving the opening onto the ESP32 station, a way
 for a field device to be enrolled without an operator typing its key, and real
