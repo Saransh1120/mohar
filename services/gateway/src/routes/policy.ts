@@ -121,7 +121,9 @@ export const RULES: readonly Rule[] = Object.freeze([
 
   // ── hand-offs ──
   r("POST", "/legs", "control_room", "write"),
-  r("GET", "/legs", "device", "read"),
+  // Read by the phone, signed as itself, and by the control room's Transfers
+  // page, with a session. Reading the plan is not an act a device does.
+  r("GET", "/legs", "field", "read"),
   r("POST", "/legs/:legId/dispatch", "device", "field"),
   r("POST", "/legs/:legId/receive", "device", "field"),
   r("POST", "/legs/:legId/confirm", "device", "field"),

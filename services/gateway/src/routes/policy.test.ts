@@ -48,6 +48,13 @@ test("on an override's call the phone signs as itself and an operator uses a ses
   assert.equal(rule("GET", "/overrides/7b/call/inbox").rule.access, "account");
 });
 
+test("the planned legs are read by a phone's signature or by a signed-in account", () => {
+  const legs = rule("GET", "/legs");
+  assert.equal(legs.rule.access, "field");
+  assert.equal(legs.rule.limit, "read");
+  assert.equal(rule("POST", "/legs").rule.access, "control_room");
+});
+
 test("path parameters are captured by name", () => {
   assert.deepEqual(rule("POST", "/stations/abc/wrap-key").params, { deviceId: "abc" });
   assert.deepEqual(rule("POST", "/rosters/c1/morning/lock").params, {
