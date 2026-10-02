@@ -5,6 +5,7 @@ import App from "./App";
 import Landing from "./landing/Landing";
 import Auth from "./pages/Auth";
 import PublicVerify from "./pages/PublicVerify";
+import SeamLanding from "./pages/SeamLanding";
 import { AuthProvider, RequireSession } from "./lib/auth";
 import "leaflet/dist/leaflet.css";
 import "./styles.css";
@@ -33,6 +34,7 @@ createRoot(document.getElementById("root")!).render(
           <Route path="/signin" element={<Auth mode="signin" />} />
           <Route path="/signup" element={<Auth mode="signup" />} />
           <Route path="/verify" element={<PublicVerify />} />
+          <Route path="/s" element={<SeamLanding />} />
 
           {/* Everything else is the control room, behind a session. */}
           <Route

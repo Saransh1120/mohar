@@ -16,6 +16,7 @@ import { registerTransferRoutes } from "./http/transfer-routes.js";
 import { registerDemoRoutes } from "./http/demo-routes.js";
 import { registerAlertRoutes } from "./http/alert-routes.js";
 import { registerSealRoutes } from "./http/seal-routes.js";
+import { registerPublicScanRoutes } from "./http/public-scan-routes.js";
 import { registerStrongroomRoutes } from "./http/strongroom-routes.js";
 import { registerOverrideRoutes } from "./http/override-routes.js";
 import { registerOpeningRoutes } from "./http/opening-routes.js";
@@ -90,6 +91,7 @@ async function main(): Promise<void> {
   if (process.env["ACCESS_URL"]) registerAccessProxy(app, process.env["ACCESS_URL"]);
   else registerAccessRoutes(app, pool);
   registerSealRoutes(app, pool);
+  registerPublicScanRoutes(app, pool);
   registerTransferRoutes(app, pool);
   registerOverrideRoutes(app, pool);
   registerStrongroomRoutes(app, pool);

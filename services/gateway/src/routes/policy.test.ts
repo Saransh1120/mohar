@@ -55,6 +55,7 @@ test("only liveness, sign-in and the transparency surface are public", () => {
     "POST /auth/signin",
     "POST /auth/signout",
     "POST /auth/signup",
+    "POST /public/seam-scan",
   ]);
 });
 

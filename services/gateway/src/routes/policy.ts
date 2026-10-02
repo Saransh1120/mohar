@@ -94,6 +94,7 @@ export const RULES: readonly Rule[] = Object.freeze([
   r("GET", "/anchors", "public", "anon"),
   r("GET", "/counters", "public", "anon"),
   r("GET", "/verify/inclusion/:eventId", "public", "anon"),
+  r("POST", "/public/seam-scan", "public", "anon"),
 
   // ── the chain ──
   // A signed event authenticates itself: the signature is the credential.
