@@ -21,6 +21,7 @@ import {
   wrappedShareFor,
   type CeremonyState,
 } from "../domain/opening.js";
+import { recordOpenCeremony, recordPacketOpened } from "../domain/opening-events.js";
 
 /**
  * ── Rosters, stations and the opening ceremony over HTTP ─────────────────────
@@ -277,6 +278,7 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
         issueNo: result.issueNo,
         late: result.late,
         packets: result.packets,
+        chainEvents: result.chainEvents,
       });
     },
   );
@@ -324,6 +326,7 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
         reissuedBy: result.issueNo ? account.username : null,
         changes: result.changes,
         packets: result.packets,
+        chainEvents: result.chainEvents,
       });
     },
   );
@@ -435,7 +438,13 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
     });
     if (!out) return reply.code(404).send({ error: "no such packet" });
     req.log.info(
-      { ceremonyId: out.ceremonyId, outcome: out.outcome, denyReasons: out.denyReasons, duplicate: out.duplicate },
+      {
+        ceremonyId: out.ceremonyId,
+        outcome: out.outcome,
+        denyReasons: out.denyReasons,
+        duplicate: out.duplicate,
+        chainEvents: out.chainEvents,
+      },
       `offline opening ${out.outcome}`,
     );
     return reply.code(out.duplicate ? 200 : 201).send({
@@ -444,6 +453,7 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
       outcome: out.outcome,
       duplicate: out.duplicate,
       denyReasons: out.denyReasons,
+      chainEvents: out.chainEvents,
       steps: out.steps.map((s) => ({
         step: s.step,
         outcome: s.decision.outcome,
@@ -659,14 +669,26 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
       const d = await decideRelease(tx, state, parsed.data.openingKeyHex);
       // The key is not written anywhere, on a pass or on a refusal.
       await recordStep(tx, req.params.id, "release", d, {}, state.officials);
-      return d;
+      const chainEvent =
+        d.outcome === "passed"
+          ? await recordOpenCeremony(
+              tx,
+              req.params.id,
+              d.checks.find((c) => c.check === "key_commitment")?.passed === true,
+            )
+          : null;
+      return { d, chainEvent };
     });
     if (!out) return reply.code(404).send({ error: "no such ceremony" });
-    req.log.info({ ceremonyId: req.params.id, outcome: out.outcome }, "ceremony release");
+    req.log.info(
+      { ceremonyId: req.params.id, outcome: out.d.outcome, chainEvent: out.chainEvent },
+      "ceremony release",
+    );
     return reply.send({
-      outcome: out.outcome === "passed" ? "granted" : "refused",
-      denyReasons: out.denyReasons,
-      checks: out.checks,
+      outcome: out.d.outcome === "passed" ? "granted" : "refused",
+      denyReasons: out.d.denyReasons,
+      checks: out.d.checks,
+      ...(out.chainEvent ? { chainEvent: out.chainEvent } : {}),
     });
   });
 
@@ -718,9 +740,22 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
           state.packageId,
         ]);
       }
-      return passed;
+      const chainEvent = passed
+        ? await recordPacketOpened(tx, req.params.id, {
+            photoSha256: parsed.data.photoSha256,
+            candidateWitnesses: parsed.data.candidateWitnesses,
+          })
+        : null;
+      return { passed, chainEvent };
     });
     if (out === null) return reply.code(404).send({ error: "no such ceremony" });
-    return reply.send({ outcome: out ? "opened" : "refused" });
+    req.log.info(
+      { ceremonyId: req.params.id, opened: out.passed, chainEvent: out.chainEvent },
+      "ceremony opened",
+    );
+    return reply.send({
+      outcome: out.passed ? "opened" : "refused",
+      ...(out.chainEvent ? { chainEvent: out.chainEvent } : {}),
+    });
   });
 }

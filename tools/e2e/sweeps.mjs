@@ -135,6 +135,12 @@ try {
     row?.kind === PACKET_UNOPENED_OVERDUE && row.requires_decision === true && row.centre_id === unopened.centreId);
   expect("it records how late: ten minutes, in seconds",
     row?.evidence.overdueBySeconds === 600, String(row?.evidence.overdueBySeconds));
+  const [unopenedEvent] = await q(
+    `select e.body, d.kind as device_kind from led.event e join ref.device d on d.id = e.actor_device
+      where e.package_id = $1 and e.kind = 'PACKET_UNOPENED_OVERDUE'`, [unopened.id]);
+  expect("the same finding is on the chain, signed by the ledger's service device",
+    unopenedEvent?.device_kind === "service" && unopenedEvent.body.payload.overdueBySeconds === 600 &&
+    unopenedEvent.body.payload.scheduledOpenAt === row?.evidence.scheduledOpenAt);
   expect("it records the scheduled opening time",
     row?.evidence.scheduledOpenAt === at(-10).toISOString(), row?.evidence.scheduledOpenAt);
   expect("it carries a consequence", typeof row?.consequence === "string" && row.consequence.length > 40);

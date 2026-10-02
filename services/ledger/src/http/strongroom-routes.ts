@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { withTransaction } from "../db.js";
+import type { ChainEventOutcome } from "../domain/service-events.js";
+import { recordEntryEvent } from "../domain/strongroom-events.js";
 import {
   closeVisit,
   decideEntry,
@@ -165,6 +167,7 @@ export function registerStrongroomRoutes(app: FastifyInstance, pool: Pool): void
       // are written.
       let visitId: string | null = null;
       let enteredAt: Date | null = null;
+      let chainEvent: ChainEventOutcome | null = null;
       if (decision.outcome === "granted") {
         const { rows } = await tx.query<{ id: string; entered_at: Date }>(
           `insert into led.strongroom_visit (room_id, persons, entered_at, expected_minutes)
@@ -185,11 +188,25 @@ export function registerStrongroomRoutes(app: FastifyInstance, pool: Pool): void
         decision,
         visitId,
       );
-      return { decision, visitId, enteredAt };
+      if (visitId) {
+        chainEvent = await recordEntryEvent(tx, {
+          visitId,
+          roomId: input.roomId,
+          entrants: input.entrants,
+          secondsBetween: decision.context.secondsBetween,
+          expectedMinutes: input.expectedMinutes,
+        });
+      }
+      return { decision, visitId, enteredAt, chainEvent };
     });
 
     req.log.info(
-      { roomId: input.roomId, outcome: result.decision.outcome, denyReasons: result.decision.denyReasons },
+      {
+        roomId: input.roomId,
+        outcome: result.decision.outcome,
+        denyReasons: result.decision.denyReasons,
+        chainEvent: result.chainEvent,
+      },
       `strong room entry ${result.decision.outcome}`,
     );
     return reply.send({
@@ -198,6 +215,7 @@ export function registerStrongroomRoutes(app: FastifyInstance, pool: Pool): void
       checks: result.decision.checks,
       context: result.decision.context,
       ...(result.visitId ? { visitId: result.visitId, enteredAt: result.enteredAt } : {}),
+      ...(result.chainEvent ? { chainEvent: result.chainEvent } : {}),
     });
   });
 
@@ -235,7 +253,12 @@ export function registerStrongroomRoutes(app: FastifyInstance, pool: Pool): void
     });
 
     req.log.info(
-      { roomId: input.roomId, visitId: input.visitId, outcome: result.decision.outcome },
+      {
+        roomId: input.roomId,
+        visitId: input.visitId,
+        outcome: result.decision.outcome,
+        chainEvents: result.closed?.chainEvents,
+      },
       `strong room exit ${result.decision.outcome}`,
     );
     return reply.send({
@@ -248,6 +271,7 @@ export function registerStrongroomRoutes(app: FastifyInstance, pool: Pool): void
             expectedMinutes: result.expectedMinutes,
             dwellExceeded: result.closed.dwellExceeded,
             footfall: result.closed.footfall,
+            chainEvents: result.closed.chainEvents,
           }
         : {}),
     });

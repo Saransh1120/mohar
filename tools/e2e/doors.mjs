@@ -158,6 +158,9 @@ try {
   expect("two verified people within 120 s are let in",
     ok.body.outcome === "granted" && Boolean(ok.body.visitId), JSON.stringify(ok.body.denyReasons));
   const visitId = ok.body.visitId;
+  expect("a room attached to no centre has no exam to file an event under, and the answer says so",
+    ok.body.chainEvent?.recorded === false && /no centre/.test(ok.body.chainEvent.reason),
+    JSON.stringify(ok.body.chainEvent));
 
   const rooms = await get("/rooms");
   const mine = rooms.body.rooms.find((r) => r.id === room);
@@ -251,6 +254,12 @@ try {
     request.status === 201 && request.body.standing.status === "pending" && request.body.evidence.seamIdMatches === true);
   expect("the control room is told: SEAM_DECODE_FAILED",
     (await q(`select 1 from led.alert where kind = 'SEAM_DECODE_FAILED' and evidence ->> 'overrideId' = $1`, [overrideId])).length === 1);
+  const decodeEvents = await q(
+    `select body from led.event where package_id = $1 and kind = 'SEAM_DECODE_FAILED' order by seq`, [pkg.id]);
+  expect("both reports are on the chain with the photograph's hash and what was typed",
+    decodeEvents.length === 2 && request.body.chainEvent?.recorded === true &&
+    decodeEvents[1].body.payload.seamIdTyped === label.seamId && decodeEvents[1].body.payload.photoSha256 === photo,
+    JSON.stringify(request.body.chainEvent));
 
   const pending = await post(`/legs/${leg}/dispatch`, { ...step, overrideId });
   expect("an override nobody has approved does not pass the seam check",

@@ -1,5 +1,7 @@
 import type { Pool, PoolClient } from "pg";
 import type { DenyReason } from "@mohar/contracts";
+import type { ChainEventOutcome } from "./service-events.js";
+import { recordDwellEvent, recordExitEvent, recordFootfallEvent } from "./strongroom-events.js";
 
 /**
  * ── The strong room door ─────────────────────────────────────────────────────
@@ -622,6 +624,8 @@ export interface ExitOutcome {
     mismatch: boolean;
     detail: string;
   };
+  /** What went on the chain for this exit, and what could not and why. */
+  chainEvents: ChainEventOutcome[];
 }
 
 /**
@@ -690,9 +694,26 @@ export async function closeVisit(
      values ($1::uuid, $2, $3, $4, $5::jsonb)`,
     [visit.id, now, dwellSeconds, req.packagesTouched, JSON.stringify(footfall)],
   );
+  const chainEvents: ChainEventOutcome[] = [
+    await recordExitEvent(tx, {
+      visitId: visit.id,
+      roomId: visit.room_id,
+      personIds: visit.persons.map((p) => p.personId),
+      dwellSeconds,
+      packagesTouched: req.packagesTouched,
+    }),
+  ];
 
   const dwellExceeded = dwellSeconds > dwellLimitSeconds(visit.expected_minutes);
   if (dwellExceeded && !(await alreadyRaised(tx, DWELL_EXCEEDED, visit.id))) {
+    chainEvents.push(
+      await recordDwellEvent(tx, {
+        visitId: visit.id,
+        roomId: visit.room_id,
+        dwellSeconds,
+        expectedMinutes: visit.expected_minutes,
+      }),
+    );
     await raise(
       tx,
       DWELL_EXCEEDED,
@@ -714,6 +735,15 @@ export async function closeVisit(
     );
   }
   if (footfall.mismatch && r.monitor_device_id) {
+    chainEvents.push(
+      await recordFootfallEvent(tx, {
+        visitId: visit.id,
+        roomId: visit.room_id,
+        authorisedEntrants: visit.persons.length,
+        countedAtLeast: footfall.countedAtLeast ?? 0,
+        monitorDeviceId: r.monitor_device_id,
+      }),
+    );
     await raise(
       tx,
       FOOTFALL_MISMATCH,
@@ -734,7 +764,7 @@ export async function closeVisit(
     );
   }
 
-  return { dwellSeconds, dwellExceeded, footfall };
+  return { dwellSeconds, dwellExceeded, footfall, chainEvents };
 }
 
 /**
@@ -779,6 +809,12 @@ export async function sweepOverstays(pool: Pool, now: Date = new Date()): Promis
     for (const v of rows) {
       const dwell = (now.getTime() - v.entered_at.getTime()) / 1000;
       if (dwell <= dwellLimitSeconds(v.expected_minutes)) continue;
+      await recordDwellEvent(client, {
+        visitId: v.id,
+        roomId: v.room_id,
+        dwellSeconds: dwell,
+        expectedMinutes: v.expected_minutes,
+      });
       await raise(
         client,
         DWELL_EXCEEDED,

@@ -10,6 +10,7 @@ import {
   type TransferRequest,
   type TransferStep,
 } from "../domain/transfer.js";
+import { recordHandoverEvent } from "../domain/transfer-events.js";
 
 /**
  * ── Hand-off legs over HTTP ──────────────────────────────────────────────────
@@ -21,7 +22,9 @@ import {
  *   POST /legs/:legId/confirm     receiver's device submits the key → closed
  *   POST /legs/:legId/override    a label that will not scan (in override-routes)
  *
- * Every step records the attempt before it answers. A refusal is a 200 with
+ * Every step records the attempt before it answers, and then puts what was
+ * ruled on the chain as an event the ledger signs (see domain/transfer-events).
+ * A refusal is a 200 with
  * `outcome: "refused"`, not a 4xx: it is a successful evaluation that produced
  * "no", and a client that treats it as a transport error will retry it.
  *
@@ -217,7 +220,7 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
           if (already.length > 0) {
             // led.* takes no UPDATE, and re-issuing would let a second device
             // obtain a key after the first. The control room resolves this.
-            return { decision, issuedKey, keyFingerprint, conflict: true };
+            return { decision, issuedKey, keyFingerprint, conflict: true, chainEvent: null };
           }
           const { rows } = await tx.query<{ seam_id: string | null; window_end: Date }>(
             `select l.seam_id, r.window_end
@@ -251,7 +254,10 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
           }
         }
 
-        return { decision, issuedKey, keyFingerprint, conflict: false };
+        // Last, so the event describes the packet as this step left it.
+        const chainEvent = await recordHandoverEvent(tx, input, decision);
+
+        return { decision, issuedKey, keyFingerprint, conflict: false, chainEvent };
       });
 
       req.log.info(
@@ -262,6 +268,7 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
           denyReasons: result.decision.denyReasons,
           attemptNo: result.decision.attemptNo,
           keyFingerprint: result.keyFingerprint,
+          chainEvent: result.chainEvent,
         },
         `transfer ${step} ${result.decision.outcome}`,
       );
@@ -283,6 +290,7 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
         context: result.decision.context,
         attemptNo: result.decision.attemptNo,
         alertRaised: result.decision.raisesAlert,
+        ...(result.chainEvent ? { chainEvent: result.chainEvent } : {}),
         // Present only on a granted receive, and only in this one response.
         ...(result.issuedKey ? { transferKey: result.issuedKey } : {}),
         ...(result.keyFingerprint ? { keyFingerprint: result.keyFingerprint } : {}),

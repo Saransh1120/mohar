@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { accountForToken } from "../domain/accounts.js";
 import { withTransaction } from "../db.js";
+import { appendServiceEvent } from "../domain/service-events.js";
 import { bearerToken } from "./auth-routes.js";
 import {
   APPROVALS_REQUIRED,
@@ -65,10 +66,11 @@ export function registerOverrideRoutes(app: FastifyInstance, pool: Pool): void {
         from_place: string;
         to_place: string;
         centre_id: string;
+        exam_id: string;
         seal_serial: string | null;
         seam_id: string | null;
       }>(
-        `select r.package_id, r.leg_no, r.from_place, r.to_place, p.centre_id, p.seal_serial, l.seam_id
+        `select r.package_id, r.leg_no, r.from_place, r.to_place, p.centre_id, p.exam_id, p.seal_serial, l.seam_id
            from ref.route_leg r
            join ref.package p on p.id = r.package_id
            left join ref.seal_label l on l.package_id = p.id
@@ -135,14 +137,36 @@ export function registerOverrideRoutes(app: FastifyInstance, pool: Pool): void {
             `each seen the packet and both officers on live video and approved or refused it.`,
         ],
       );
-      return { id, requestedAt: rows[0]!.requested_at, evidence };
+      // What the officer reported, on the chain. The two decisions that follow
+      // are operator accounts, not registered persons, and stay in
+      // led.seam_override_decision: the event contract names an approver by
+      // person id, which an account does not have.
+      const chainEvent = await appendServiceEvent(tx, {
+        kind: "SEAM_DECODE_FAILED",
+        examId: leg.exam_id,
+        centreId: leg.centre_id,
+        packageId: leg.package_id,
+        actorPersonId: known[0]?.person_id,
+        payload: {
+          seamIdTyped: b.seamIdTyped,
+          packageId: leg.package_id,
+          attemptedSeconds: b.attemptedSeconds,
+          whichCodes: b.whichCodes,
+          photoSha256: b.photoSha256,
+        },
+      });
+      return { id, requestedAt: rows[0]!.requested_at, evidence, chainEvent };
     });
 
     if (!out) return reply.code(404).send({ error: "no such leg" });
-    req.log.info({ legId: req.params.legId, overrideId: out.id }, "seam override requested");
+    req.log.info(
+      { legId: req.params.legId, overrideId: out.id, chainEvent: out.chainEvent },
+      "seam override requested",
+    );
     return reply.code(201).send({
       overrideId: out.id,
       requestedAt: out.requestedAt,
+      chainEvent: out.chainEvent,
       evidence: out.evidence,
       standing: overrideStanding(out.evidence.seamIdMatches, []),
     });

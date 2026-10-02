@@ -28,6 +28,11 @@ export function generateKeypair(): Keypair {
   };
 }
 
+/** The public half of a key held as hex, for a service that loads its key from configuration. */
+export function publicKeyHexOf(privateKeyHex: string): string {
+  return bytesToHex(ed25519.getPublicKey(hexToBytes(privateKeyHex)));
+}
+
 export function signBody(body: unknown, privateKeyHex: string): string {
   assertNoNulls(body);
   return bytesToHex(ed25519.sign(canonicalBytes(body), hexToBytes(privateKeyHex)));

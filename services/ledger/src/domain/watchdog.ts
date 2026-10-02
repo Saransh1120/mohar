@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from "pg";
 import { sweepOverstays } from "./strongroom.js";
 import { sweepIncompleteCeremonies } from "./opening.js";
+import { appendServiceEvent } from "./service-events.js";
 
 /**
  * ── The Delayed Transfer Alert ───────────────────────────────────────────────
@@ -150,6 +151,8 @@ interface CandidateRow {
   expected_by: Date;
   seal_serial: string | null;
   centre_id: string | null;
+  exam_id: string;
+  last_event_kind: string | null;
   centre_code: string | null;
   dispatched_at: Date | null;
   key_released_at: Date | null;
@@ -216,7 +219,9 @@ export async function sweepOverdueLegs(pool: Pool, now: Date = new Date()): Prom
 
     const { rows } = await client.query<CandidateRow>(
       `select r.id, r.package_id, r.leg_no, r.from_role, r.to_role, r.from_place, r.to_place,
-              r.expected_by, p.seal_serial, p.centre_id, c.code as centre_code,
+              r.expected_by, p.seal_serial, p.centre_id, p.exam_id, c.code as centre_code,
+              (select v.kind from led.event v where v.package_id = r.package_id
+                order by v.seq desc limit 1) as last_event_kind,
               (select min(a.recorded_at) from led.transfer_attempt a
                 where a.leg_id = r.id and a.outcome = 'granted'
                   and a.checks ->> 'step' = 'dispatch') as dispatched_at,
@@ -266,6 +271,20 @@ export async function sweepOverdueLegs(pool: Pool, now: Date = new Date()): Prom
          returning id`,
         [LEG_OVERDUE, r.package_id, r.id, r.centre_id, JSON.stringify(alert.evidence), alert.consequence],
       );
+      await appendServiceEvent(client, {
+        kind: LEG_OVERDUE,
+        examId: r.exam_id,
+        centreId: r.centre_id,
+        packageId: r.package_id,
+        payload: {
+          legId: r.id,
+          legNo: r.leg_no,
+          expectedBy: r.expected_by.toISOString(),
+          overdueBySeconds: alert.evidence["overdueBySeconds"] as number,
+          lastEventKind: r.last_event_kind ?? "no event on the chain for this packet",
+          ...(facts.lastVerified ? { lastSeenPersonId: facts.lastVerified.personId } : {}),
+        },
+      });
       raised.push({
         alertId: inserted[0]!.id,
         legId: r.id,
@@ -401,6 +420,7 @@ export async function sweepUnopenedPackets(
     const { rows } = await client.query<{
       id: string;
       centre_id: string;
+      exam_id: string;
       centre_code: string | null;
       seal_serial: string | null;
       exam_name: string;
@@ -408,7 +428,7 @@ export async function sweepUnopenedPackets(
       last_kind: string | null;
       last_at: Date | null;
     }>(
-      `select p.id, p.centre_id, c.code as centre_code, p.seal_serial,
+      `select p.id, p.centre_id, p.exam_id, c.code as centre_code, p.seal_serial,
               e.name as exam_name, e.starts_at,
               l.kind as last_kind, l.occurred_at as last_at
          from ref.package p
@@ -461,6 +481,18 @@ export async function sweepUnopenedPackets(
          returning id`,
         [PACKET_UNOPENED_OVERDUE, r.id, r.centre_id, JSON.stringify(alert.evidence), alert.consequence],
       );
+      await appendServiceEvent(client, {
+        kind: PACKET_UNOPENED_OVERDUE,
+        examId: r.exam_id,
+        centreId: r.centre_id,
+        packageId: r.id,
+        payload: {
+          packageId: r.id,
+          scheduledOpenAt: alert.evidence["scheduledOpenAt"] as string,
+          overdueBySeconds: alert.evidence["overdueBySeconds"] as number,
+          centreId: r.centre_id,
+        },
+      });
       raised.push({
         alertId: inserted[0]!.id,
         packageId: r.id,

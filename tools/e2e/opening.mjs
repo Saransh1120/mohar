@@ -469,6 +469,14 @@ try {
     const [st1] = await q(`select state from ref.package where id = $1`, [off1.id]);
     expect("it is on record as envelope-authorized and the packet is marked opened",
       mode.mode === "envelope-authorized" && st1.state === "opened");
+    const offEvents = await q(
+      `select kind, body, clock_skew_ms from led.event where package_id = $1 and kind in ('OPEN_CEREMONY','PACKET_OPENED') order by seq`,
+      [off1.id]);
+    expect("the chain says it was opened from the cache, at the station's time, and how long before the ledger heard",
+      offEvents.map((e) => e.kind).join() === "OPEN_CEREMONY,PACKET_OPENED" &&
+      offEvents[0].body.payload.mode === "envelope-authorized" && offEvents[0].body.payload.controlPartUsed === true &&
+      offEvents[0].body.occurredAt === report.releasedAt && Number(offEvents[0].clock_skew_ms) <= 0,
+      JSON.stringify(offEvents.map((e) => [e.kind, e.body.occurredAt, e.clock_skew_ms])));
     const [scanStep] = await q(
       `select evidence from led.ceremony_step where ceremony_id = $1 and step = 'scan'`, [ruled.body.ceremonyId]);
     expect("each step says whose clock its times are",
@@ -496,6 +504,12 @@ try {
     expect("it raises OFFLINE_OPENING_DISPUTED naming what failed, and the packet is still marked opened because its key was used",
       alert?.evidence.failedSteps.includes("confirm") && /The key it presents is the packet's/.test(alert.consequence) &&
       st2.state === "opened", JSON.stringify(alert?.evidence.failedSteps));
+    const disputedEvents = await q(
+      `select kind from led.event where package_id = $1 and kind in ('OPEN_CEREMONY','PACKET_OPENED')`, [off2.id]);
+    expect("a disputed account puts no OPEN_CEREMONY on the chain, and says why the opened event could not be written",
+      !disputedEvents.some((e) => e.kind === "OPEN_CEREMONY") &&
+      disputed.body.chainEvents.every((c) => c.kind === "PACKET_OPENED" && (c.recorded || typeof c.reason === "string")),
+      JSON.stringify(disputed.body.chainEvents));
 
     const forged = await post("/ceremonies/offline", transcript(off1, randomBytes(32).toString("hex"), { transcriptId: randomUUID() }));
     expect("a transcript with a key that is not the packet's is disputed for that",
@@ -535,6 +549,9 @@ try {
     incomplete.includes(pkg2.id) && !incomplete.includes(pkg.id), JSON.stringify(incomplete));
   const [floor] = await q(`select evidence, consequence from led.alert where kind = 'CEREMONY_INCOMPLETE' and package_id = $1`, [pkg2.id]);
   expect("it says how far the ceremony got", floor?.evidence.reached === "scan" && /control room takes over/.test(floor.consequence));
+  const [floorEvent] = await q(`select body from led.event where kind = 'CEREMONY_INCOMPLETE' and package_id = $1`, [pkg2.id]);
+  expect("and the chain carries CEREMONY_INCOMPLETE with the step it reached",
+    floorEvent?.body.payload.reachedStep === "scan" && floorEvent.body.payload.officialsConfirmed === 0);
   expect("it is raised once", (await sweepIncompleteCeremonies(pool, later)).length === 0);
   const unopened = await sweepUnopenedPackets(pool, later);
   expect("the unopened-packet sweep leaves packets with a ceremony to the ceremony's own alert",

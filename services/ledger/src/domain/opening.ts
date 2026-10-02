@@ -1,6 +1,14 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { DenyReason } from "@mohar/contracts";
+import type { ChainEventOutcome } from "./service-events.js";
+import {
+  recordCeremonyIncomplete,
+  recordEnvelopeIssued,
+  recordOpenCeremony,
+  recordPacketOpened,
+  recordSharesRewrapped,
+} from "./opening-events.js";
 import {
   roundAt,
   seamLabelMatches,
@@ -139,6 +147,8 @@ export interface LockResult {
   issueNo: number | null;
   late: boolean;
   packets: LockedPacket[];
+  /** What went on the chain for this lock, and what could not and why. */
+  chainEvents: ChainEventOutcome[];
 }
 
 interface CentreRow {
@@ -331,6 +341,7 @@ async function issueKeys(
   duty: DutyRow[],
   packets: { id: string; seal_serial: string | null; issue_no: number }[],
   examSession: string,
+  chainEvents: ChainEventOutcome[],
 ): Promise<LockedPacket[]> {
   const openAt = new Date(centre.starts_at.getTime() - OPEN_LEAD_MS);
   const byRole = new Map(duty.map((d) => [d.role, d]));
@@ -395,6 +406,19 @@ async function issueKeys(
     split.controlPart.fill(0);
     for (const s of split.fieldShares) s.share.fill(0);
 
+    chainEvents.push(
+      await recordEnvelopeIssued(tx, {
+        examId: centre.exam_id,
+        centreId: centre.id,
+        packageId: p.id,
+        drandRound: envelope.round,
+        drandChainHash: envelope.chainHash,
+        scheduledOpenAt: openAt,
+        ciphertextSha256: sha256Hex(envelopeText),
+        stationDeviceId: station.id,
+      }),
+    );
+
     issued.push({
       packageId: p.id,
       packetSerial: p.seal_serial,
@@ -431,6 +455,7 @@ export async function lockRoster(
     issueNo: null,
     late: false,
     packets: [],
+    chainEvents: [],
   });
 
   const centre = await loadCentre(tx, req.centreId);
@@ -510,6 +535,7 @@ export async function lockRoster(
   if (decision.outcome !== "passed" || !centre || !station?.wrap_pub || !lead) return refused(decision);
 
   const issueNo = await nextIssueNo(tx, centre.id, req.examSession);
+  const chainEvents: ChainEventOutcome[] = [];
   const issued = await issueKeys(
     tx,
     centre,
@@ -517,6 +543,7 @@ export async function lockRoster(
     duty,
     packets.map((p) => ({ ...p, issue_no: 1 })),
     req.examSession,
+    chainEvents,
   );
 
   const { rows: locked } = await tx.query<{ locked_at: Date }>(
@@ -535,12 +562,23 @@ export async function lockRoster(
       issued.length, lead.leadSeconds, lead.late, lead.late ? req.lateReason!.trim() : null,
     ],
   );
+  chainEvents.push(
+    await recordSharesRewrapped(tx, {
+      examId: centre.exam_id,
+      centreId: centre.id,
+      examSession: req.examSession,
+      duty,
+      stationDeviceId: station.id,
+      rosterLockedAt: locked[0]?.locked_at,
+    }),
+  );
   return {
     decision,
     lockedAt: locked[0]?.locked_at.toISOString() ?? null,
     issueNo,
     late: lead.late,
     packets: issued,
+    chainEvents,
   };
 }
 
@@ -561,6 +599,7 @@ export interface ReissueResult {
   issueNo: number | null;
   changes: { role: string; fromPersonId: string; toPersonId: string }[];
   packets: LockedPacket[];
+  chainEvents: ChainEventOutcome[];
 }
 
 /**
@@ -587,6 +626,7 @@ export async function reissueRoster(
   const refused = (decision: StepDecision): ReissueResult => ({
     decision,
     issueNo: null,
+    chainEvents: [],
     changes: [],
     packets: [],
   });
@@ -740,6 +780,7 @@ export async function reissueRoster(
     );
   }
   const issueNo = await nextIssueNo(tx, centre.id, req.examSession);
+  const chainEvents: ChainEventOutcome[] = [];
   const issued = await issueKeys(
     tx,
     centre,
@@ -747,6 +788,7 @@ export async function reissueRoster(
     after,
     packets,
     req.examSession,
+    chainEvents,
   );
   const lead = centre.starts_at.getTime() - now.getTime();
   await tx.query(
@@ -760,7 +802,17 @@ export async function reissueRoster(
       JSON.stringify(changes), issued.length, Math.round(lead / 1000), lead < LOCK_LEAD_MS, reason,
     ],
   );
-  return { decision, issueNo, changes, packets: issued };
+  chainEvents.push(
+    await recordSharesRewrapped(tx, {
+      examId: centre.exam_id,
+      centreId: centre.id,
+      examSession: req.examSession,
+      duty: after,
+      stationDeviceId: station.id,
+      rosterLockedAt: after.find((d) => d.locked_at)?.locked_at,
+    }),
+  );
+  return { decision, issueNo, changes, packets: issued, chainEvents };
 }
 
 // ── the ceremony ────────────────────────────────────────────────────────────
@@ -1579,6 +1631,8 @@ export interface OfflineRuling {
   outcome: "accepted" | "disputed";
   steps: { step: CeremonyStep; decision: StepDecision }[];
   denyReasons: DenyReason[];
+  /** Empty for a duplicate: its events went on the chain the first time. */
+  chainEvents: ChainEventOutcome[];
 }
 
 export const OFFLINE_OPENING_DISPUTED = "OFFLINE_OPENING_DISPUTED";
@@ -1629,6 +1683,7 @@ export async function recordOfflineOpening(
       outcome: steps.every((s) => s.decision.outcome === "passed") ? "accepted" : "disputed",
       steps,
       denyReasons: [...new Set(steps.flatMap((s) => s.decision.denyReasons))],
+      chainEvents: [],
     };
   }
 
@@ -1756,6 +1811,17 @@ export async function recordOfflineOpening(
       [t.packageId],
     );
   }
+
+  // On the chain at the time the station says it happened. The append records
+  // how long after that the ledger was told, so the claim is not mistaken for
+  // an observation.
+  const chainEvents: ChainEventOutcome[] = [];
+  if (releaseDecision.outcome === "passed") {
+    chainEvents.push(await recordOpenCeremony(tx, id, keyProven, releasedAt));
+  }
+  if (keyProven) {
+    chainEvents.push(await recordPacketOpened(tx, id, { photoSha256: t.photoSha256 }, releasedAt));
+  }
   if (!allPassed) {
     const failed = steps
       .filter((s) => s.decision.outcome === "refused")
@@ -1781,7 +1847,14 @@ export async function recordOfflineOpening(
     );
   }
 
-  return { ceremonyId: id, duplicate: false, outcome: allPassed ? "accepted" : "disputed", steps, denyReasons };
+  return {
+    ceremonyId: id,
+    duplicate: false,
+    outcome: allPassed ? "accepted" : "disputed",
+    steps,
+    denyReasons,
+    chainEvents,
+  };
 }
 
 // ── the hard floor ──────────────────────────────────────────────────────────
@@ -1900,6 +1973,10 @@ export async function sweepIncompleteCeremonies(pool: Pool, now: Date = new Date
         { outcome: "refused", checks: [], denyReasons: [] },
         { reached: state.reached ?? "nothing", scheduledOpenAt: r.scheduled_open_at.toISOString() },
       );
+      await recordCeremonyIncomplete(client, r.id, {
+        reached: state.reached,
+        officialsIdentified: state.officials.length,
+      });
       raised.push(r.package_id);
     }
     await client.query("commit");

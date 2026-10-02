@@ -428,9 +428,11 @@ export const HandoverInitiatedPayload = z.object({
   biometricSlot: z.number().int().nonnegative(),
   biometricScore: z.number().int().nonnegative(),
   /** The transfer key itself never appears in an event. Only that one was
-   *  issued, and when it stops being usable. */
-  transferKeyIssuedAt: Timestamp,
-  transferKeyExpiresAt: Timestamp,
+   *  issued, and when it stops being usable. Absent where the key is made when
+   *  the receiver passes rather than at dispatch, which is what the hand-off
+   *  engine does so that no key sits readable between the two steps. */
+  transferKeyIssuedAt: Timestamp.optional(),
+  transferKeyExpiresAt: Timestamp.optional(),
   expectedBy: Timestamp,
 });
 
@@ -508,7 +510,8 @@ export const StrongroomEntryPayload = z.object({
   /** Seconds between the two biometric confirmations. The window is 120 s. */
   secondsBetweenConfirmations: z.number().int().nonnegative(),
   biometricSlots: z.array(z.number().int().nonnegative()).length(2),
-  faceMatched: z.array(z.boolean()).length(2),
+  /** Omitted when the door sent no face reading. Not read is not matched. */
+  faceMatched: z.array(z.boolean()).length(2).optional(),
   expectedMinutes: z.number().int().positive(),
 });
 
@@ -571,7 +574,8 @@ export const OpenCeremonyPayload = z.object({
         institution: ShortText,
         biometricSlot: z.number().int().nonnegative(),
         biometricScore: z.number().int().nonnegative(),
-        faceMatched: z.boolean(),
+        /** Omitted when the station sent no face reading for this official. */
+        faceMatched: z.boolean().optional(),
       }),
     )
     .length(2),
@@ -584,9 +588,12 @@ export const PacketOpenedPayload = z.object({
   ceremonyId: Uuid,
   packageId: Uuid,
   packetSerial: ShortText,
-  openedByPersonId: Uuid,
+  /** Omitted where the ceremony did not record whose hands opened the packet;
+   *  the two officials present are named on OPEN_CEREMONY. */
+  openedByPersonId: Uuid.optional(),
   photoSha256: Sha256Hex,
-  candidateWitnesses: z.number().int().nonnegative(),
+  /** Omitted when nobody counted. Not counted is not zero. */
+  candidateWitnesses: z.number().int().nonnegative().optional(),
   /** Seconds before or after the scheduled start. Early is not forbidden; it is
    *  recorded, and a pattern of early openings is what gets looked at. */
   offsetFromScheduledSeconds: z.number().int(),
@@ -595,7 +602,8 @@ export const PacketOpenedPayload = z.object({
 export const CeremonyIncompletePayload = z.object({
   ceremonyId: Uuid,
   packageId: Uuid,
-  reachedStep: z.enum(["scan", "authorize", "identify", "confirm", "release"]),
+  /** The furthest step that passed. `none` when not even the scan did. */
+  reachedStep: z.enum(["none", "scan", "authorize", "identify", "confirm", "release"]),
   officialsConfirmed: z.number().int().nonnegative().max(3),
   deadline: Timestamp,
 });
