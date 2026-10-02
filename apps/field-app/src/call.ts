@@ -1,4 +1,5 @@
 import { requestSigningBytes, REQUEST_SIGNATURE_HEADERS } from "@mohar/crypto-core";
+import { applyLanguage, languageButton, t } from "./i18n";
 import "./style.css";
 
 /**
@@ -53,7 +54,7 @@ let identity: Identity | undefined;
 let key: CryptoKey | undefined;
 
 async function signedPost<T>(path: string, body: Record<string, unknown>): Promise<T> {
-  if (!identity || !key) throw new Error("This phone is not enrolled. Enrol it on the main screen first.");
+  if (!identity || !key) throw new Error(t("c_not_enrolled"));
   const json = JSON.stringify({ ...body, deviceId: identity.deviceId });
   const timestamp = new Date().toISOString();
   const nonce = hex(crypto.getRandomValues(new Uint8Array(16)).buffer);
@@ -76,14 +77,14 @@ async function signedPost<T>(path: string, body: Record<string, unknown>): Promi
 }
 
 const app = document.querySelector<HTMLElement>("#app")!;
-app.innerHTML = `<header><strong>Mohar Field</strong><a href="/field/" style="color:inherit">back to scans</a></header>
-<section><h1>Show a damaged label to the control room</h1>
-<p>Two control room operators each have to see the packet, its label and both officers on a live call before they can approve a damaged-label request. This opens that call from this phone's camera.</p>
-<p>The picture goes from this phone straight to each operator's screen. It is not recorded and the ledger does not see it; the ledger records that the call connected.</p>
+app.innerHTML = `<header><strong>Mohar Field</strong><span><a href="/field/" style="color:inherit" data-i18n="c_back"></a> <span id="lang"></span></span></header>
+<section><h1 data-i18n="c_h"></h1>
+<p data-i18n="c_p1"></p>
+<p data-i18n="c_p2"></p>
 <p id="device"></p>
-<label>Request<select id="request"></select></label>
-<button id="open">Open the camera and call</button>
-<button id="close" hidden>Close the call</button>
+<label><span data-i18n="c_request"></span><select id="request"></select></label>
+<button id="open" data-i18n="c_open"></button>
+<button id="close" data-i18n="c_close" hidden></button>
 <p id="status" role="status"></p>
 <video id="preview" autoplay playsinline muted style="width:100%;border-radius:8px;background:#000" hidden></video>
 </section>`;
@@ -102,10 +103,10 @@ function describe(): void {
   const live = [...peers.values()].filter((p) => p.pc.connectionState === "connected");
   say(
     live.length > 0
-      ? `On the call with ${live.map((p) => p.name).join(" and ")}. Hold the packet, its label and both officers in view.`
+      ? t("c_live", { names: live.map((p) => p.name).join(t("c_and")) })
       : peers.size > 0
-        ? "Calling the control room…"
-        : "Camera on. Waiting for a control room operator to open the call from their side.",
+        ? t("c_calling")
+        : t("c_waiting"),
   );
 }
 
@@ -120,7 +121,7 @@ async function gathered(pc: RTCPeerConnection): Promise<string> {
     });
   }
   const sdp = pc.localDescription?.sdp;
-  if (!sdp) throw new Error("The browser produced no connection description");
+  if (!sdp) throw new Error(t("c_no_sdp"));
   return sdp;
 }
 
@@ -128,13 +129,13 @@ async function handle(s: Signal): Promise<void> {
   if (s.kind === "operator-joined") {
     peers.get(s.from)?.pc.close();
     const pc = new RTCPeerConnection({ iceServers });
-    const peer: Peer = { pc, name: s.fromName ?? "an operator", connectedAt: 0, lastReport: 0 };
+    const peer: Peer = { pc, name: s.fromName ?? t("c_an_operator"), connectedAt: 0, lastReport: 0 };
     peers.set(s.from, peer);
     for (const track of camera?.getTracks() ?? []) pc.addTrack(track, camera!);
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "connected") peer.connectedAt = Date.now();
       if (pc.connectionState === "failed") {
-        say("This phone and the control room could not reach each other directly. There is no relay server, so a network that blocks direct connections stops the call. Try another network.");
+        say(t("c_failed"));
       } else describe();
     };
     await pc.setLocalDescription(await pc.createOffer());
@@ -169,9 +170,9 @@ async function tick(): Promise<void> {
 
 async function openCall(): Promise<void> {
   overrideId = el<HTMLSelectElement>("request").value;
-  if (!overrideId) throw new Error("This phone has no damaged-label request to call about. Make the request on the main screen first.");
-  if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser cannot open a camera. The call needs one.");
-  say("Asking for the camera…");
+  if (!overrideId) throw new Error(t("c_no_request"));
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error(t("c_no_camera"));
+  say(t("c_asking"));
   try {
     camera = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: true });
   } catch {
@@ -210,18 +211,18 @@ async function closeCall(): Promise<void> {
   preview.hidden = true;
   el("open").hidden = false;
   el("close").hidden = true;
-  say("Call closed.");
+  say(t("c_closed"));
 }
 
 async function load(): Promise<void> {
   identity = await setting<Identity>("identity");
   key = await setting<CryptoKey>("privateKey");
   if (!identity || !key) {
-    el("device").textContent = "This phone is not enrolled. Enrol it on the main screen first.";
+    el("device").textContent = t("c_not_enrolled");
     el<HTMLButtonElement>("open").disabled = true;
     return;
   }
-  el("device").textContent = `Device ${identity.deviceId}`;
+  el("device").textContent = t("device", { id: identity.deviceId });
   const { requests } = await signedPost<{ requests: OwnRequest[] }>("/overrides/device-requests", {});
   const select = el<HTMLSelectElement>("request");
   const wanted = new URLSearchParams(location.search).get("override");
@@ -229,15 +230,21 @@ async function load(): Promise<void> {
     const option = document.createElement("option");
     option.value = r.id;
     option.selected = r.id === wanted;
-    option.textContent = `${r.seal_serial ?? "packet"} · leg ${r.leg_no}: ${r.from_place} to ${r.to_place} · ` +
-      (r.refused ? "refused" : `${r.approvals} of 2 approvals`);
+    option.textContent = t("c_option", {
+      serial: r.seal_serial ?? t("c_packet"), no: r.leg_no, from: r.from_place, to: r.to_place,
+      standing: r.refused ? t("c_refused") : t("c_approvals", { n: r.approvals }),
+    });
     return option;
   }));
-  if (requests.length === 0) say("This phone has made no damaged-label request in the last day.");
+  if (requests.length === 0) say(t("c_none_today"));
 }
 
 const run = (action: () => Promise<void>) => { void action().catch((err: unknown) => say((err as Error).message)); };
 el("open").addEventListener("click", () => run(openCall));
 el("close").addEventListener("click", () => run(closeCall));
 window.addEventListener("pagehide", () => { void closeCall(); });
+// The request list is worded in the language in use, so it is read again on a
+// change; a call that is open is left alone.
+el("lang").append(languageButton(() => { if (!poll) run(load); }));
+applyLanguage();
 run(load);

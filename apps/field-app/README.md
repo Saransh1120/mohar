@@ -36,6 +36,19 @@ The fingerprint selector supplies simulated slot/score values for testing the
 engine, and the screen labels them as simulated. It is not a fingerprint
 capture. The phone has no reader integration yet.
 
+The app is in English and Hindi (`src/i18n.ts`). A button in the header
+switches, naming the other language in that language; the choice is kept on
+the phone and a phone set to Hindi starts in Hindi. Switching rewrites the
+fixed lines in place and reloads nothing, so a transfer key held between
+Receive and Confirm survives it. What the ledger answers is not translated: a
+check's name, its evidence and a deny reason are shown as the engine returned
+them, and the hand-off screen says so. The Hindi has not been read by a
+courier or an officer who would use it.
+
+A damaged-label request links to `/field/call.html`, where the phone opens its
+camera to the control room operators who have to see the packet before they
+can approve. See `RUNNING.md` for what that call does and does not record.
+
 This is a browser field client. WebCrypto keys do not give Android hardware
 attestation, and this app does not perform fingerprint capture, NFC reading or
 dual-signature handoff. Those remain for a native Android implementation. No

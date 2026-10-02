@@ -488,6 +488,13 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   runs the unit suites (crypto-core, the access engine's checks, the hand-off
   engine, the watchdog and notifier wording, the label tool). The checks that
   need Postgres are in `tools/e2e` and are run by hand.
+- **The field app is in English and Hindi.** Every line the app itself says
+  is in both, switched from the header without a reload. What the ledger
+  answers (check names, evidence, deny reasons) is shown as returned, in
+  English, and the screen says so. Switching and the Hindi text of both pages
+  were looked at in a desktop browser on an unenrolled phone on Oct 3, 2026.
+  The hand-off results and the call page's live states were not seen in Hindi,
+  and no Hindi reader who would use the app has checked the wording.
 - **The public verify page and field PWA exist, and were clicked through in a
   desktop browser against the gateway and the ledger on Oct 2, 2026.** On the
   field app: enrolment (a wrong operator password and an unknown person were
