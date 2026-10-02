@@ -5,7 +5,9 @@ in development (`pnpm --filter @mohar/field-app dev`, with `pnpm start` running)
 It requires a seal photograph, reads a QR from the camera image,
 signs `SCAN_OBSERVED` with a non-extractable WebCrypto Ed25519 key, and stores the
 photo plus signed event in IndexedDB before network transfer. Reconnect retries
-the same event ID. A record the ledger or the gateway will never accept (the
+the same event ID and signed `deviceSeq`. The sequence counter is reserved in
+IndexedDB before signing, so queued events keep their original number. A
+record the ledger or the gateway will never accept (the
 signature does not verify, the phone is unknown or revoked) is kept in the queue
 with the reason and counted apart from the ones still waiting to be sent. The
 photo hash is inside the signed event. Export photos before clearing browser data.

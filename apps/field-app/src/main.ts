@@ -63,6 +63,31 @@ const all = <T>(store: string) => transact<T[]>(store, "readonly", (s) => s.getA
 const hex = (b: ArrayBufferLike) => Array.from(new Uint8Array(b), (v) => v.toString(16).padStart(2, "0")).join("");
 const validId = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
+/** Reserve in one read/write transaction before the event is signed or queued. */
+async function reserveDeviceSeq(deviceId: string): Promise<number> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("settings", "readwrite");
+    const settings = tx.objectStore("settings");
+    const key = `deviceSeq:${deviceId}`;
+    const read = settings.get(key);
+    let next = 0;
+    read.onsuccess = () => {
+      const previous: unknown = read.result;
+      if (previous !== undefined && (typeof previous !== "number" || !Number.isSafeInteger(previous) || previous < 0)) {
+        tx.abort();
+        return;
+      }
+      next = Number(previous ?? 0) + 1;
+      if (!Number.isSafeInteger(next)) { tx.abort(); return; }
+      settings.put(next, key);
+    };
+    tx.oncomplete = () => { db.close(); resolve(next); };
+    tx.onabort = () => { db.close(); reject(new Error("Could not reserve a valid device sequence number")); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
 const app = document.querySelector<HTMLElement>("#app")!;
 app.innerHTML = `<header><strong>Mohar Field</strong><span id="online"></span></header><section><h1>Courier scan</h1><p>Signed on this phone when observed. Queued records keep their original time and ID while offline.</p><p>A control-room operator enrols this phone by entering their own username and password below. They are used once, for the enrolment, and the session is ended straight away: nothing of the operator's stays on this phone.</p><label>Exam ID<input id="exam" autocomplete="off"></label><label>Centre ID<input id="centre" autocomplete="off"></label><label>Person ID<input id="person" autocomplete="off"></label><label>Operator username<input id="op-user" autocomplete="off" autocapitalize="none" spellcheck="false"></label><label>Operator password<input id="op-pass" type="password" autocomplete="off"></label><button id="enrol">Enrol this phone</button><p id="device"></p><p id="enrol-status" role="status"></p></section><section><label>Package ID<input id="package" autocomplete="off"></label><label>Seal photo<input id="photo" type="file" accept="image/*" capture="environment"></label><label>QR code<input id="qr" type="file" accept="image/*" capture="environment"></label><label>Identifier read<input id="raw" autocomplete="off" placeholder="QR or NFC text"></label><button id="record">Record signed scan</button><p id="photo-status"></p></section><section><h2>Hand-off</h2><p>These three steps are signed by this enrolled phone. This browser has no fingerprint reader: the selected slot and score are simulated, not biometric proof.</p><button id="load-legs">Load legs for package above</button><label>Leg<select id="handoff-leg"></select></label><ul id="leg-list"></ul><label>QR A image<input id="handoff-qr-a" type="file" accept="image/*" capture="environment"></label><label>QR B image<input id="handoff-qr-b" type="file" accept="image/*" capture="environment"></label><label>Simulated fingerprint<select id="fingerprint"><option value="match">Simulated match (slot 3, score 180)</option><option value="mismatch">Simulated mismatch (slot 3, score 40)</option><option value="none">Not read</option></select></label><label>Packet serial typed by receiver<input id="handoff-serial" autocomplete="off"></label><label>Approved damaged-label override ID (in place of both QR scans)<input id="handoff-override" autocomplete="off"></label><button id="dispatch">Dispatch</button> <button id="receive">Receive</button> <button id="confirm">Confirm with key held in memory</button><p id="handoff-key"></p><div id="handoff-result" role="status"></div></section><section><h2>Damaged label</h2><p>After trying both codes, retain a photo and request a control-room decision. The hand-off stays blocked until approved.</p><label>Leg ID<input id="leg" autocomplete="off"></label><label>Seam ID typed from label<input id="seam" autocomplete="off"></label><label>Printed serial<input id="serial" autocomplete="off"></label><label>Seconds spent trying both codes<input id="attempt-seconds" type="number" min="1" max="3600" value="10"></label><label>Unreadable codes<select id="codes"><option value="both">Both</option><option value="A">A</option><option value="B">B</option></select></label><button id="override">Request override using seal photo above</button><p id="override-status"></p></section><section><h2>Offline queue</h2><p id="queue-count"></p><button id="sync">Sync now</button><p id="status" role="status"></p><ul id="queued"></ul></section><section><h2>Photos on this phone</h2><p>Export these before clearing browser storage or replacing the phone.</p><ul id="photos"></ul></section>`;
 const input = (id: string) => document.querySelector<HTMLInputElement>(`#${id}`)!;
@@ -298,8 +323,10 @@ async function record() {
   if (qr) raw = await decodeQr(qr) || raw;
   if (!raw || raw.length > 256) throw new Error("Scan a QR or enter its identifier");
   const id = crypto.randomUUID();
+  const deviceSeq = await reserveDeviceSeq(identity.deviceId);
   const body = { v: 1, id, examId: identity.examId, centreId: identity.centreId, packageId,
     occurredAt: new Date().toISOString(), actorDeviceId: identity.deviceId, actorPersonId: identity.personId,
+    deviceSeq,
     kind: "SCAN_OBSERVED", payload: { scanType: "qr", rawIdentifier: raw, photoSha256: digest } };
   const signature = await crypto.subtle.sign("Ed25519", key, Uint8Array.from(canonicalBytes(body)));
   await put("photos", { file: photo, sha256: digest, eventId: id, storedAt: new Date().toISOString() }, id);

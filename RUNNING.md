@@ -532,10 +532,13 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
 - **Device sequence checks are implemented, but coverage is partial.** Migration
   012 was applied on Neon on Oct 2, 2026. A signed event with `deviceSeq` is
   checked against that device's previous number; a gap appends a
-  `DEVICE_SEQ_GAP` alert. `tools/e2e/device-seq.mjs` passed 7 checks against
-  local Postgres. The shared ESP32 library persists its counter in NVS but has
-  not been flashed. The schema still accepts events without `deviceSeq`, and
-  the field app and other producers do not yet supply it on every event.
+  `DEVICE_SEQ_GAP` alert. `tools/e2e/device-seq.mjs` passed 11 checks against
+  local Postgres, including queued field scans and an idempotent retry. The
+  field app now reserves its next number in IndexedDB before signing each
+  `SCAN_OBSERVED` event and retains that number in the offline queue. The
+  shared ESP32 library persists its counter in NVS but has not been flashed.
+  The schema still accepts events without `deviceSeq`; other producers may
+  still omit it.
 - **Public seam scans have a signed record and a neutral `/s` page.** A known
   seam scanned in a public browser posts only its opaque ID and QR half to
   `POST /public/seam-scan`; the page removes the secret fragment before the

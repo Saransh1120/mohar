@@ -81,6 +81,40 @@ try {
   const late = await submit(2);
   check("late arrival is recorded with a regression flag", late.result.status === "appended" &&
     late.result.flags.some((flag) => flag.code === "device_seq_regression"));
+
+  // The field app signs each scan before it enters its offline queue. Sending
+  // the same signed envelope later must preserve both its ID and deviceSeq.
+  const [centre] = (await client.query(
+    "insert into ref.centre (exam_id, code, lat, lon, capacity) values ($1,$2,26.9,75.8,300) returning id",
+    [exam.id, `SEQ-${tag}`],
+  )).rows;
+  const [pkg] = (await client.query(
+    "insert into ref.package (exam_id, centre_id, seal_serial, copies) values ($1,$2,$3,300) returning id",
+    [exam.id, centre.id, `PKT-SEQ-${tag}`],
+  )).rows;
+  const fieldKey = generateKeypair();
+  const [field] = (await client.query(
+    "insert into ref.device (kind, centre_id, pubkey) values ('field',$1,$2) returning id",
+    [centre.id, Buffer.from(fieldKey.publicKeyHex, "hex")],
+  )).rows;
+  const fieldScan = (deviceSeq) => {
+    const body = { v: 1, id: randomUUID(), examId: exam.id, centreId: centre.id,
+      packageId: pkg.id, actorDeviceId: field.id, occurredAt: new Date().toISOString(),
+      deviceSeq, kind: "SCAN_OBSERVED", payload: { scanType: "qr", rawIdentifier: `A.${tag}` } };
+    return { body, deviceSig: signBody(body, fieldKey.privateKeyHex) };
+  };
+  const queuedOne = fieldScan(1);
+  const queuedTwo = fieldScan(2);
+  check("first queued field scan appends with its reserved sequence",
+    (await appendEvent(client, queuedOne)).status === "appended");
+  check("second queued field scan appends with the next sequence",
+    (await appendEvent(client, queuedTwo)).status === "appended");
+  check("retry of a queued field scan keeps its signed sequence and event ID",
+    (await appendEvent(client, queuedOne)).status === "duplicate");
+  const [stored] = (await client.query(
+    "select device_seq from led.event where id = $1", [queuedTwo.body.id],
+  )).rows;
+  check("ledger records the field scan's signed sequence", Number(stored?.device_seq) === 2);
 } finally {
   await client.query("rollback");
   await client.end();
