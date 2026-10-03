@@ -409,6 +409,16 @@ where an input is simulated the page says so.
 The override's live video (claim 27) was exercised with a drawn canvas for a
 camera, not with a real phone camera.
 
+## Clean checkout check
+
+On Oct 3, 2026, a temporary clone of branch `mohar-face-station-and-seam-seal`
+outside this working tree passed `pnpm install --frozen-lockfile`, `pnpm build`
+(9/9 tasks, no cached build), `pnpm typecheck` (12/12 tasks) and `pnpm test`
+(340/340 unit tests across six packages). The clone had no untracked source
+files and stayed clean after these commands. Both checked-in Android root PEMs
+had the SHA-256 file hashes recorded above in that clone. None of these
+commands depended on files present only in this working copy.
+
 ## Remaining limits
 
 Stated plainly, so the endpoints that do exist do not imply more than they should:
