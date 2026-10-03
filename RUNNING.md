@@ -156,7 +156,7 @@ a genuine cross-check rather than the code agreeing with itself.
 | `tools/seed` | Key generation, device enrolment, and a custody walkthrough driven through the real engine |
 | `tools/label-print` | Prints a packet's two-code seam label and signs its sealing |
 | `tools/seal-lock-command` | Signs a short-lived UART command after a recorded, granted unlock attempt; requires migration 010 |
-| `tools/e2e` | End-to-end checks against a real Postgres: `transfer.mjs`, `seal.mjs`, `sweeps.mjs`, `doors.mjs`, `opening.mjs`, `gateway.mjs`, `device-seq.mjs`, `public-scan.mjs`, `journey.mjs`, `attestation.mjs` |
+| `tools/e2e` | End-to-end checks against a real Postgres: `transfer.mjs`, `seal.mjs`, `sweeps.mjs`, `doors.mjs`, `opening.mjs`, `gateway.mjs`, `device-seq.mjs`, `public-scan.mjs`, `journey.mjs`, `attestation.mjs`, `webauthn.mjs` |
 | `tools/run-gated` | `pnpm start`: the access engine and ledger on loopback with the gateway in front, as one command |
 
 ## Sealing a packet
@@ -296,9 +296,12 @@ E2E_OWNER_URL=postgres://mohar_migrator:dev_only_password@localhost:5432/mohar n
 E2E_OWNER_URL=postgres://mohar_migrator:dev_only_password@localhost:5432/mohar node tools/e2e/opening.mjs
 ```
 
-All five run the built ledger code inside one transaction and roll it back, so
-they are safe to point at the development database. `transfer.mjs` commits, and
-needs a throwaway one. `gateway.mjs` starts the built gateway in front of the
+`transfer.mjs` and `webauthn.mjs` use the same `E2E_OWNER_URL` command pattern.
+These seven scripts run the built ledger code inside one outer transaction and roll it
+back, so they are safe to point at the development database. `transfer.mjs` also
+checks that it left no rows; its app-role privilege check needs `E2E_APP_URL`
+and is skipped with a stated reason when that variable is absent. `gateway.mjs`
+starts the built gateway in front of the
 ledger's routes on two loopback ports and calls it over HTTP: the three routes
 that were open, a device-signed hand-off step reaching the hand-off engine, a
 replay, a revoked device, a stream ticket, and the sign-in limit. `opening.mjs` needs the internet and takes about half a
@@ -418,6 +421,12 @@ outside this working tree passed `pnpm install --frozen-lockfile`, `pnpm build`
 files and stayed clean after these commands. Both checked-in Android root PEMs
 had the SHA-256 file hashes recorded above in that clone. None of these
 commands depended on files present only in this working copy.
+
+After the phone-unlock work and its follow-up, a second fresh clone of commit
+`25c2fb1` passed frozen install, build (9/9 tasks, no cached build), typecheck
+(12/12 tasks) and all 350 unit tests. `tools/e2e/webauthn.mjs` passed 17/17
+against local Postgres, including credential replacement and a final check that
+the rolled-back test left nothing in the database.
 
 ## Field app phone unlock proof
 
