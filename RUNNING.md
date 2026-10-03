@@ -453,14 +453,24 @@ origins separated by commas, but there is one RP ID, and a credential made
 under one RP ID does not work under another: the Netlify deploy preview and the
 production site are different domains, so only one of them can be the field
 app's home at a time. Migration `016_webauthn_challenge.sql` was applied to
-local Postgres on Oct 3, 2026; it has **not** been applied to Neon.
+local Postgres and production Neon `neondb` on Oct 3, 2026. In Neon's SQL
+Editor, `neondb_owner` applied it in a transaction. `public.schema_migrations`
+records SHA-256 `09d7130605e8fcf751f8282c5437a9454b8548a5a1fc4140512dc4bd1463fec1`,
+matching the checked-in file. `ref.webauthn_challenge` exists with three CHECK
+constraints (purpose, step, and register/transfer field binding), the
+`(person_id, issued_at DESC)` index, and `mohar_app` has SELECT, INSERT and
+UPDATE on it.
 
-**Until both are done on the deployment, a real phone cannot be enrolled
-there.** Almost every phone has a platform authenticator, so the field app
-will try to register one at enrolment, and the enrolment stops if that fails:
-without migration 016 the challenge cannot be stored, and without
-`WEBAUTHN_RP_ID` and `WEBAUTHN_ORIGIN` set to the deployed domain the phone's
-answer is for the wrong origin. A desktop with no authenticator is unaffected.
+Render `mohar` now has `WEBAUTHN_RP_ID=deploy-preview-1--moharsih.netlify.app`
+and `WEBAUTHN_ORIGIN=https://deploy-preview-1--moharsih.netlify.app`. Deploy
+`dep-db0kdlmgekts73a3gndg` of commit `12d2134` became Live on Oct 3, 2026;
+the preview `/api/health` then returned HTTP 200 with `ok:true`. The preview's
+field bundle contains the replacement checkbox and WebAuthn registration route.
+These checks remove the known schema and origin blockers, but do not prove that
+enrolment works on a phone. A credential registered on this preview RP ID will
+not work on `moharsih.netlify.app`. When production resumes under that domain,
+the RP ID must change and each phone must re-enrol with the operator's
+"replace" checkbox. A desktop with no authenticator remains in simulated mode.
 
 A person has one credential. An operator can replace it at enrolment by
 ticking "Replace the phone unlock already registered for this person": for a
@@ -477,8 +487,14 @@ person who has a credential.
 The verifier passed fixed-vector unit checks and the rollback
 `tools/e2e/webauthn.mjs` passed 17/17 checks: registration, one granted
 dispatch, replay refusal, a missing-assertion refusal and a recorded
-replacement, with a software-made authenticator. No real phone, fingerprint,
-face unlock or platform PIN has been exercised.
+replacement, with a software-made authenticator. No physical phone was available
+to this agent on Oct 3, 2026: phone model, OS, browser and unlock method are
+unrecorded. The phone checks remain **not seen**: (a) enrolment and its unlock
+prompt, (b) QR scans and dispatch, (c) wrong/right serial receive and confirm
+on a second phone, (d) cancelled prompt and control-room refusal, (e) credential
+replacement and its alert, and (f) Hindi during a held key and offline scan
+upload. There is no phone-tested leg ID or chain event ID to report. The
+`TODO(claim-24)` stays until the reconnect upload is observed on a real phone.
 
 ## Remaining limits
 
