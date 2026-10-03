@@ -359,6 +359,8 @@ async function record() {
     kind: "SCAN_OBSERVED", payload: { scanType: "qr", rawIdentifier: raw, photoSha256: digest } };
   const signature = await crypto.subtle.sign("Ed25519", key, Uint8Array.from(canonicalBytes(body)));
   await put("photos", { file: photo, sha256: digest, eventId: id, storedAt: new Date().toISOString() }, id);
+  // TODO(claim-24): Signed records queue in IndexedDB and retry on reconnect,
+  // but this offline/upload path has not been exercised on a real phone.
   await put("queue", { id, signed: { body, deviceSig: hex(signature) } } satisfies Queued);
   label("photo-status").textContent = t("photo_kept", { hash: digest });
   input("raw").value = ""; input("qr").value = ""; input("photo").value = "";
