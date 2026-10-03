@@ -415,9 +415,18 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   still the enrolling operator's word. No chain from a real handset has been
   put to the verifier; the chains in `attestation.test.ts` and
   `tools/e2e/attestation.mjs` (28 checks, Oct 3, 2026) are built by a fixture
-  in the shape Android produces. Whether `infra/attestation` holds the
-  vendor's real roots has not been checked. Outstanding challenges are held in
-  memory and lost on a restart. See `adr/0003`.
+  in the shape Android produces. `infra/attestation` contains exactly two
+  phone roots, fetched on Oct 3, 2026 from Google's published Android
+  attestation root feed, https://android.googleapis.com/attestation/root:
+  `google-android-attestation-2022.pem` (file SHA-256
+  `25c0e389777a2f3bfc5f6e812862fb15af76162fa7ee6b46d100e9d5b5738667`)
+  and `google-android-attestation-2025.pem` (file SHA-256
+  `979d0f7fba6c2e28cc05a5d67e8f21f705b90379291cbc80291eb224cc11586b`).
+  `infra/attestation/tpm` contains no TPM maker root PEMs; a presented TPM
+  chain therefore cannot pass root trust until maker-published roots are
+  installed. The phone roots do not establish that any real handset has been
+  tested. Outstanding challenges are held in memory and lost on a restart.
+  See `adr/0003`.
 - **A centre PC can present a TPM quote, and it proves less than it sounds.**
   A TPM does not hold Ed25519 keys, so the key a PC enrols with is never
   inside its TPM. What is checked is a quote: the TPM's attestation key,
