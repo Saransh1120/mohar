@@ -1,4 +1,5 @@
 #include "mohar_event.h"
+#include <Preferences.h>
 
 namespace mohar {
 
@@ -114,13 +115,33 @@ String signedEvent(const Identity &id, const char *kind, const char *occurredAt,
                    const char *actorPersonId, const char *packageIdOverride) {
   const char *pkg = packageIdOverride ? packageIdOverride : id.packageId;
 
+  // Reserve the number in NVS before signing. A reset may leave a gap, which
+  // is honest evidence; reusing a number after reboot would conceal it.
+  Preferences seqStore;
+  if (!seqStore.begin("moharseq", false)) return String();
+  if (seqStore.getString("device", "") != id.deviceId) {
+    if (seqStore.putString("device", id.deviceId) == 0 ||
+        seqStore.putULong64("next", 0) != sizeof(uint64_t)) {
+      seqStore.end();
+      return String();
+    }
+  }
+  const uint64_t next = seqStore.getULong64("next", 0) + 1;
+  if (next > 9007199254740991ULL ||
+      seqStore.putULong64("next", next) != sizeof(uint64_t)) {
+    seqStore.end();
+    return String();
+  }
+  seqStore.end();
+
   // Envelope keys in ascending ASCII order:
-  //   actorDeviceId, actorPersonId, centreId, examId, id, kind, occurredAt,
+  //   actorDeviceId, actorPersonId, centreId, deviceSeq, examId, id, kind, occurredAt,
   //   packageId, payload, v
   JsonWriter b;
   b.str("actorDeviceId", id.deviceId);
   if (actorPersonId && actorPersonId[0]) b.str("actorPersonId", actorPersonId);
   if (id.centreId[0]) b.str("centreId", id.centreId);
+  b.num("deviceSeq", static_cast<long long>(next));
   b.str("examId", id.examId);
   b.str("id", eventId);
   b.str("kind", kind);

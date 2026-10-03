@@ -4,7 +4,9 @@
 
 ## Context
 
-The custody record must be tamper-evident and admissible in court. "Blockchain"
+The custody record must be tamper-evident and something investigators can work
+from. Whether it is accepted as evidence under the Bharatiya Sakshya Adhiniyam
+2023 has not been checked by a lawyer and is not claimed. "Blockchain"
 is the reflexive answer and would be well received by some audiences.
 
 ## Decision

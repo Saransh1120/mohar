@@ -243,3 +243,13 @@
   border-color: var(--accent);
   color: var(--text);
 }
+
+/* Light theme: the dark glow and the dark hover were written by value. */
+:root[data-theme="light"] .auth-page {
+  background:
+    radial-gradient(1100px 520px at 50% -10%, #e6ebf2 0%, transparent 70%),
+    var(--bg);
+}
+:root[data-theme="light"] .auth-submit:hover:not(:disabled) {
+  background: #d6e3ef;
+}

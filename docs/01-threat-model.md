@@ -26,7 +26,9 @@ hostile*, including the platform operator.
 
 ## What each lock actually defeats
 
-- **Threshold split (Shamir 3-of-4)** — defeats A7 and any single institution.
+- **Opening key split (control room part + Shamir 2-of-3 across three
+  officials)** — defeats A7 and any single institution. Two officials must come
+  from two different institutions, and the control room's part cannot be left out.
 - **Timelock (drand/tlock)** — defeats early release as a *human decision*. The
   key does not exist before the beacon round, so no one can be bribed for it.
 - **TPM-bound device identity** — raises the cost of copying the decrypted PDF but

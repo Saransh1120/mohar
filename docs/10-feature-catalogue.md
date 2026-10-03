@@ -20,7 +20,7 @@ Ordered by security value per unit of effort, not by how impressive they sound.
 
 | # | Feature | Phase | Notes |
 | --- | --- | --- | --- |
-| S1 | Shamir 3-of-4 content-key split | M | Removes the operator as a single point |
+| S1 | Opening key split: control room part + Shamir 2-of-3 across three officials | M | Removes the operator as a single point; needs two institutions |
 | S2 | tlock encryption to a drand round | M | Early release stops being a human decision |
 | S3 | Two-person co-presence via WebAuthn platform authenticators | M | Windows Hello / Android biometrics; nothing purchased |
 | S4 | Dual-authorised out-of-band fallback | M | The weakest link; measured and published |

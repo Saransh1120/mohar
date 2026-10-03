@@ -305,8 +305,8 @@ export default function FailedAttempts() {
               </>
             ) : (
               <div className="wit-note">
-                Enrolled as <code>{identity.deviceId.slice(0, 8)}</code>. The private key is in
-                this browser's local storage and is not TPM-bound — a demonstration
+                Enrolled as <code>{identity.deviceId.slice(0, 8)}</code>. The private key is held
+                by this browser as a non-extractable key and is not TPM-bound — a demonstration
                 credential, as <code>adr/0003</code> records.
               </div>
             )}

@@ -275,10 +275,22 @@ export function registerRoutes(app: FastifyInstance, pool: Pool): void {
   app.post<{ Body: { day?: string } }>("/anchors/build", async (req, reply) => {
     const day =
       req.body?.day ?? new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return reply.code(400).send({ error: "day must be YYYY-MM-DD" });
     const result = await buildAnchor(pool, day);
     if (!result) return reply.code(200).send({ day, treeSize: 0, note: "no events" });
     return reply.code(201).send(result);
   });
+
+  /**
+   * Liveness only: answers without touching the database.
+   *
+   * For an uptime pinger that keeps a sleeping host awake. `/health` reads the
+   * chain tip, so pinging it every few minutes also keeps a serverless database
+   * from ever scaling to zero — and on a free plan that spends the month's
+   * compute allowance on nothing. This proves the process is up; `/health`
+   * still proves the ledger can reach its chain.
+   */
+  app.get("/ping", async (_req, reply) => reply.send({ ok: true }));
 
   app.get("/health", async (_req, reply) => {
     const { rows } = await pool.query<{ seq: string; hash: Buffer }>(

@@ -474,7 +474,7 @@ These belong in the pitch as much as in the source.
 
 - **ESP32 flash is readable.** An attacker with physical access and patience can
   extract the per-device private key and forge records. These devices are
-  tamper-evident, not tamper-proof. Move the key into NVS with flash encryption
+  tamper-evident, not tamper-resistant. Move the key into NVS with flash encryption
   and secure boot before any real deployment — that raises the cost of
   extraction without changing a line of the firmware.
 - **Optical fingerprint readers are spoofable** with a lifted print and gelatin.

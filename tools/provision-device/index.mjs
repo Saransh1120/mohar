@@ -21,9 +21,14 @@
  * go wrong on the morning of a deployment.
  */
 
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 
 const LEDGER = process.env["LEDGER_URL"] ?? "http://localhost:8081";
+const SESSION_TOKEN = process.env["MOHAR_SESSION_TOKEN"];
+const authHeaders = () => SESSION_TOKEN ? { authorization: `Bearer ${SESSION_TOKEN}` } : {};
+// The address the control room is opened at. The station grants its browser
+// access to that origin and no other.
+const CONTROL_ROOM_ORIGIN = (process.env["CONTROL_ROOM_ORIGIN"] ?? "http://localhost:5173").replace(/\/+$/, "");
 
 // ── arguments ───────────────────────────────────────────────────────────────
 
@@ -37,10 +42,17 @@ for (let i = 2; i < process.argv.length; i += 2) {
 const kind = args.get("kind") ?? "monitor";
 const centreCode = args.get("centre");
 const examName = args.get("exam");
+const sketch = args.get("sketch") ?? "standard";
+const packageId = args.get("package");
+const authorityKey = process.env["SEAL_LOCK_AUTHORITY_PUBLIC_KEY_HEX"];
 
 if (!["monitor", "field", "centre_pc", "service"].includes(kind)) {
   console.error(`--kind must be one of monitor, field, centre_pc, service (got "${kind}")`);
   process.exit(1);
+}
+if (sketch !== "standard" && sketch !== "seal") throw new Error("--sketch must be standard or seal");
+if (sketch === "seal" && (!/^[0-9a-f-]{36}$/i.test(packageId ?? "") || !/^[0-9a-f]{64}$/i.test(authorityKey ?? ""))) {
+  throw new Error("seal provisioning needs --package UUID and SEAL_LOCK_AUTHORITY_PUBLIC_KEY_HEX");
 }
 
 // ── keys ────────────────────────────────────────────────────────────────────
@@ -72,7 +84,7 @@ function ed25519Keypair() {
 // ── ledger ──────────────────────────────────────────────────────────────────
 
 async function get(path) {
-  const res = await fetch(`${LEDGER}${path}`);
+  const res = await fetch(`${LEDGER}${path}`, { headers: authHeaders() });
   if (!res.ok) throw new Error(`GET ${path} → ${res.status} ${await res.text()}`);
   return res.json();
 }
@@ -103,7 +115,7 @@ async function resolveExam() {
 async function enrol(pubkeyHex, centreId) {
   const res = await fetch(`${LEDGER}/devices`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...authHeaders() },
     body: JSON.stringify({ kind, pubkeyHex, ...(centreId ? { centreId } : {}) }),
   });
   const body = await res.json();
@@ -129,15 +141,30 @@ function printBlock({ device, keys, centre, exam }) {
   const line = "─".repeat(74);
   console.log();
   console.log(line);
-  console.log("  Paste into src/monitor_config.h or src/station_config.h");
+  console.log(sketch === "seal" ? "  Paste into SealLock/seal_config.h" : "  Paste into src/monitor_config.h or src/station_config.h");
   console.log(line);
   console.log();
-  console.log(`#define DEVICE_ID       "${device.id}"`);
-  console.log(`#define DEVICE_PRIVKEY  "${keys.privateKeyHex}"`);
-  console.log(`#define DEVICE_PUBKEY   "${keys.publicKeyHex}"`);
-  console.log();
-  console.log(`#define EXAM_ID         "${exam?.id ?? NIL}"`);
-  console.log(`#define CENTRE_ID       "${centre?.id ?? NIL}"`);
+  if (sketch === "seal") {
+    console.log(`#define DEVICE_ID "${device.id}"`);
+    console.log(`#define DEVICE_PRIVATE_KEY_HEX "${keys.privateKeyHex}"`);
+    console.log(`#define DEVICE_PUBLIC_KEY_HEX "${keys.publicKeyHex}"`);
+    console.log(`#define EXAM_ID "${exam?.id ?? NIL}"`);
+    console.log(`#define CENTRE_ID "${centre?.id ?? NIL}"`);
+    console.log(`#define PACKAGE_ID "${packageId}"`);
+    console.log(`#define AUTHORITY_PUBLIC_KEY_HEX "${authorityKey}"`);
+  } else {
+    console.log(`#define DEVICE_ID       "${device.id}"`);
+    console.log(`#define DEVICE_PRIVKEY  "${keys.privateKeyHex}"`);
+    console.log(`#define DEVICE_PUBKEY   "${keys.publicKeyHex}"`);
+    console.log();
+    console.log(`#define EXAM_ID         "${exam?.id ?? NIL}"`);
+    console.log(`#define CENTRE_ID       "${centre?.id ?? NIL}"`);
+    console.log();
+    // Only the witness station serves HTTP, but the token is printed for every
+    // board: a header that defines it and never reads it costs nothing.
+    console.log(`#define STATION_TOKEN   "${randomBytes(16).toString("hex")}"`);
+    console.log(`#define CONTROL_ROOM_ORIGIN "${CONTROL_ROOM_ORIGIN}"`);
+  }
   console.log();
   console.log(line);
   console.log();
@@ -146,6 +173,8 @@ function printBlock({ device, keys, centre, exam }) {
   console.log(`  centre      ${centre ? `${centre.code} (${centre.name ?? ""})` : "not bound"}`);
   console.log(`  ledger      ${LEDGER}`);
   console.log();
+  console.log("  The station token is what the control room sends with every request to");
+  console.log("  this board. Enter it on the Slots page when you pair the station.");
   console.log("  The private key is printed once and is not stored anywhere.");
   console.log("  Copy it now. To retire this device:");
   console.log(`    curl -X POST ${LEDGER}/devices/${device.id}/revoke`);

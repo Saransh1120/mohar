@@ -50,7 +50,7 @@ void Spool::loadCursor() {
 void Spool::saveCursor() {
   File f = fs_->open(cursorFile_, FILE_WRITE);
   if (!f) return;
-  f.printf("%s %u\n", curDay_.c_str(), curOff_);
+  f.printf("%s %lu\n", curDay_.c_str(), static_cast<unsigned long>(curOff_));
   f.close();
 }
 
@@ -77,8 +77,8 @@ bool Spool::append(const char *isoDate, const String &line) {
     if (ramQueue_.size() >= ramCap_) {
       ramQueue_.erase(ramQueue_.begin());
       dropped_++;
-      Serial.printf("[mohar] RAM buffer full — dropped the oldest record (%u lost)\n",
-                    dropped_);
+      Serial.printf("[mohar] RAM buffer full — dropped the oldest record (%lu lost)\n",
+                    static_cast<unsigned long>(dropped_));
     } else {
       pending_++;
     }

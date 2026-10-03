@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api } from "./lib/api";
 import { useAuth } from "./lib/auth";
@@ -8,13 +9,22 @@ import PackageDetail from "./pages/PackageDetail";
 import Activity from "./pages/Activity";
 import Witness from "./pages/Witness";
 import NoAuth from "./pages/NoAuth";
+import StrongRooms from "./pages/StrongRooms";
+import Rosters from "./pages/Rosters";
+import Ceremonies from "./pages/Ceremonies";
+import Overrides from "./pages/Overrides";
 import SlotRegistry from "./pages/SlotRegistry";
 import Keys from "./pages/Keys";
 import Devices from "./pages/Devices";
+import Accounts from "./pages/Accounts";
 import Integrity from "./pages/Integrity";
 import FailedAttempts from "./pages/FailedAttempts";
 import LiveDemo from "./pages/LiveDemo";
+import Transfers from "./pages/Transfers";
+import Alerts from "./pages/Alerts";
 import { EvidenceProvider } from "./lib/evidence";
+import { DemoTour } from "./components/DemoTour";
+import { DemoRunOverlay } from "./components/DemoRun";
 
 const PAGES: Record<string, { title: string; sub: string }> = {
   "/": {
@@ -51,9 +61,37 @@ const PAGES: Record<string, { title: string; sub: string }> = {
     title: "Custody keys",
     sub: "Stage-scoped keys, valid for one six-hour epoch and no longer",
   },
+  "/transfers": {
+    title: "Hand-offs",
+    sub: "Every leg of every packet's journey, and every attempt the hand-off engine ruled on",
+  },
+  "/alerts": {
+    title: "Alerts",
+    sub: "What happened, what was known when it was raised, and who has acknowledged it",
+  },
+  "/strongrooms": {
+    title: "Strong rooms",
+    sub: "Who is inside, every visit against the time it was expected to take, and every attempt at the door",
+  },
+  "/rosters": {
+    title: "Duty rosters",
+    sub: "The three officials at each centre, and the keys issued the moment the list is locked",
+  },
+  "/ceremonies": {
+    title: "Opening ceremonies",
+    sub: "Scan, two officials, the serial, and a key that cannot exist before its minute",
+  },
+  "/overrides": {
+    title: "Override approval",
+    sub: "Labels that would not scan: two operators decide each one, and how often it happens is counted",
+  },
   "/devices": {
     title: "Devices",
     sub: "Enrolled signing keys. Revoking one invalidates nothing it already signed",
+  },
+  "/accounts": {
+    title: "Accounts",
+    sub: "Who can sign in, who created them, and what the gateway refused before it reached an engine",
   },
   "/demo": {
     title: "Live demonstration",
@@ -72,6 +110,10 @@ export default function App() {
   const { data: health } = useAsync(() => api.health(), [], { pollMs: 10_000 });
   const { data: summary } = useAsync(() => api.summary(), [], { pollMs: 10_000 });
   const { data: epoch } = useAsync(() => api.epoch(), [], { pollMs: 30_000 });
+  const { data: alertSummary } = useAsync(() => api.alertSummary(), [], { pollMs: 10_000 });
+  const [theme, setTheme] = useState<"light" | "dark">(() =>
+    document.documentElement.dataset["theme"] === "light" ? "light" : "dark",
+  );
 
   const page =
     PAGES[pathname] ??
@@ -107,7 +149,18 @@ export default function App() {
             Packages
             {packageCount > 0 && <span className="nav-count">{packageCount}</span>}
           </NavLink>
-          <NavLink to="/witness">Ceremony</NavLink>
+          <NavLink to="/transfers">Transfers</NavLink>
+          <NavLink to="/alerts">
+            Alerts
+            {(alertSummary?.unacknowledged ?? 0) > 0 && (
+              <span className="nav-count alert">{alertSummary?.unacknowledged}</span>
+            )}
+          </NavLink>
+          <NavLink to="/strongrooms">Strong rooms</NavLink>
+          <NavLink to="/rosters">Rosters</NavLink>
+          <NavLink to="/ceremonies">Ceremonies</NavLink>
+          <NavLink to="/overrides">Overrides</NavLink>
+          <NavLink to="/witness">Unlock</NavLink>
           <NavLink to="/slots">Slots</NavLink>
           <NavLink to="/activity">
             Activity
@@ -121,6 +174,7 @@ export default function App() {
             Devices
             {summary && <span className="nav-count">{summary.totals.active_devices}</span>}
           </NavLink>
+          <NavLink to="/accounts">Accounts</NavLink>
           <NavLink to="/integrity">Integrity</NavLink>
           <NavLink to="/demo">Live Demo</NavLink>
           <NavLink to="/failed">
@@ -145,6 +199,24 @@ export default function App() {
         )}
 
         <div className="sidebar-foot">
+          <button
+            className="who-out"
+            style={{ marginBottom: 10 }}
+            onClick={() => {
+              const next = theme === "light" ? "dark" : "light";
+              if (next === "light") document.documentElement.dataset["theme"] = "light";
+              else delete document.documentElement.dataset["theme"];
+              try {
+                localStorage.setItem("mohar.theme", next);
+              } catch {
+                /* the choice just won't survive a reload */
+              }
+              setTheme(next);
+            }}
+            aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
+          >
+            {theme === "light" ? "Dark theme" : "Light theme"}
+          </button>
           {epoch && (
             <div style={{ marginBottom: 8 }}>
               epoch {epoch.epoch}
@@ -184,11 +256,18 @@ export default function App() {
             <Route path="/workflow/:id" element={<PackageDetail />} />
             <Route path="/packages" element={<Packages />} />
             <Route path="/packages/:id" element={<PackageDetail />} />
+            <Route path="/transfers" element={<Transfers />} />
+            <Route path="/alerts" element={<Alerts />} />
+            <Route path="/strongrooms" element={<StrongRooms />} />
+            <Route path="/rosters" element={<Rosters />} />
+            <Route path="/ceremonies" element={<Ceremonies />} />
+            <Route path="/overrides" element={<Overrides />} />
             <Route path="/witness" element={<Witness />} />
             <Route path="/slots" element={<SlotRegistry />} />
             <Route path="/activity" element={<Activity />} />
             <Route path="/keys" element={<Keys />} />
             <Route path="/devices" element={<Devices />} />
+            <Route path="/accounts" element={<Accounts />} />
             <Route path="/integrity" element={<Integrity />} />
             <Route path="/failed" element={<FailedAttempts />} />
             <Route path="/demo" element={<LiveDemo />} />
@@ -200,6 +279,8 @@ export default function App() {
         </main>
       </div>
       </div>
+      <DemoTour />
+      <DemoRunOverlay />
     </EvidenceProvider>
   );
 }

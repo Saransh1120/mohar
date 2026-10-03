@@ -4,10 +4,22 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import App from "./App";
 import Landing from "./landing/Landing";
 import Auth from "./pages/Auth";
+import PublicVerify from "./pages/PublicVerify";
+import SeamLanding from "./pages/SeamLanding";
 import { AuthProvider, RequireSession } from "./lib/auth";
 import "leaflet/dist/leaflet.css";
 import "./styles.css";
 import "./auth.css";
+
+// Apply the saved theme before the first paint, so a light-theme user never
+// sees a flash of the dark one while React starts.
+try {
+  if (localStorage.getItem("mohar.theme") === "light") {
+    document.documentElement.dataset["theme"] = "light";
+  }
+} catch {
+  /* storage unavailable — dark, the default */
+}
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -21,6 +33,8 @@ createRoot(document.getElementById("root")!).render(
               cannot use yet is noise on the one screen that has a single job. */}
           <Route path="/signin" element={<Auth mode="signin" />} />
           <Route path="/signup" element={<Auth mode="signup" />} />
+          <Route path="/verify" element={<PublicVerify />} />
+          <Route path="/s" element={<SeamLanding />} />
 
           {/* Everything else is the control room, behind a session. */}
           <Route

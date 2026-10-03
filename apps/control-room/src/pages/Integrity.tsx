@@ -41,7 +41,7 @@ export default function Integrity() {
     <>
       <div className="note">
         Tamper-evidence here comes from a hash chain plus external RFC 3161 timestamping, not from
-        consensus — see <span className="mono">adr/0001-not-a-blockchain</span>. Verification
+        consensus — see <span className="mono">adr/0001</span>. Verification
         recomputes every link locally, so it detects any edit to history without trusting the
         service that serves it.
       </div>

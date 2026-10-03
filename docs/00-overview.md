@@ -10,8 +10,10 @@ to a court's standard, and no one can say which centre a leaked image came from.
 
 ## Build constraints
 
-Software-first. The only hardware we build is a simple ESP32 room monitor (door
-state, footfall, presence, light) costing under Rs 1,200. No paid or premium
+Software-first. The hardware we build is small and supporting: an ESP32 room
+monitor (door state, footfall, presence, light) at about Rs 1,250-1,450, and a
+fingerprint witness station for the exam centre. `06-hardware-spec.md` has the
+per-centre kit. No paid or premium
 dependency anywhere in the stack. `adr/0004-no-paid-dependencies.md` records
 every substitution and what each costs us in assurance.
 
@@ -53,6 +55,8 @@ and the due-diligence defence. We sell compliance infrastructure, not "security"
 - Eliminating leaks entirely. Not achievable; claiming it destroys credibility.
 - Item authoring / question banking (integrate, do not build).
 - AI behavioural proctoring — legally fraught under DPDP for under-18 candidates.
-- Blockchain. We need admissibility and third-party notarisation, not consensus.
+- A consensus network. There is one authority, the board; the record needs to be
+  tamper-evident and notarised by a third party, which an append-only hash chain
+  and an external timestamp give without one. See `adr/0001`.
 - Any hardware beyond the ESP32 room monitor: no latches, secure elements or PCBs.
 - Any dependency needing a paid tier: no cloud HSM, MDM, SMS gateway or Maps API.

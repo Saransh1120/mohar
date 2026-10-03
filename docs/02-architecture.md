@@ -31,6 +31,46 @@ Clients: control-room (web) - verify-portal (public) - centre-client (PC)
 
 ## Services
 
+### `gateway` — the one way in
+
+> **Implementation note.** Built, in front of `ledger` only: the other services
+> in the map do not exist as processes for it to front. It does not terminate
+> TLS and there is no mTLS behind it; the ledger is bound to loopback, or shares
+> a secret with the gateway. See `RUNNING.md`, "The gateway".
+
+For every request the gateway settles which route it is, who is asking, and how
+often, and forwards only if all three hold. The policy is one table, read top
+to bottom (`services/gateway/src/routes/policy.ts`); a route not in it is
+restricted, not open.
+
+There are three kinds of caller and each proves itself differently:
+
+- **An operator** holds a session: a random token whose SHA-256 is in
+  `ref.session`. The gateway asks the ledger whose it is. A role (`control_room`
+  against the rest) decides what the account may change.
+- **A device asking an engine for a ruling** signs the request: Ed25519, with
+  the key it was enrolled with, over the method, path, time, a nonce and the
+  hash of the body. A request that then names a different device in its body or
+  path is refused. This is what turns the `deviceId` an engine is handed from a
+  number anyone can type into the device that sent it.
+- **A device recording something** sends a signed event, and the signature on
+  the event is the credential. The room monitor needs nothing more than it
+  already sends.
+
+Bodies pass through as the bytes that arrived. A signature is over exact bytes
+or a canonical form, and a proxy that parsed and re-encoded JSON would break
+every one of them.
+
+The gateway decides who is asking and never whether the act is allowed. That
+stays with the engine, which records the attempt whichever way it rules. A
+request the gateway refuses never reached an engine, so it is in the gateway's
+own record instead, with what was found: the role held against the role needed,
+the skew in seconds, the limit that was hit.
+
+It holds no database credential. What it knows about an account or a device it
+asks the ledger for, so a compromised gateway can do what the ledger's API
+allows and nothing more.
+
 ### `ledger` — custody event store
 
 The spine. Append-only, hash-chained events. Every event carries the signature of
@@ -44,11 +84,16 @@ compromised service account must not be able to rewrite history.
 
 ### `sealkeys` — sealed package service
 
-Encrypts each centre's bundle. Generates a content key, splits it 3-of-4 by
-Shamir, then protects each share differently: one Argon2id passphrase-wrapped for
-the authority, one under `tlock` bound to the drand round for exam start, and two
-under WebAuthn platform authenticators held by the superintendent and the
-independent observer. Never holds a reconstructable key at rest.
+Encrypts each centre's bundle. Generates an opening key and splits it as
+`controlPart XOR fieldKey`: the control room's part is mandatory and goes under
+`tlock`, bound to the drand round fifteen minutes before exam start; `fieldKey`
+is split 2-of-3 by Shamir across the superintendent, the board observer and the
+police escort, and a pair from one institution does not reconstruct it. Never
+holds a reconstructable key at rest. See `03-crypto-design.md`.
+
+Not built as a service. The split (`opening-key.ts`) and the time lock
+(`timelock.ts`) exist in `crypto-core` and are tested; sealing a packet's seam
+label is `POST /packages/:id/seal` inside the ledger.
 
 ### `access` — package access policy engine
 
@@ -145,9 +190,9 @@ police"), because that is actionable in a way an adjective is not.
 - **Offline-first is a hard requirement, not a feature.** Any client may be
   disconnected for hours. All writes queue locally, are signed at creation time,
   and reconcile on sync. Clock skew is bounded and recorded, never trusted.
-- **Not a blockchain.** Hash chain plus external RFC 3161 timestamping plus
-  published roots gives tamper-evidence and admissibility without consensus
-  overhead — or the procurement scepticism the word attracts.
+- **An append-only hash chain, with no consensus network.** Hash chain plus
+  external RFC 3161 timestamping plus published roots gives tamper-evidence
+  without consensus overhead. See `adr/0001`.
 - **Deny-by-default.** Every access decision, every print, every share release
   starts from refusal and requires positive evidence to proceed.
 - **Free-tier only.** Self-hosted Postgres, public drand, free RFC 3161 TSA,

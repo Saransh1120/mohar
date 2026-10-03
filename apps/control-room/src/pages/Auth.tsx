@@ -8,9 +8,12 @@
  * The credential check behind this is real: the password is verified against a
  * scrypt hash in `ref.account`, a failure costs the same whether the username
  * exists or not, and a session is a random 256-bit token of which the server
- * keeps only the SHA-256. What it does not do is protect device enrolment or
- * event append — those still belong to the unbuilt `gateway` service, so the
- * note at the foot of this page stays until that lands.
+ * keeps only the SHA-256. The session it yields is what `services/gateway`
+ * checks before a request reaches the ledger; the note at the foot of the page
+ * says what that covers.
+ *
+ * Registration closes once the first account exists (unless the ledger was
+ * started with ALLOW_SIGNUP=true). Later accounts come from the Accounts page.
  */
 
 import { useEffect, useState, type FormEvent } from "react";
@@ -59,6 +62,9 @@ export default function Auth({ mode }: { mode: "signin" | "signup" }) {
   const firstAccount = isSignUp && config?.accounts === 0;
   const tooShort = isSignUp && password.length > 0 && password.length < 12;
   const mismatch = isSignUp && confirm.length > 0 && confirm !== password;
+  // The ledger would refuse the submission anyway; a form that cannot succeed
+  // is not offered.
+  const closed = isSignUp && config !== null && !config.signUpOpen;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -85,7 +91,7 @@ export default function Auth({ mode }: { mode: "signin" | "signup" }) {
         !(err instanceof ApiError) || err.status >= 500 || err.status === 0;
       setError(
         unreachable
-          ? "The ledger service is not responding. Start it (pnpm --filter @mohar/ledger start) and try again — it should be listening on :8081."
+          ? "The control room cannot reach its API on :8081. Start it (pnpm start: the gateway, with the ledger behind it) and try again."
           : err.message,
       );
       setPassword("");
@@ -109,14 +115,20 @@ export default function Auth({ mode }: { mode: "signin" | "signup" }) {
         <p className="auth-sub">
           {isSignUp
             ? firstAccount
-              ? "No accounts exist yet. The first one you create claims this control room."
-              : "An account identifies you in the control room. It does not grant custody keys — those are issued per stage, per package."
+              ? "No accounts exist yet. The first one you create claims this control room, as its operator, and registration closes behind it."
+              : config && !config.signUpOpen
+                ? "Registration is closed on this deployment. A control room operator creates accounts, on the Accounts page."
+                : "An account identifies you in the control room. It does not grant custody keys — those are issued per stage, per package."
             : "Twelve-hour session. Signing out ends it immediately, everywhere it was used."}
         </p>
 
         {error && <div className="auth-error">{error}</div>}
 
-        <form className="auth-form" onSubmit={(e) => void submit(e)}>
+        <form
+          className="auth-form"
+          style={closed ? { display: "none" } : undefined}
+          onSubmit={(e) => void submit(e)}
+        >
           <label htmlFor="username">Username</label>
           <input
             id="username"
@@ -144,14 +156,20 @@ export default function Auth({ mode }: { mode: "signin" | "signup" }) {
                 onChange={(e) => setDisplayName(e.target.value)}
               />
 
-              <label htmlFor="role">Role</label>
-              <select id="role" value={role} onChange={(e) => setRole(e.target.value)}>
-                {(config?.roles ?? ["control_room"]).map((r) => (
-                  <option key={r} value={r}>
-                    {ROLE_LABELS[r] ?? r}
-                  </option>
-                ))}
-              </select>
+              {/* The first account is the operator whatever is chosen, so the
+                  chooser is not offered for it. */}
+              {!firstAccount && (
+                <>
+                  <label htmlFor="role">Role</label>
+                  <select id="role" value={role} onChange={(e) => setRole(e.target.value)}>
+                    {(config?.roles ?? ["control_room"]).map((r) => (
+                      <option key={r} value={r}>
+                        {ROLE_LABELS[r] ?? r}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
             </>
           )}
 
@@ -223,9 +241,10 @@ export default function Auth({ mode }: { mode: "signin" | "signup" }) {
         </div>
 
         <p className="auth-foot">
-          This covers the control room only. Device enrolment and event append are still
-          unauthenticated — they belong to the <code>gateway</code> service, which is not built.
-          Keep the ledger API bound to localhost until it is.
+          Signing in is what the <code>gateway</code> checks before a request reaches the ledger:
+          issuing a key or enrolling a device takes a control room operator's session, and an event
+          is accepted only with an enrolled device's signature. The ledger itself checks none of
+          this, so it stays bound to localhost behind the gateway.
         </p>
       </div>
     </div>

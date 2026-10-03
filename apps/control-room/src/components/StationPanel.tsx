@@ -5,10 +5,13 @@ import {
   station,
   loadStationUrl,
   saveStationUrl,
+  loadStationToken,
+  saveStationToken,
   normalise,
   enrolInstruction,
   type StationStatus,
 } from "../lib/station";
+import { USB_BASE, connectUsb, usbSupported, useUsbStation } from "../lib/usbStation";
 
 /**
  * Drive the fingerprint reader from here rather than from a serial console.
@@ -24,6 +27,7 @@ import {
  */
 export default function StationPanel({ onEnrolled }: { onEnrolled?: () => void }) {
   const [url, setUrl] = useState(() => loadStationUrl());
+  const [token, setToken] = useState(() => loadStationToken());
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<StationStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -121,8 +125,29 @@ export default function StationPanel({ onEnrolled }: { onEnrolled?: () => void }
     const base = normalise(url);
     if (!base) return;
     saveStationUrl(base);
+    saveStationToken(token);
     setUrl(base);
     void poll();
+  };
+
+  const usb = useUsbStation();
+  const onUsb = url === USB_BASE;
+
+  /**
+   * Plug the board in, pick its port, done. No address to find or type: the
+   * browser talks to the station over the cable and carries its records.
+   */
+  const connectOverUsb = async () => {
+    setError(null);
+    try {
+      await connectUsb();
+      saveStationUrl(USB_BASE);
+      setUrl(USB_BASE);
+    } catch (err) {
+      const e = err as Error;
+      // Closing the port picker without choosing is a choice, not a failure.
+      if (e.name !== "NotFoundError") setError(e.message);
+    }
   };
 
   const beginEnrol = async () => {
@@ -162,10 +187,41 @@ export default function StationPanel({ onEnrolled }: { onEnrolled?: () => void }
           onChange={(ev) => setUrl(ev.target.value)}
           onKeyDown={(ev) => ev.key === "Enter" && connect()}
         />
+        {!onUsb && (
+          <input
+            className="wit-select"
+            type="password"
+            autoComplete="off"
+            placeholder="station token — the STATION_TOKEN flashed onto the board"
+            value={token}
+            onChange={(ev) => setToken(ev.target.value)}
+            onKeyDown={(ev) => ev.key === "Enter" && connect()}
+          />
+        )}
         <button className="wit-btn" onClick={connect}>
           Connect
         </button>
+        {usbSupported() && (
+          <button className="wit-btn" onClick={() => void connectOverUsb()}>
+            Connect over USB
+          </button>
+        )}
       </div>
+
+      {onUsb && (
+        <div className="wit-note" style={{ marginTop: 8 }}>
+          {usb.connected
+            ? `Connected over USB${usb.deviceId ? ` · station ${usb.deviceId.slice(0, 8)}…` : ""} · ` +
+              `${usb.relayed} record(s) carried to the ledger` +
+              (usb.rejected ? ` · ${usb.rejected} refused by the ledger` : "")
+            : "USB is selected but not connected — plug the station in and press Connect over USB."}
+          {usb.halted && (
+            <div style={{ color: "var(--critical)", marginTop: 4 }}>
+              The station stopped at boot: {usb.halted}.
+            </div>
+          )}
+        </div>
+      )}
 
       {status && connected && (
         <div className="stn-state">

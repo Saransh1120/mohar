@@ -8,13 +8,14 @@ footfall direction and count (two VL53L0X ToF sensors in the doorway), and
 ambient light. Timestamps from a DS3231 RTC, buffers to microSD, syncs over
 Wi-Fi or - where the school has none - over BLE when the field app visits.
 
-Target bill of materials is under Rs 1,200 per unit.
+Estimated bill of materials is Rs 1,250-1,450 per unit; `docs/06-hardware-spec.md`
+has the parts list.
 
 Two firmware rules carry most of the value: a 30-second heartbeat, so that
 unplugging the device raises an alarm rather than going dark; and writing to SD
 *before* transmitting, so cutting power or jamming Wi-Fi cannot erase the record.
 
-Tamper-evident, not tamper-proof - ESP32 flash is readable and the per-device
+Tamper-evident, not tamper-resistant - ESP32 flash is readable and the per-device
 HMAC key is extractable by anyone with physical access and patience.
 
 Wiring, bring-up order and integration steps: `docs/12-hardware-build-guide.md`.

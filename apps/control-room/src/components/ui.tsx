@@ -103,12 +103,24 @@ export function Empty({ children }: { children: ReactNode }) {
   return <div className="empty">{children}</div>;
 }
 
+/**
+ * What to do about a failed request. A refusal from the gateway is not the
+ * ledger being down, and sending someone to the terminal for a 403 wastes the
+ * one line this note has.
+ */
+function errorHint(status: number | undefined): string {
+  if (status === 401) return "Your session has ended. Sign out and sign in again.";
+  if (status === 403) return "Your account's role is not permitted to do this.";
+  if (status === 429) return "The gateway is limiting how often this can be asked. Wait and it resumes.";
+  return "Check that the API is running on port 8081 (pnpm start: the gateway, with the ledger behind it).";
+}
+
 export function ErrorNote({ error }: { error: Error }) {
   return (
     <div className="banner">
       {error.message}
       <div style={{ fontSize: 12, marginTop: 4, opacity: 0.85 }}>
-        Check that the ledger service is running on port 8081.
+        {errorHint((error as { status?: number }).status)}
       </div>
     </div>
   );

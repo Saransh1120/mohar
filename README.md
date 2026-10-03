@@ -3,15 +3,16 @@
 A tamper-evident, time-locked custody and distribution system for competitive and
 government examination papers.
 
-**Design goals** (see `docs/00-overview.md` for why these and not "100% leak-proof"):
+**Design goals** (see `docs/00-overview.md` for why these and not "a paper that can never leak"):
 
 1. Collapse the **exposure window** — the time a paper exists in readable form —
    from ~240 hours to under one hour.
 2. Make every leak **attributable** to a centre, and where possible a seat,
    within minutes of an image surfacing.
-3. Produce a **court-admissible** custody record, because India's exam-fraud
-   problem is an evidentiary failure (148 cases since 2015, one conviction)
-   more than a detection failure.
+3. Produce a **custody record investigators can work from**, because India's
+   exam-fraud problem is an evidentiary failure (148 cases since 2015, one
+   conviction) more than a detection failure. Whether the record is accepted
+   as evidence in court has not been checked by a lawyer and is not claimed.
 
 **Non-goal:** eliminating leaks entirely. A paper must be readable by humans at
 several points in its life. We shrink and instrument those points; we do not
@@ -23,11 +24,11 @@ pretend to remove them.
 | --- | --- |
 | `docs/` | Architecture, threat model, crypto design, data model, runbooks |
 | `services/` | Backend services (TypeScript / Fastify / Postgres) |
-| `apps/` | Control room, verify portal, centre client, Android field app |
+| `apps/` | Control room (with the public `/verify` page) and the courier field app |
 | `packages/` | Shared contracts, crypto primitives, ledger client, UI kit |
-| `firmware/` | ESP32 room-monitor firmware — the only hardware we build |
+| `firmware/` | ESP32 sketches: room monitor, witness station, seal lock |
 | `infra/` | Docker compose, SQL migrations, Terraform, attestation roots |
-| `tools/` | Exam simulator, seed data, chaos-drill harness |
+| `tools/` | Seed data, label printing and sealing, device provisioning, end-to-end checks |
 | `tests/` | End-to-end, load, and shared fixtures |
 
 ## Quick start
@@ -39,9 +40,9 @@ pnpm install
 pnpm build
 MIGRATE_DATABASE_URL=postgres://mohar_migrator:dev_only_password@localhost:5432/mohar pnpm migrate
 
-# terminal 1 — the ledger and access engine
+# terminal 1 — the gateway on :8081, with the ledger and access engine behind it on loopback
 DATABASE_URL=postgres://mohar_app:change_me_in_deployment@localhost:5432/mohar \
-  node services/ledger/dist/index.js
+  pnpm start
 
 # terminal 2 — seed a pilot exam (optional; the UI is empty without it)
 node tools/seed/dist/index.js
@@ -54,13 +55,43 @@ pnpm --filter @mohar/control-room dev
 
 Working: the hash-chained ledger, device enrolment, the custody projection, the
 deny-by-default access engine with six-hourly stage keys, Merkle anchoring, and
-the control-room UI. The seed tool drives five centres through the real engine —
-it presents credentials and accepts whatever the engine rules, rather than
-asserting outcomes.
+the control-room UI. On top of that: sealing a packet with a two-code seam label
+(`tools/label-print` and `POST /packages/:id/seal`), the hand-off engine
+(dispatch, receive, confirm, with a Transfer Key per leg), the strong room door
+(two verified people, every entry and exit recorded), the damaged-label override
+(two operators approve it, each over a video call with the officer's phone
+that the ledger sets up and records, without seeing or keeping the picture),
+roster lock and the opening ceremony (the control
+room's part time-locked to drand, two officials' shares wrapped to the station;
+a roster re-issue when an official changes; an opening with no link to the ledger,
+reported and ruled on afterwards),
+the watchdog that raises a late hand-off, an unopened packet, an overlong visit
+or an unfinished opening, and alerts sent out by Telegram and email. What those
+engines rule goes on the chain as events the ledger signs with its own service
+key, next to what the devices signed, and `tools/e2e/journey.mjs` walks one
+packet from the press to the exam hall and checks the chain afterwards. A gateway
+stands in front of all of it: operator sessions, device signatures and rate
+limits, with the ledger and the access engine on loopback behind it. Each day's
+Merkle root is sent to an RFC 3161 timestamp authority, and `/verify` is a
+public page that checks a record's inclusion proof in the browser. The seed
+tool drives five centres through the real engine — it presents credentials and
+accepts whatever the engine rules, rather than asserting outcomes.
 
-Not built: `sealkeys`, `render`, `trace`, `notify`, `gateway`, and all clients
-except the control room. **There is no authentication anywhere** — `gateway` owns
-that and does not exist, so nothing here may be exposed beyond localhost.
+Written and not yet run on hardware: the seal lock firmware, and the witness
+station's token check. A courier phone app (`apps/field-app`) records signed
+scans and can report a damaged label; it does not do hand-offs yet.
+
+Not built: the opening on the ESP32 station (a paired browser stands in for
+it), and `sealkeys`,
+`unlock`, `notify`, `render` and `trace` as services of their own — what exists
+of the first three runs inside `ledger`. An Android Keystore attestation is
+checked at enrolment when a device presents one, and a chain that fails enrols
+nothing; a centre PC can present a TPM quote, which shows a TPM vouched for
+the key and not that the key is inside it. Nothing here produces either yet
+(the field app is a web page, there is no centre PC client), and neither has
+been tried against real hardware.
+The ledger checks no credential itself, so it is only ever run behind the
+gateway.
 
 [RUNNING.md](RUNNING.md) carries the honest list of gaps. See
 `docs/09-mvp-plan.md` for the 12-week build order.
@@ -71,8 +102,9 @@ Three constraints shape every decision in `docs/`:
 
 1. **Software-first.** The system is software; hardware is a small supporting
    element, never the centre of a design.
-2. **Simple ESP32 hardware only.** One room monitor under Rs 1,200 for door
-   state, footfall and presence. No custom PCBs, secure elements or latches.
+2. **Simple ESP32 hardware only.** A room monitor (about Rs 1,250-1,450) for
+   door state, footfall and presence, and a fingerprint witness station. No
+   custom PCBs or secure elements. The per-centre kit is in `docs/06`.
 3. **No paid or premium dependencies.** Self-hosted Postgres, the public drand
    beacon, a free RFC 3161 timestamp authority, OpenStreetMap tiles, WebAuthn
    platform authenticators, Android Keystore attestation.

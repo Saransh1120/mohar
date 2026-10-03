@@ -1,0 +1,34 @@
+# Netlify builds and serves the control room only.
+#
+# The ledger service and its PostgreSQL database are not hosted here, so the
+# landing page renders and every page that needs the ledger says it cannot
+# reach it. Point /api at a deployed ledger (below) to make them work.
+
+[build]
+  # The control room imports @mohar/contracts and @mohar/crypto-core from the
+  # workspace; the trailing "..." builds those first.
+  command = "pnpm turbo run build --filter=@mohar/control-room... && pnpm --filter @mohar/field-app build"
+  publish = "apps/control-room/dist"
+
+[build.environment]
+  NODE_VERSION = "24"
+
+# The deployed ledger, on Render. Must stay above the catch-all below, which
+# would otherwise answer /api too — Netlify checks these in file order.
+[[redirects]]
+  from = "/api/*"
+  to = "https://mohar-vc4s.onrender.com/:splat"
+  status = 200
+  force = true
+
+# A single-page app: every path is served index.html and the router takes over.
+# Without this, /signin or /demo opened directly returns Netlify's 404.
+[[redirects]]
+  from = "/field"
+  to = "/field/"
+  status = 301
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

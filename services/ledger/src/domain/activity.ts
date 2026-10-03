@@ -128,6 +128,27 @@ const EVENT_MEANING: Record<string, EventMeaning> = {
     requiresDecision: true,
     consequence: "Someone had to work around the system. Read the detail and decide whether it recurs.",
   },
+  // What the engines ruled, signed by the ledger. Where one of these needs a
+  // decision, the engine raised an alert for it; the event is the record.
+  HANDOVER_INITIATED: { act: "Hand-off opened by the sender" },
+  HANDOVER_COMPLETED: { act: "Hand-off completed" },
+  HANDOVER_REFUSED: { act: "Hand-off step refused" },
+  LEG_OVERDUE: { act: "Hand-off not completed by its expected time" },
+  STRONGROOM_ENTRY: { act: "Two people let into the strong room" },
+  STRONGROOM_EXIT: { act: "Strong room visit closed" },
+  DWELL_EXCEEDED: { act: "Strong room visit ran past its limit" },
+  FOOTFALL_MISMATCH: { act: "Room monitor counted more people than the door admitted" },
+  SHARES_REWRAPPED: { act: "Officials' shares wrapped to the centre's station" },
+  CONTROL_ENVELOPE_ISSUED: { act: "Control room's part time-locked for the opening" },
+  OPEN_CEREMONY: { act: "Opening key released to two officials" },
+  PACKET_OPENED: { act: "Packet opened" },
+  CEREMONY_INCOMPLETE: { act: "Opening not finished by the scheduled time" },
+  PACKET_UNOPENED_OVERDUE: { act: "Packet not opened by its opening time" },
+  SEAM_DECODE_FAILED: { act: "Seam label would not scan" },
+  SEAM_MANUAL_OVERRIDE: { act: "Hand-off approved without a scan of the label" },
+  STORED: { act: "Packet placed in a strong room" },
+  RELEASED: { act: "Packet taken out of a strong room" },
+  UNAUTHORIZED_SCAN: { act: "Seam label opened in a public browser" },
 };
 
 function factsForEvent(kind: string, payload: Record<string, unknown>): string[] {
@@ -220,6 +241,96 @@ function factsForEvent(kind: string, payload: Record<string, unknown>): string[]
     case "EXCEPTION_RAISED":
       f.push(`Code ${p("code")}`);
       f.push(String(p("detail")));
+      break;
+    case "HANDOVER_INITIATED":
+      f.push(`Leg ${p("legNo")}: ${p("fromRole")} → ${p("toRole")}`);
+      f.push(`Label ${p("seamId")} matched; fingerprint slot ${p("biometricSlot")}, score ${p("biometricScore")}`);
+      f.push(`Expected to close by ${p("expectedBy")}`);
+      break;
+    case "HANDOVER_COMPLETED": {
+      const late = Number(p("lateBySeconds"));
+      f.push(`Leg ${p("legNo")}: ${p("fromRole")} → ${p("toRole")}`);
+      f.push(`Packet ${p("packetSerial")}, label ${p("seamId")}`);
+      f.push(`Package state becomes "${p("toState")}"`);
+      f.push(late > 0 ? `Closed ${late} s after its expected time` : `Closed ${-late} s before its expected time`);
+      break;
+    }
+    case "HANDOVER_REFUSED":
+      f.push(`Leg ${p("legNo")}, refusal ${p("attemptNo")} on this leg`);
+      f.push(`Refused for: ${((p("denyReasons") as string[]) ?? []).join(", ")}`);
+      for (const line of (p("evidence") as string[]) ?? []) {
+        if (line.includes(": failed.")) f.push(line);
+      }
+      break;
+    case "LEG_OVERDUE":
+      f.push(`Leg ${p("legNo")} was expected by ${p("expectedBy")}`);
+      f.push(`${p("overdueBySeconds")} s past that when the watchdog looked`);
+      f.push(`Last on the chain for this packet: ${p("lastEventKind")}`);
+      break;
+    case "STRONGROOM_ENTRY":
+      f.push(`${p("secondsBetweenConfirmations")} s between the two fingerprints`);
+      f.push(`Task expected to take ${p("expectedMinutes")} min`);
+      f.push(p("faceMatched") ? "Face read for both entrants" : "No face reading was sent by the door");
+      break;
+    case "STRONGROOM_EXIT":
+      f.push(`Inside for ${p("dwellSeconds")} s`);
+      f.push(`${p("packagesTouched")} packet(s) reported handled`);
+      break;
+    case "DWELL_EXCEEDED":
+      f.push(`Inside for ${p("dwellSeconds")} s against ${p("expectedSeconds")} s stated at entry`);
+      break;
+    case "FOOTFALL_MISMATCH":
+      f.push(`Door admitted ${p("authorisedEntrants")}; the monitor counted at least ${p("countedAtLeast")}`);
+      break;
+    case "SHARES_REWRAPPED":
+      f.push(`${((p("rewrapped") as unknown[]) ?? []).length} officials' shares, readable only by the station`);
+      f.push(`Roster locked at ${p("rosterLockedAt")}`);
+      break;
+    case "CONTROL_ENVELOPE_ISSUED":
+      f.push(`Opens at drand round ${p("drandRound")}, expected ${p("scheduledOpenAt")}`);
+      f.push(`Envelope SHA-256 ${String(p("ciphertextSha256")).slice(0, 24)}…`);
+      break;
+    case "OPEN_CEREMONY":
+      f.push(p("mode") === "envelope-authorized"
+        ? "Opened from the station's cache with no link to the ledger; reported afterwards"
+        : "Each step was put to the ledger as it happened");
+      for (const o of (p("officials") as { role: string; institution: string }[]) ?? []) {
+        f.push(`${String(o.role).replace(/_/g, " ")}, ${o.institution}`);
+      }
+      f.push(`${p("secondsBetweenOfficials")} s between the two officials; drand round ${p("drandRound")}`);
+      break;
+    case "PACKET_OPENED": {
+      const offset = Number(p("offsetFromScheduledSeconds"));
+      f.push(`Packet ${p("packetSerial")}`);
+      f.push(`Photo SHA-256 ${String(p("photoSha256")).slice(0, 24)}…`);
+      f.push(offset >= 0 ? `${offset} s after its opening time` : `${-offset} s before its opening time`);
+      break;
+    }
+    case "CEREMONY_INCOMPLETE":
+      f.push(`Furthest step passed: ${p("reachedStep")}; ${p("officialsConfirmed")} official(s) identified`);
+      f.push(`Was due by ${p("deadline")}`);
+      break;
+    case "PACKET_UNOPENED_OVERDUE":
+      f.push(`Was due to open at ${p("scheduledOpenAt")}`);
+      f.push(`${p("overdueBySeconds")} s past that when the watchdog looked`);
+      break;
+    case "SEAM_MANUAL_OVERRIDE":
+      f.push(
+        p("approvalChannel") === "live-video"
+          ? "Two operators approved, each over a video call with the phone that asked"
+          : "Two operators approved on their own statement; the video call was not required",
+      );
+      f.push(`Seam id typed: ${p("seamIdTyped")}`);
+      f.push(`Photo SHA-256 ${String(p("photoSha256")).slice(0, 24)}…`);
+      f.push("The label was not checked by the system on this leg; the packet is to be inspected where it arrives");
+      break;
+    case "STORED":
+      f.push(`Seal serial ${p("sealSerial")}`);
+      break;
+    case "SEAM_DECODE_FAILED":
+      f.push(`Tried for ${p("attemptedSeconds")} s; code(s) ${p("whichCodes")} would not read`);
+      f.push(`Seam id typed: ${p("seamIdTyped")}`);
+      f.push(`Photo SHA-256 ${String(p("photoSha256")).slice(0, 24)}…`);
       break;
   }
   return f;

@@ -44,6 +44,13 @@
 #include <mohar_time.h>
 #include "node_config.h"
 
+// A node_config.h written before the control surface asked for a token has
+// neither of these. Stopping the build is deliberate: defaulting them would
+// flash a station anybody on the network could enrol a finger on.
+#if !defined(STATION_TOKEN) || !defined(CONTROL_ROOM_ORIGIN)
+#error "node_config.h needs STATION_TOKEN and CONTROL_ROOM_ORIGIN - copy them from node_config.example.h"
+#endif
+
 using namespace mohar;
 
 // ── state ───────────────────────────────────────────────────────────────────
@@ -580,14 +587,19 @@ static bool deleteSlot(uint16_t slot) {
 // ── HTTP ────────────────────────────────────────────────────────────────────
 
 /**
- * The control room is served from a different origin, so every response needs
- * the grant explicitly. Wide open on purpose: this endpoint holds no secret and
- * can do nothing but manage templates on the reader in front of you.
+ * The control room is served from a different origin, so a browser needs the
+ * grant spelled out. It is given to one origin, the paired control room, and to
+ * no other: a page on any other site, opened on a laptop that happens to be on
+ * the hall's network, gets no grant and its script cannot read this station or
+ * enrol a finger on it.
  */
 static void cors() {
-  g_http.sendHeader("Access-Control-Allow-Origin", "*");
-  g_http.sendHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  g_http.sendHeader("Access-Control-Allow-Headers", "content-type");
+  if (g_http.hasHeader("Origin") && g_http.header("Origin") == CONTROL_ROOM_ORIGIN) {
+    g_http.sendHeader("Access-Control-Allow-Origin", CONTROL_ROOM_ORIGIN);
+  }
+  g_http.sendHeader("Vary", "Origin");
+  g_http.sendHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+  g_http.sendHeader("Access-Control-Allow-Headers", "content-type, x-station-token");
   // Refuse keep-alive. This server handles one connection at a time, and a
   // browser polling every few seconds will hold that slot open between polls —
   // after which the endpoint stops answering while the device carries on
@@ -598,6 +610,47 @@ static void cors() {
 static void sendJson(int code, const String &json) {
   cors();
   g_http.send(code, "application/json", json);
+}
+
+/**
+ * CORS only restrains browsers. Anything else on the network - curl, a phone
+ * app, another board - ignores it, so every endpoint also wants the station
+ * token, which tools/provision-device generates and the control room is given
+ * once when the station is paired.
+ *
+ * A board still carrying the placeholder refuses everything: an unprovisioned
+ * station must not be the one that anybody can enrol a finger on.
+ */
+static bool tokenProvisioned() {
+  return strlen(STATION_TOKEN) >= 16 && strcmp(STATION_TOKEN, "CHANGE_ME") != 0;
+}
+
+static bool authorised() {
+  if (!tokenProvisioned() || !g_http.hasHeader("X-Station-Token")) return false;
+  const String presented = g_http.header("X-Station-Token");
+  const size_t n = strlen(STATION_TOKEN);
+  // Compared in full whatever the first mismatch, so the time taken says
+  // nothing about how much of a guess was right.
+  uint8_t diff = presented.length() == n ? 0 : 1;
+  for (size_t i = 0; i < n; i++) {
+    diff |= static_cast<uint8_t>(STATION_TOKEN[i]) ^
+            static_cast<uint8_t>(i < presented.length() ? presented[i] : 0);
+  }
+  return diff == 0;
+}
+
+static void guarded(void (*handler)()) {
+  if (!authorised()) {
+    Serial.printf("[http] refused %s: %s
+", g_http.uri().c_str(),
+                  tokenProvisioned() ? "missing or wrong station token"
+                                     : "this board has no station token");
+    sendJson(401, tokenProvisioned()
+                      ? "{\"error\":\"missing or wrong station token\"}"
+                      : "{\"error\":\"this station has no token; provision it and reflash\"}");
+    return;
+  }
+  handler();
 }
 
 static void handleStatus() {
@@ -692,13 +745,19 @@ static void handleDelete() {
 static void startControlSurfaceIfReady();
 
 static void beginHttp() {
-  g_http.on("/status", HTTP_GET, handleStatus);
-  g_http.on("/enrol", HTTP_POST, handleEnrol);
-  g_http.on("/enrol/cancel", HTTP_POST, handleCancel);
-  g_http.on("/config", HTTP_POST, handleConfig);
-  g_http.on("/slot", HTTP_DELETE, handleDelete);
-  g_http.on("/slot/delete", HTTP_POST, handleDelete);
+  // The server only keeps the request headers it is told to.
+  static const char *kept[] = {"Origin", "X-Station-Token"};
+  g_http.collectHeaders(kept, 2);
+
+  g_http.on("/status", HTTP_GET, []() { guarded(handleStatus); });
+  g_http.on("/enrol", HTTP_POST, []() { guarded(handleEnrol); });
+  g_http.on("/enrol/cancel", HTTP_POST, []() { guarded(handleCancel); });
+  g_http.on("/config", HTTP_POST, []() { guarded(handleConfig); });
+  g_http.on("/slot", HTTP_DELETE, []() { guarded(handleDelete); });
+  g_http.on("/slot/delete", HTTP_POST, []() { guarded(handleDelete); });
   g_http.onNotFound([]() {
+    // A preflight carries no token - the browser sends it before the real
+    // request - so it is answered on the origin alone.
     if (g_http.method() == HTTP_OPTIONS) {
       cors();
       g_http.send(204);

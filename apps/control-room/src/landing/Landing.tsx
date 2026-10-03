@@ -29,11 +29,9 @@ const APP_ROUTE = "/overview";
 /**
  * Auth destinations for the navbar buttons.
  *
- * This project has no authentication yet — `services/gateway/src/auth/` holds
- * only a `.gitkeep`, and the ledger API is unauthenticated (recorded as a known
- * gap in docs/learn). Nothing here creates, replaces, or stands in for auth; the
- * buttons simply point at the conventional routes so that the day sign-in and
- * sign-up pages exist, wiring them up is a one-line change to each constant.
+ * Both pages are `pages/Auth.tsx`. Sign-up answers only while no account
+ * exists, or on a ledger started with ALLOW_SIGNUP=true; otherwise the page
+ * says registration is closed.
  */
 const SIGN_IN_ROUTE = "/signin";
 const SIGN_UP_ROUTE = "/signup";
@@ -118,7 +116,7 @@ const TRUST = [
   { h: "Append-only by grant", p: "The application's database role holds INSERT and SELECT. There is no UPDATE or DELETE grant, so the service cannot rewrite history even if it is compromised.", c: "grant select, insert" },
   { h: "Published Merkle anchors", p: "A daily RFC 6962 tree lets a third party prove one event was included without being shown any other event.", c: "RFC 6962 inclusion proof" },
   { h: "Keys that expire by arithmetic", p: "A custody key is valid for one six-hour epoch. Nothing rotates them — no scheduler to fail open. If the infrastructure breaks, access is denied.", c: "epoch = ⌊unix / 21600⌋" },
-  { h: "Deny by default", p: "Fifteen checks run on every access request, always, with no short-circuit. The attempt is written to the ledger before the caller is told the outcome.", c: "15 checks · evidence, not verdicts" },
+  { h: "Deny by default", p: "Twenty-two checks run on every access request, always, with no short-circuit. The attempt is written to the ledger before the caller is told the outcome.", c: "22 checks · evidence, not verdicts" },
 ];
 
 const SHOWCASE = [
@@ -160,18 +158,10 @@ export default function Landing() {
     let alive = true;
     (async () => {
       try {
-        const s = await api.summary();
-        if (!alive) return;
-        const packages = Object.values(s.packagesByState).reduce<number>(
-          (a, b) => a + (b ?? 0),
-          0,
-        );
-        setStats({
-          events: s.totals.events,
-          packages,
-          devices: s.totals.active_devices,
-          centres: s.totals.centres,
-        });
+        // The public totals: the full summary takes a session, and a visitor
+        // to this page has none.
+        const s = await api.counters();
+        if (alive) setStats(s);
       } catch {
         /* ledger not running — the strip stays hidden */
       }
@@ -307,6 +297,7 @@ export default function Landing() {
           </Link>
 
           <div className="l-nav-actions">
+            <Link to="/verify" className="l-btn-auth l-btn-signin">Verify record</Link>
             <MagneticButton
               as={Link}
               to={SIGN_IN_ROUTE}
@@ -448,7 +439,7 @@ export default function Landing() {
             The failure is therefore not primarily detection. It is <em>evidence and
             attribution</em> — chain of custody cannot be proved to a court's standard, and
             no one can say which centre a leaked image came from. Mohar is built to close
-            that gap, not to promise a leak-proof examination.
+            that gap, not to promise an examination that cannot leak.
           </p>
         </div>
       </section>
@@ -524,7 +515,7 @@ export default function Landing() {
         </div>
 
         <div className="l-disclaim l-reveal">
-          <strong>Stated plainly:</strong> Mohar does not make examinations leak-proof. Someone
+          <strong>Stated plainly:</strong> Mohar does not stop a paper from leaking. Someone
           with legitimate access at the moment a bundle is opened can still photograph a paper.
           What changes is the cost — the exposure window narrows, and every act carries an
           attributable, tamper-evident record.

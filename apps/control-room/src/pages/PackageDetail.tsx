@@ -2,6 +2,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type CustodyAnomaly, type TimelineEvent } from "../lib/api";
 import { useAsync, formatTime, relativeTime } from "../lib/hooks";
 import { Card, Empty, ErrorNote, StateBadge, RiskMeter } from "../components/ui";
+import { SeamSealPanel } from "../components/SeamSealPanel";
 
 /**
  * The full workflow of one package: every event in order, with everything the
@@ -307,6 +308,16 @@ export default function PackageDetail() {
               <dd>{p.projection.holderRole?.replace(/_/g, " ") ?? "—"}</dd>
               <dt>Seal</dt>
               <dd>{p.sealSerial ?? "—"}</dd>
+              <dt>Seam seal</dt>
+              <dd
+                title={
+                  p.seamProtected
+                    ? "A commitment to the flap code is on file. The code is checked at opening."
+                    : "No flap code was fitted. The seam check reports not evaluated for this package."
+                }
+              >
+                {p.seamProtected ? "fitted" : "none"}
+              </dd>
               <dt>Copies</dt>
               <dd>{p.copies}</dd>
               <dt>Events</dt>
@@ -334,6 +345,8 @@ export default function PackageDetail() {
               </span>
             </div>
           </Card>
+
+          <SeamSealPanel key={p.id} packageId={p.id} seamProtected={p.seamProtected} />
 
           <Card title="Findings" hint={`${p.projection.anomalies.length} from replaying the chain`}>
             {p.projection.anomalies.length === 0 ? (

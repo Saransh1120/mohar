@@ -1,16 +1,18 @@
-# access
+# Access service
 
-Package access policy engine. Evaluates whether a custody action is authorised
-and issues a signed decision receipt.
+The policy and custody-key routes live here. Start this service with the app
+database connection, then point the ledger at it:
 
-The QR/NFC tag is an identifier, never a key — anyone who photographs it holds a
-perfect copy. Scanning opens a session; this service checks Android Keystore
-attestation, roster membership, geofence, time window, seal-serial match and
-package state, deny-by-default, with a reason code on every refusal.
+```sh
+DATABASE_URL=postgres://... ACCESS_PORT=8082 pnpm --filter @mohar/access start
+DATABASE_URL=postgres://... ACCESS_URL=http://127.0.0.1:8082 pnpm --filter @mohar/ledger start
+```
 
-There is no electronic latch. The decision is advisory physically and binding
-evidentially: an operator who proceeds past a denial generates an `OVERRIDE_USED`
-event that pages the control room in real time. Denied scans are the highest-value
-signal the system produces and are never pruned.
+The access process binds `127.0.0.1` unless `ACCESS_HOST` is set. Its HTTP
+routes have no separate authentication layer, so keep it private and expose
+them only through the ledger and gateway. If `ACCESS_URL` is absent, the ledger
+registers the same package's routes in-process for existing deployments.
 
-See `docs/05-unlock-protocol.md`.
+The engine evaluates the currently supported policy evidence and records a
+decision. Android hardware attestation and a solenoid command issued from a
+decision are still integration work; see `docs/05-unlock-protocol.md`.

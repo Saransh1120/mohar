@@ -57,6 +57,35 @@ export const EventKind = z.enum([
   "PRINT_COMPLETED",
   "KEY_DESTROYED",
   // ── catch-all ──
+  // ── hand-off legs ──
+  "HANDOVER_INITIATED",
+  "HANDOVER_COMPLETED",
+  "HANDOVER_REFUSED",
+  "LEG_OVERDUE",
+  "STORED",
+  "RELEASED",
+  // ── strong room ──
+  "STRONGROOM_ENTRY",
+  "STRONGROOM_EXIT",
+  "DWELL_EXCEEDED",
+  "FOOTFALL_MISMATCH",
+  // ── opening ceremony ──
+  "SHARES_REWRAPPED",
+  "CONTROL_ENVELOPE_ISSUED",
+  "OPEN_CEREMONY",
+  "PACKET_OPENED",
+  "CEREMONY_INCOMPLETE",
+  "PACKET_UNOPENED_OVERDUE",
+  // ── the seam label ──
+  "SEAM_DECODE_FAILED",
+  "SEAM_MANUAL_OVERRIDE",
+  "UNAUTHORIZED_SCAN",
+  // ── device and enclosure integrity ──
+  "DEVICE_SEQ_GAP",
+  "ENCLOSURE_OPENED",
+  "SEAL_LOCK_OPENED",
+  "SEAL_LOCK_CLOSED",
+  "ENROLMENT_COMPLETED",
   "EXCEPTION_RAISED",
 ]);
 export type EventKind = z.infer<typeof EventKind>;
@@ -69,6 +98,20 @@ export const SERVICE_ONLY_KINDS: ReadonlySet<EventKind> = new Set<EventKind>([
   "MONITOR_SILENT",
   "SHARE_RELEASED",
   "FALLBACK_INVOKED",
+  // Decided by a service after weighing checks, or raised by the watchdog when
+  // nothing happened at all. A device may report what it observed; it may not
+  // report the conclusion drawn from what it observed.
+  "HANDOVER_COMPLETED",
+  "HANDOVER_REFUSED",
+  "LEG_OVERDUE",
+  "DWELL_EXCEEDED",
+  "FOOTFALL_MISMATCH",
+  "SHARES_REWRAPPED",
+  "CONTROL_ENVELOPE_ISSUED",
+  "CEREMONY_INCOMPLETE",
+  "PACKET_UNOPENED_OVERDUE",
+  "DEVICE_SEQ_GAP",
+  "UNAUTHORIZED_SCAN",
 ]);
 
 // ── payloads ────────────────────────────────────────────────────────────────
@@ -80,12 +123,44 @@ export const PackageSealedPayload = z.object({
   drandRound: z.number().int().positive(),
   /** One commitment per Shamir share, so share release can be audited later. */
   shareCommitments: z.array(Sha256Hex).length(4),
+  /**
+   * sha256(seamToken ‖ packageId) for the QR printed across the opening flap.
+   *
+   * Optional because packages sealed before the seam label existed have no such
+   * commitment and their events must keep validating — an optional field that is
+   * omitted, never null, so the canonical bytes of an old event are unchanged.
+   * A package without this commitment reports the seam check as not evaluated
+   * rather than passing it. See `docs/13`.
+   */
+  seamCommitment: Sha256Hex.optional(),
 });
 
-export const SealAppliedPayload = z.object({
-  sealSerial: ShortText,
-  photoSha256: Sha256Hex,
-});
+export const SealAppliedPayload = z
+  .object({
+    sealSerial: ShortText,
+    photoSha256: Sha256Hex,
+    /**
+     * The two-code seam label, when the packet carries one. Optional and
+     * omitted for the same reason as `seamCommitment` above: seals recorded
+     * before the label existed must keep validating byte for byte.
+     *
+     * `seamId` is the opaque handle printed on the label and
+     * `labelCommitment` is sha256("MOHAR-SEAM-v1" ‖ seamId ‖ seamSecret). The
+     * secret is never in an event: it exists on the label and nowhere else.
+     */
+    seamId: z
+      .string()
+      .regex(/^[0-9A-HJKMNP-TV-Z]{20,32}$/, "expected a Crockford base32 seam id")
+      .optional(),
+    labelCommitment: Sha256Hex.optional(),
+    /** One label, or two identical ones on opposite flaps. */
+    labelsPerPacket: z.union([z.literal(1), z.literal(2)]).optional(),
+    /** Papers counted into the packet before it was closed. */
+    paperCount: z.number().int().positive().max(10_000).optional(),
+  })
+  .refine((p) => (p.seamId === undefined) === (p.labelCommitment === undefined), {
+    message: "seamId and labelCommitment are recorded together or not at all",
+  });
 
 export const HandoffPayload = z.object({
   fromPersonId: Uuid,
@@ -102,12 +177,24 @@ export const ScanObservedPayload = z.object({
   /** Exactly what was read, before any lookup. Retained even when it resolves to
    *  nothing: scans of unknown identifiers are themselves intelligence. */
   rawIdentifier: ShortText,
+  /** SHA-256 of the seal photo retained on the field phone. Optional for older records. */
+  photoSha256: Sha256Hex.optional(),
 });
 
 export const AccessRequestedPayload = z.object({
   sessionId: Uuid,
   sealSerialRead: ShortText.optional(),
   photoSha256: Sha256Hex.optional(),
+  /**
+   * The seam token as read from the flap QR, hex.
+   *
+   * Hostile input: it arrives from a camera pointed at a surface anyone could
+   * have printed, so it is shape-checked here and never interpolated anywhere.
+   * Absent means the code could not be read — which is the expected state for a
+   * package that was opened in transit, and also for one left out in the rain.
+   * The engine distinguishes those two; this field does not.
+   */
+  seamTokenRead: z.string().regex(/^[0-9a-f]{64}$/).optional(),
 });
 
 export const AccessGrantedPayload = z.object({
@@ -320,6 +407,298 @@ export const ExceptionRaisedPayload = z.object({
 });
 
 /** Kind → payload schema. Exported so services can validate without the union. */
+
+// ── hand-off legs ───────────────────────────────────────────────────
+
+/**
+ * One planned leg of the journey, named the same way on both sides of it.
+ *
+ * `legId` is the join between a dispatch and an acceptance that may be hours
+ * apart and recorded by two different devices, so it is carried on every event
+ * in the leg rather than reconstructed from timestamps afterwards.
+ */
+export const HandoverInitiatedPayload = z.object({
+  legId: Uuid,
+  legNo: z.number().int().positive(),
+  fromPersonId: Uuid,
+  fromRole: PersonRole,
+  toRole: PersonRole,
+  seamId: ShortText,
+  /** Slot and score from the reader; never an image and never a template. */
+  biometricSlot: z.number().int().nonnegative(),
+  biometricScore: z.number().int().nonnegative(),
+  /** The transfer key itself never appears in an event. Only that one was
+   *  issued, and when it stops being usable. Absent where the key is made when
+   *  the receiver passes rather than at dispatch, which is what the hand-off
+   *  engine does so that no key sits readable between the two steps. */
+  transferKeyIssuedAt: Timestamp.optional(),
+  transferKeyExpiresAt: Timestamp.optional(),
+  expectedBy: Timestamp,
+});
+
+export const HandoverCompletedPayload = z.object({
+  legId: Uuid,
+  legNo: z.number().int().positive(),
+  fromPersonId: Uuid,
+  toPersonId: Uuid,
+  fromRole: PersonRole,
+  toRole: PersonRole,
+  seamId: ShortText,
+  packetSerial: ShortText,
+  biometricSlot: z.number().int().nonnegative(),
+  biometricScore: z.number().int().nonnegative(),
+  toState: PackageState,
+  /** How late the leg closed against its plan. Negative is early. Recorded even
+   *  when it is zero, because "on time" only means something if lateness is kept. */
+  lateBySeconds: z.number().int(),
+});
+
+/**
+ * A refused acceptance, with every check that was run.
+ *
+ * The refusal is the product here. A leg that cannot complete is a leg someone
+ * has to explain, and the explanation has to be reconstructable from this
+ * record alone months later — hence the reasons and the evidence, not a boolean.
+ */
+export const HandoverRefusedPayload = z.object({
+  legId: Uuid,
+  legNo: z.number().int().positive(),
+  attemptedByPersonId: Uuid.optional(),
+  seamId: ShortText.optional(),
+  packetSerialTyped: ShortText.optional(),
+  denyReasons: z.array(DenyReason).min(1),
+  /** One line per check: what was looked at and what was seen. */
+  evidence: z.array(ShortText).min(1),
+  /** How many acceptance attempts this leg has now refused. Three raises an alert. */
+  attemptNo: z.number().int().positive(),
+});
+
+export const LegOverduePayload = z.object({
+  legId: Uuid,
+  legNo: z.number().int().positive(),
+  expectedBy: Timestamp,
+  overdueBySeconds: z.number().int().positive(),
+  lastEventKind: ShortText,
+  lastSeenPersonId: Uuid.optional(),
+});
+
+export const StoredPayload = z.object({
+  roomId: Uuid,
+  custodianPersonId: Uuid,
+  sealSerial: ShortText,
+});
+
+export const ReleasedPayload = z.object({
+  roomId: Uuid,
+  custodianPersonId: Uuid,
+  toLegId: Uuid,
+});
+
+// ── strong room ─────────────────────────────────────────────────────
+
+/**
+ * The door, not the packet.
+ *
+ * Every entry and exit is recorded even when nothing is touched, because a room
+ * whose visits are recorded only when something is moved cannot answer "who was
+ * in there at 03:00" — which is the question an enquiry actually asks.
+ */
+export const StrongroomEntryPayload = z.object({
+  visitId: Uuid,
+  roomId: Uuid,
+  personIds: z.array(Uuid).length(2),
+  /** Seconds between the two biometric confirmations. The window is 120 s. */
+  secondsBetweenConfirmations: z.number().int().nonnegative(),
+  biometricSlots: z.array(z.number().int().nonnegative()).length(2),
+  /** Omitted when the door sent no face reading. Not read is not matched. */
+  faceMatched: z.array(z.boolean()).length(2).optional(),
+  expectedMinutes: z.number().int().positive(),
+});
+
+export const StrongroomExitPayload = z.object({
+  visitId: Uuid,
+  roomId: Uuid,
+  personIds: z.array(Uuid).min(1),
+  dwellSeconds: z.number().int().nonnegative(),
+  packagesTouched: z.number().int().nonnegative(),
+});
+
+export const DwellExceededPayload = z.object({
+  visitId: Uuid,
+  roomId: Uuid,
+  dwellSeconds: z.number().int().positive(),
+  expectedSeconds: z.number().int().positive(),
+});
+
+export const FootfallMismatchPayload = z.object({
+  visitId: Uuid,
+  roomId: Uuid,
+  authorisedEntrants: z.number().int().nonnegative(),
+  countedAtLeast: z.number().int().nonnegative(),
+  monitorId: Uuid,
+});
+
+// ── opening ceremony ────────────────────────────────────────────────
+
+export const SharesRewrappedPayload = z.object({
+  centreId: Uuid,
+  examSession: ShortText,
+  /** Role to the device the share is now readable by. No share material here. */
+  rewrapped: z
+    .array(z.object({ role: PersonRole, personId: Uuid, deviceId: Uuid }))
+    .min(1),
+  rosterLockedAt: Timestamp,
+});
+
+export const ControlEnvelopeIssuedPayload = z.object({
+  packageId: Uuid,
+  /** The drand round the envelope opens at. Anyone can check when that is. */
+  drandRound: z.number().int().positive(),
+  drandChainHash: Sha256Hex,
+  scheduledOpenAt: Timestamp,
+  ciphertextSha256: Sha256Hex,
+  stationDeviceId: Uuid,
+});
+
+export const OpenCeremonyPayload = z.object({
+  ceremonyId: Uuid,
+  packageId: Uuid,
+  /** `live-authorized` reached the server; `envelope-authorized` opened from the
+   *  cached timelock envelope with no network. The mode is itself evidence. */
+  mode: z.enum(["live-authorized", "envelope-authorized"]),
+  officials: z
+    .array(
+      z.object({
+        personId: Uuid,
+        role: PersonRole,
+        institution: ShortText,
+        biometricSlot: z.number().int().nonnegative(),
+        biometricScore: z.number().int().nonnegative(),
+        /** Omitted when the station sent no face reading for this official. */
+        faceMatched: z.boolean().optional(),
+      }),
+    )
+    .length(2),
+  secondsBetweenOfficials: z.number().int().nonnegative(),
+  controlPartUsed: z.boolean(),
+  drandRound: z.number().int().positive(),
+});
+
+export const PacketOpenedPayload = z.object({
+  ceremonyId: Uuid,
+  packageId: Uuid,
+  packetSerial: ShortText,
+  /** Omitted where the ceremony did not record whose hands opened the packet;
+   *  the two officials present are named on OPEN_CEREMONY. */
+  openedByPersonId: Uuid.optional(),
+  photoSha256: Sha256Hex,
+  /** Omitted when nobody counted. Not counted is not zero. */
+  candidateWitnesses: z.number().int().nonnegative().optional(),
+  /** Seconds before or after the scheduled start. Early is not forbidden; it is
+   *  recorded, and a pattern of early openings is what gets looked at. */
+  offsetFromScheduledSeconds: z.number().int(),
+});
+
+export const CeremonyIncompletePayload = z.object({
+  ceremonyId: Uuid,
+  packageId: Uuid,
+  /** The furthest step that passed. `none` when not even the scan did. */
+  reachedStep: z.enum(["none", "scan", "authorize", "identify", "confirm", "release"]),
+  officialsConfirmed: z.number().int().nonnegative().max(3),
+  deadline: Timestamp,
+});
+
+export const PacketUnopenedOverduePayload = z.object({
+  packageId: Uuid,
+  scheduledOpenAt: Timestamp,
+  overdueBySeconds: z.number().int().positive(),
+  centreId: Uuid,
+});
+
+// ── the seam label ─────────────────────────────────────────────────
+
+export const SeamDecodeFailedPayload = z.object({
+  seamIdTyped: ShortText.optional(),
+  packageId: Uuid.optional(),
+  /** How long the app tried before giving up. The procedure says 10 s. */
+  attemptedSeconds: z.number().int().positive(),
+  whichCodes: z.enum(["A", "B", "both"]),
+  photoSha256: Sha256Hex,
+});
+
+export const SeamManualOverridePayload = z.object({
+  packageId: Uuid,
+  seamIdTyped: ShortText,
+  /** The two distinct operator accounts whose decisions approved the request. */
+  approverAccountIds: z.array(Uuid).length(2),
+  /** The recorded approval channel, including the explicitly enabled fallback. */
+  approvalChannel: z.enum(["live-video", "operator-attestation"]),
+  /** The requesting field person's ID; a second field person is not captured today. */
+  fieldPersonIds: z.array(Uuid).min(1),
+  photoSha256: Sha256Hex,
+  justification: LongText,
+});
+
+/**
+ * A seam URL opened by something that is not an enrolled device.
+ *
+ * The scanner is told nothing — the landing page says only that the package is
+ * under custody. This event is the whole point of that page.
+ */
+export const UnauthorizedScanPayload = z.object({
+  seamId: ShortText,
+  /** Which half was presented. Both halves from an unattested device is worse
+   *  than one, and the difference has to survive into the record. */
+  whichCodes: z.enum(["A", "B", "both"]),
+  userAgent: ShortText.optional(),
+  /** Coarse, from the request. Never a precise location for an unknown party. */
+  approxRegion: ShortText.optional(),
+  priorHitsOnThisSeam: z.number().int().nonnegative(),
+});
+
+// ── device and enclosure integrity ────────────────────────────────────
+
+export const DeviceSeqGapPayload = z.object({
+  deviceId: Uuid,
+  lastSeenSeq: z.number().int().nonnegative(),
+  receivedSeq: z.number().int().positive(),
+  missingCount: z.number().int().positive(),
+});
+
+export const EnclosureOpenedPayload = z.object({
+  deviceId: Uuid,
+  sequence: z.number().int().nonnegative(),
+  /** True the moment the tamper switch releases. The board reports it before it
+   *  can be silenced, and the record stands even if the board never reports again. */
+  tamperSwitchOpen: z.boolean(),
+});
+
+export const SealLockOpenedPayload = z.object({
+  deviceId: Uuid,
+  packageId: Uuid,
+  /** The granted access attempt bound into the signed command. */
+  decisionAttemptId: Uuid,
+  commandCounter: z.number().int().positive(),
+  reedSwitchClosed: z.boolean(),
+});
+
+export const SealLockClosedPayload = z.object({
+  deviceId: Uuid,
+  packageId: Uuid,
+  openSeconds: z.number().int().nonnegative(),
+  reedSwitchClosed: z.boolean(),
+});
+
+export const EnrolmentCompletedPayload = z.object({
+  personId: Uuid,
+  stationId: Uuid,
+  slot: z.number().int().nonnegative(),
+  /** Both enrolling officers, because an enrolment done by one person is how a
+   *  finger gets onto the roster without anyone else seeing it happen. */
+  enrollingOfficerIds: z.array(Uuid).length(2),
+  matchScore: z.number().int().nonnegative(),
+});
+
 export const PAYLOAD_SCHEMAS = {
   PACKAGE_SEALED: PackageSealedPayload,
   SEAL_APPLIED: SealAppliedPayload,
@@ -342,6 +721,30 @@ export const PAYLOAD_SCHEMAS = {
   PRINT_STARTED: PrintStartedPayload,
   PRINT_COMPLETED: PrintCompletedPayload,
   KEY_DESTROYED: KeyDestroyedPayload,
+  HANDOVER_INITIATED: HandoverInitiatedPayload,
+  HANDOVER_COMPLETED: HandoverCompletedPayload,
+  HANDOVER_REFUSED: HandoverRefusedPayload,
+  LEG_OVERDUE: LegOverduePayload,
+  STORED: StoredPayload,
+  RELEASED: ReleasedPayload,
+  STRONGROOM_ENTRY: StrongroomEntryPayload,
+  STRONGROOM_EXIT: StrongroomExitPayload,
+  DWELL_EXCEEDED: DwellExceededPayload,
+  FOOTFALL_MISMATCH: FootfallMismatchPayload,
+  SHARES_REWRAPPED: SharesRewrappedPayload,
+  CONTROL_ENVELOPE_ISSUED: ControlEnvelopeIssuedPayload,
+  OPEN_CEREMONY: OpenCeremonyPayload,
+  PACKET_OPENED: PacketOpenedPayload,
+  CEREMONY_INCOMPLETE: CeremonyIncompletePayload,
+  PACKET_UNOPENED_OVERDUE: PacketUnopenedOverduePayload,
+  SEAM_DECODE_FAILED: SeamDecodeFailedPayload,
+  SEAM_MANUAL_OVERRIDE: SeamManualOverridePayload,
+  UNAUTHORIZED_SCAN: UnauthorizedScanPayload,
+  DEVICE_SEQ_GAP: DeviceSeqGapPayload,
+  ENCLOSURE_OPENED: EnclosureOpenedPayload,
+  SEAL_LOCK_OPENED: SealLockOpenedPayload,
+  SEAL_LOCK_CLOSED: SealLockClosedPayload,
+  ENROLMENT_COMPLETED: EnrolmentCompletedPayload,
   EXCEPTION_RAISED: ExceptionRaisedPayload,
 } as const satisfies Record<EventKind, z.ZodTypeAny>;
 
@@ -358,6 +761,8 @@ const envelopeShape = {
   /** Device clock at the moment of the act. May be wrong; never silently corrected. */
   occurredAt: Timestamp,
   actorDeviceId: Uuid,
+  /** Monotonic counter from this device, persisted before the event is signed. */
+  deviceSeq: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
   actorPersonId: Uuid.optional(),
   geo: GeoPoint.optional(),
 };
@@ -384,6 +789,7 @@ export type EventBody = {
     centreId?: string;
     occurredAt: Timestamp;
     actorDeviceId: string;
+    deviceSeq?: number;
     actorPersonId?: string;
     geo?: z.infer<typeof GeoPoint>;
     kind: K;
