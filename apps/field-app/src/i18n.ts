@@ -232,6 +232,10 @@ const STRINGS = {
     en: "This phone and the control room could not reach each other directly. There is no relay server, so a network that blocks direct connections stops the call. Try another network.",
     hi: "यह फ़ोन और कंट्रोल रूम एक-दूसरे तक सीधे नहीं पहुँच सके। कोई रिले सर्वर नहीं है, इसलिए सीधा कनेक्शन रोकने वाला नेटवर्क कॉल रोक देता है। दूसरा नेटवर्क आज़माएँ।",
   },
+  c_failed_relay: {
+    en: "This phone and the control room could not reach each other, directly or through the relay. Tell the control room; the relay may be down.",
+    hi: "यह फ़ोन और कंट्रोल रूम एक-दूसरे तक न सीधे पहुँच सके, न रिले के रास्ते। कंट्रोल रूम को बताएँ; हो सकता है रिले बंद हो।",
+  },
   c_no_request: {
     en: "This phone has no damaged-label request to call about. Make the request on the main screen first.",
     hi: "इस फ़ोन का कोई खराब लेबल अनुरोध नहीं है जिस पर कॉल हो। पहले मुख्य स्क्रीन पर अनुरोध करें।",

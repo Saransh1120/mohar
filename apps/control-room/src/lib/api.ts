@@ -1335,7 +1335,7 @@ export const api = {
   /** The video call an override is approved over. See lib/overrideCall. */
   overrideCall: {
     join: (id: string) =>
-      post<{ you: string; devicePresent: boolean; iceServers: RTCIceServer[] }>(`/overrides/${id}/call/join`, {}),
+      post<{ you: string; devicePresent: boolean; iceServers: RTCIceServer[]; relay?: boolean }>(`/overrides/${id}/call/join`, {}),
     inbox: (id: string, after: number) =>
       get<{ signals: CallSignal[] }>(`/overrides/${id}/call/inbox?after=${after}`),
     answer: (id: string, sdp: string) => post<{ carried: boolean }>(`/overrides/${id}/call/answer`, { sdp }),
@@ -1346,7 +1346,7 @@ export const api = {
     record: (id: string) => get<CallRecord>(`/overrides/${id}/call`),
     // The phone's end, signed by the device as every other act of its is.
     deviceJoin: (id: string, deviceId: string) =>
-      postAsDevice<{ operators: { accountId: string; name: string }[]; iceServers: RTCIceServer[] }>(
+      postAsDevice<{ operators: { accountId: string; name: string }[]; iceServers: RTCIceServer[]; relay?: boolean }>(
         deviceId, `/overrides/${id}/call/device/join`, { deviceId }),
     deviceInbox: (id: string, deviceId: string, after: number) =>
       postAsDevice<{ signals: CallSignal[] }>(deviceId, `/overrides/${id}/call/device/inbox`, { deviceId, after }),

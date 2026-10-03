@@ -14,9 +14,10 @@ import { api, type CallSignal } from "./api";
  * decoded; a call that connects and shows nothing is reported as that. Neither
  * end can report for the other.
  *
- * The ends find each other through a public STUN server by default. There is
- * no relay: two networks that both refuse direct connections will not connect,
- * and the page says so instead of pretending.
+ * The ends find each other through a public STUN server, and through a relay
+ * where the ledger has one configured and hands this end a credential for it.
+ * Without a relay, two networks that both refuse direct connections will not
+ * connect, and the page says so instead of pretending.
  */
 
 export type CallPhase =
@@ -73,9 +74,13 @@ async function inboundVideo(pc: RTCPeerConnection): Promise<{ frames: number; wi
   return out;
 }
 
-const FAILED_HELP =
-  "The two ends could not reach each other directly. There is no relay server, so a network " +
-  "that blocks direct connections stops the call. Try the phone on another network.";
+/** Why a call that will not connect will not, as far as this end can tell. */
+const failedHelp = (relay: boolean) =>
+  relay
+    ? "The two ends could not reach each other, directly or through the relay. Check that the " +
+      "relay is running and reachable from both networks."
+    : "The two ends could not reach each other directly. There is no relay server, so a network " +
+      "that blocks direct connections stops the call. Try the phone on another network.";
 
 // ── an operator's end ───────────────────────────────────────────────────────
 
@@ -85,6 +90,7 @@ export class OperatorCall {
   private watch: ReturnType<typeof setInterval> | null = null;
   private after = 0;
   private iceServers: RTCIceServer[] = [];
+  private relay = false;
   private mic: MediaStream | null = null;
   private startedAt = 0;
   private lastReport = 0;
@@ -101,6 +107,7 @@ export class OperatorCall {
     this.onStatus({ phase: "starting", detail: "Opening the call…" });
     const joined = await api.overrideCall.join(this.overrideId);
     this.iceServers = joined.iceServers;
+    this.relay = joined.relay === true;
     this.onStatus({
       phase: "waiting",
       detail: joined.devicePresent
@@ -147,7 +154,7 @@ export class OperatorCall {
         this.startedAt = Date.now();
         this.onStatus({ phase: "connecting", detail: "Connected; waiting for the first video frame." });
       } else if (pc.connectionState === "failed") {
-        this.onStatus({ phase: "failed", detail: FAILED_HELP });
+        this.onStatus({ phase: "failed", detail: failedHelp(this.relay) });
       }
     };
     this.onStatus({ phase: "connecting", detail: "The phone is calling; answering." });
@@ -217,6 +224,7 @@ export class PhoneCall {
   private poll: ReturnType<typeof setInterval> | null = null;
   private after = 0;
   private iceServers: RTCIceServer[] = [];
+  private relay = false;
   private camera: MediaStream | null = null;
   private closed = false;
 
@@ -246,6 +254,7 @@ export class PhoneCall {
     this.onPreview(this.camera);
     const joined = await api.overrideCall.deviceJoin(this.overrideId, this.deviceId);
     this.iceServers = joined.iceServers;
+    this.relay = joined.relay === true;
     this.say();
     this.poll = setInterval(() => void this.tick(), POLL_MS);
   }
@@ -292,7 +301,7 @@ export class PhoneCall {
       for (const track of this.camera?.getTracks() ?? []) pc.addTrack(track, this.camera!);
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === "connected") peer.connectedAt = Date.now();
-        if (pc.connectionState === "failed") this.onStatus({ phase: "failed", detail: FAILED_HELP });
+        if (pc.connectionState === "failed") this.onStatus({ phase: "failed", detail: failedHelp(this.relay) });
         else this.say();
       };
       await pc.setLocalDescription(await pc.createOffer());

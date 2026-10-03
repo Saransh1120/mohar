@@ -95,6 +95,7 @@ const say = (message: string) => { el("status").textContent = message; };
 const peers = new Map<string, Peer>();
 let camera: MediaStream | null = null;
 let iceServers: RTCIceServer[] = [];
+let relay = false;
 let overrideId = "";
 let after = 0;
 let poll: ReturnType<typeof setInterval> | null = null;
@@ -135,7 +136,7 @@ async function handle(s: Signal): Promise<void> {
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "connected") peer.connectedAt = Date.now();
       if (pc.connectionState === "failed") {
-        say(t("c_failed"));
+        say(t(relay ? "c_failed_relay" : "c_failed"));
       } else describe();
     };
     await pc.setLocalDescription(await pc.createOffer());
@@ -182,8 +183,9 @@ async function openCall(): Promise<void> {
   const preview = el<HTMLVideoElement>("preview");
   preview.srcObject = camera;
   preview.hidden = false;
-  const joined = await signedPost<{ iceServers: RTCIceServer[] }>(`/overrides/${overrideId}/call/device/join`, {});
+  const joined = await signedPost<{ iceServers: RTCIceServer[]; relay?: boolean }>(`/overrides/${overrideId}/call/device/join`, {});
   iceServers = joined.iceServers;
+  relay = joined.relay === true;
   after = 0;
   el("open").hidden = true;
   el("close").hidden = false;

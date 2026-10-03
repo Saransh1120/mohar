@@ -10,6 +10,7 @@ import {
   loadCallRows,
   recordCall,
 } from "../domain/override-call.js";
+import { iceConfig } from "../domain/turn.js";
 import { bearerToken } from "./auth-routes.js";
 
 /**
@@ -34,6 +35,10 @@ import { bearerToken } from "./auth-routes.js";
  * The offer and the answer each carry every network candidate in them, so the
  * whole set-up is one message each way. Both ends poll for theirs: the live
  * stream does not pass the deployed proxy, and a poll does.
+ *
+ * Joining hands each end the servers to find a path with: a public STUN server,
+ * and where a relay is configured (domain/turn), a credential for it that is
+ * that end's own and stops working within the hour.
  *
  * Only the phone that made the request may be the phone on its call. The
  * officer standing at the packet is the one the request names, and a call from
@@ -62,26 +67,19 @@ const OperatorStateBody = z.object({
   seconds: z.number().int().nonnegative().max(86_400).optional(),
 });
 
-const DEFAULT_ICE = [{ urls: "stun:stun.l.google.com:19302" }];
-
-/** Public STUN by default: it finds each end's address and carries no media. */
-function iceServers(): unknown[] {
-  const raw = process.env["CALL_ICE_SERVERS"];
-  if (!raw) return DEFAULT_ICE;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : DEFAULT_ICE;
-  } catch {
-    return DEFAULT_ICE;
-  }
-}
-
 interface RequestRow {
   id: string;
   device_id: string | null;
 }
 
 export function registerCallRoutes(app: FastifyInstance, pool: Pool, rooms: CallRooms): void {
+  const ice = iceConfig(process.env);
+  app.log.info(
+    { relay: ice.relay, problems: ice.problems },
+    ice.relay
+      ? "override calls are offered a relay"
+      : "override calls have no relay: two networks that both block direct connections will not connect",
+  );
   const request = async (id: string): Promise<RequestRow | undefined> => {
     if (!Uuid.safeParse(id).success) return undefined;
     const { rows } = await pool.query<RequestRow>(
@@ -139,7 +137,7 @@ export function registerCallRoutes(app: FastifyInstance, pool: Pool, rooms: Call
       deviceId: parsed.data.deviceId, event: "joined",
     });
     const { operators } = rooms.deviceJoins(found.request.id);
-    return reply.send({ operators, iceServers: iceServers() });
+    return reply.send({ operators, iceServers: ice.serversFor(`device-${parsed.data.deviceId}`), relay: ice.relay });
   });
 
   app.post<{ Params: { id: string } }>("/overrides/:id/call/device/inbox", async (req, reply) => {
@@ -196,7 +194,7 @@ export function registerCallRoutes(app: FastifyInstance, pool: Pool, rooms: Call
       requestId: r.id, party: "operator", accountId: account.id, deviceId: null, event: "joined",
     });
     const { devicePresent } = rooms.operatorJoins(r.id, account.id, account.displayName);
-    return reply.send({ you: account.id, devicePresent, iceServers: iceServers() });
+    return reply.send({ you: account.id, devicePresent, iceServers: ice.serversFor(`account-${account.id}`), relay: ice.relay });
   });
 
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>(

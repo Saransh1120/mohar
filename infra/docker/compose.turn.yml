@@ -1,0 +1,44 @@
+# A relay for the override's video call, for a host of our own with a public
+# address. Not for Render or Netlify: a relay needs UDP ports those do not give.
+#
+#   TURN_SECRET=<32+ random characters>  TURN_REALM=<the host's name> \
+#     docker compose -f infra/docker/compose.turn.yml up -d
+#
+# Then give the ledger the same secret and this host's address:
+#
+#   TURN_URLS=turn:<host>:3478?transport=udp,turn:<host>:3478?transport=tcp
+#   TURN_SECRET=<the same secret>
+#
+# The relay passes encrypted media between the phone and the operator's
+# browser when they cannot reach each other directly. It holds no key to that
+# media. `use-auth-secret` means it accepts only the short-lived credentials
+# the ledger makes from the shared secret (services/ledger/src/domain/turn.ts).
+#
+# This file has not been run: no Docker host was available when it was
+# written. Check the relay with a call forced through it before relying on it.
+
+services:
+  turn:
+    image: coturn/coturn:4.6
+    # Host networking: a relay hands out ports from a range, and mapping a
+    # range through Docker's proxy is slow and breaks the addresses it reports.
+    network_mode: host
+    restart: unless-stopped
+    command:
+      - --log-file=stdout
+      - --listening-port=3478
+      - --fingerprint
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_SECRET:?set TURN_SECRET}
+      - --realm=${TURN_REALM:?set TURN_REALM}
+      - --min-port=49160
+      - --max-port=49200
+      # A relay that will connect to anything is an open proxy into whatever
+      # network it sits in. These keep it to the public internet.
+      - --no-multicast-peers
+      - --denied-peer-ip=10.0.0.0-10.255.255.255
+      - --denied-peer-ip=172.16.0.0-172.31.255.255
+      - --denied-peer-ip=192.168.0.0-192.168.255.255
+      - --denied-peer-ip=127.0.0.0-127.255.255.255
+      - --denied-peer-ip=169.254.0.0-169.254.255.255
+      - --no-cli

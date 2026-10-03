@@ -663,8 +663,15 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   of "connected" and of frames decoded come from the two ends, not from
   anything the ledger observed. The call's set-up messages are held in memory,
   so one ledger process is assumed. There is a public STUN server by default
-  (`CALL_ICE_SERVERS`) and no relay: two networks that both block direct
-  connections will not connect. It was clicked through locally through the
+  (`CALL_ICE_SERVERS`). A relay is offered only when `TURN_URLS` and
+  `TURN_SECRET` are set: each end is then handed its own credential for it,
+  good for an hour (`TURN_TTL_S`), in coturn's `use-auth-secret` form, and
+  `infra/docker/compose.turn.yml` is a coturn to run on a host with a public
+  address (not Render, which gives no UDP ports). The relay passes the
+  encrypted media and holds no key to it. Without one, two networks that both
+  block direct connections will not connect. **No relay has been run:** there
+  was no Docker host, so the compose file is untried and the credentials have
+  been checked for their form only, not against a coturn. It was clicked through locally through the
   gateway on Oct 2, 2026 with a drawn canvas standing in for the camera: two
   operators each on their own call, video decoded at the operator's end, an
   approval with no call refused, the second approval approving. It has not been

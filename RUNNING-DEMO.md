@@ -141,8 +141,10 @@ waits for drand. Everything it writes is rolled back.
 - The demonstration strong room is attached to no centre, so its entries and
   exits are in the page's own record and not on the chain. A room registered
   with a centre puts them on the chain.
-- The override's call has no relay. Two networks that both block direct
-  connections will not connect; try it on the venue's network beforehand. With
+- The override's call has a relay only if one is set up (`TURN_URLS`,
+  `TURN_SECRET`, `infra/docker/compose.turn.yml`), and none has been run yet.
+  Without it, two networks that both block direct connections will not
+  connect; try the call on the venue's network beforehand. With
   `OVERRIDE_CALL_REQUIRED=0` an approval is the operator's word again and each
   decision says so.
 - The opening on stage is locked minutes ahead, not a day ahead, so it is
