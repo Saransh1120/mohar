@@ -1,4 +1,4 @@
-import { X509Certificate } from "node:crypto";
+import { X509Certificate, createHash, verify as verifySignature } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DenyReason } from "@mohar/contracts";
@@ -8,6 +8,7 @@ import {
   certificateExtension,
   children,
   octets,
+  oid,
   readTlv,
   sequence,
   smallInt,
@@ -27,10 +28,16 @@ import {
  * Every check below is evaluated and reported, not just the first that fails.
  * A check that could not be run says so and why; it is never counted as passed.
  *
- * What this does not cover is said in RUNNING.md: a TPM quote from a centre PC
- * is not understood here, and nothing in this repository produces an Android
- * attestation yet, because the field app is a web page and a web page cannot
- * ask the Keystore for one.
+ * A centre PC has a TPM instead, and a TPM cannot do the same thing: it does not
+ * hold Ed25519 keys, so the key a PC enrols with is never inside it. What a TPM
+ * can do is sign, with an attestation key its maker's CA certified, a statement
+ * naming that key and this ledger's challenge. That is checked in the second
+ * half of this file and it proves less: a real TPM was at the enrolment and
+ * vouched for the key, not that the key cannot be copied off the PC.
+ *
+ * Nothing in this repository produces either kind yet. The field app is a web
+ * page and cannot ask a Keystore; there is no centre PC client. RUNNING.md says
+ * what has and has not been put to these checks.
  */
 
 export type AttestationCheckName =
@@ -43,7 +50,14 @@ export type AttestationCheckName =
   | "hardware_backed"
   | "challenge_fresh"
   | "key_is_enrolled_key"
-  | "boot_verified";
+  | "boot_verified"
+  // A TPM's statement about a key it does not hold.
+  | "bundle_readable"
+  | "ak_certificate"
+  | "quote_structure"
+  | "quote_signed"
+  | "binding_fresh"
+  | "boot_measured";
 
 export const ATTESTATION_CHECKS: readonly AttestationCheckName[] = Object.freeze([
   "chain_readable",
@@ -56,6 +70,19 @@ export const ATTESTATION_CHECKS: readonly AttestationCheckName[] = Object.freeze
   "challenge_fresh",
   "key_is_enrolled_key",
   "boot_verified",
+]);
+
+export const TPM_ATTESTATION_CHECKS: readonly AttestationCheckName[] = Object.freeze([
+  "bundle_readable",
+  "chain_links",
+  "chain_in_date",
+  "root_trusted",
+  "not_revoked",
+  "ak_certificate",
+  "quote_structure",
+  "quote_signed",
+  "binding_fresh",
+  "boot_measured",
 ]);
 
 export interface AttestationCheck {
@@ -72,6 +99,12 @@ export interface AttestationRuling {
   checks: AttestationCheck[];
   /** What the chain said about the key, where it could be read. No key material. */
   facts: {
+    /** Which kind of statement was presented. */
+    kind?: "android-key" | "tpm-quote";
+    /** In words: where the enrolled key is, as far as the statement shows. */
+    keyHeldIn?: string;
+    tpmFirmwareVersion?: string;
+    tpmResetCount?: number;
     certificates?: number;
     attestationVersion?: number;
     attestationSecurityLevel?: string;
@@ -158,6 +191,8 @@ export interface AttestationInput {
   /** The challenge this ledger issued for that key, if one is outstanding. */
   expectedChallenge: Uint8Array | null;
   roots: readonly X509Certificate[];
+  /** Roots that certify TPM attestation keys. A different trust from a phone's. */
+  tpmRoots?: readonly X509Certificate[] | undefined;
   /**
    * Looks a certificate serial up in the vendor's revocation list. Omitted when
    * no list has been loaded; the check is then reported as not evaluated.
@@ -190,6 +225,14 @@ export function verifyAttestation(input: AttestationInput): AttestationRuling {
     facts,
   });
 
+  // A TPM's statement is a small JSON bundle; a phone's is a certificate
+  // chain. Neither can be mistaken for the other from its first byte.
+  if (Buffer.from(input.attestation.subarray(0, 16)).toString("latin1").trimStart().startsWith("{")) {
+    verifyTpmQuote(input, now, add, skip, facts);
+    return finish();
+  }
+  facts.kind = "android-key";
+
   // ── the chain itself ──
   let chain: X509Certificate[];
   try {
@@ -208,72 +251,7 @@ export function verifyAttestation(input: AttestationInput): AttestationRuling {
   facts.leafSerial = chain[0]!.serialNumber.toLowerCase();
   add("chain_readable", true, `${chain.length} certificates, leaf first`);
 
-  const broken: string[] = [];
-  for (let i = 0; i < chain.length - 1; i += 1) {
-    const cert = chain[i]!;
-    const issuer = chain[i + 1]!;
-    if (!cert.checkIssued(issuer) || !cert.verify(issuer.publicKey)) {
-      broken.push(`certificate ${i + 1} is not signed by certificate ${i + 2}`);
-    }
-  }
-  add(
-    "chain_links",
-    broken.length === 0,
-    broken.length === 0 ? "each certificate is signed by the next" : broken.join("; "),
-  );
-
-  const outOfDate = chain
-    .map((c, i) => ({ i, from: new Date(c.validFrom), to: new Date(c.validTo) }))
-    .filter((c) => now < c.from || now > c.to);
-  add(
-    "chain_in_date",
-    outOfDate.length === 0,
-    outOfDate.length === 0
-      ? `every certificate is valid at ${now.toISOString()}`
-      : outOfDate
-          .map((c) => `certificate ${c.i + 1} is valid ${c.from.toISOString()} to ${c.to.toISOString()}`)
-          .join("; "),
-  );
-
-  // ── where the chain ends ──
-  // Compared by public key, not by certificate: a vendor may reissue its root
-  // certificate over the same key, and it is the key that is trusted.
-  const top = chain[chain.length - 1]!;
-  facts.rootSubject = top.subject.replace(/\n/g, ", ");
-  if (input.roots.length === 0) {
-    add("root_trusted", false, "no trusted root is configured on this ledger, so no chain can be trusted");
-  } else {
-    const anchored = input.roots.some((r) => {
-      if (spki(r) === spki(top)) return true;
-      try {
-        return top.checkIssued(r) && top.verify(r.publicKey);
-      } catch {
-        return false;
-      }
-    });
-    add(
-      "root_trusted",
-      anchored,
-      anchored
-        ? `the chain ends at a configured root (${facts.rootSubject})`
-        : `the chain ends at ${facts.rootSubject}, which is not one of the ${input.roots.length} configured root(s)`,
-    );
-  }
-
-  if (!input.revocation) {
-    add("not_revoked", undefined, "not evaluated: no revocation list is loaded on this ledger");
-  } else {
-    const listed = chain
-      .map((c, i) => ({ i, status: input.revocation!(c.serialNumber.toLowerCase()) }))
-      .filter((c) => c.status !== undefined);
-    add(
-      "not_revoked",
-      listed.length === 0,
-      listed.length === 0
-        ? "no certificate in the chain is on the revocation list"
-        : listed.map((c) => `certificate ${c.i + 1} is listed as ${c.status}`).join("; "),
-    );
-  }
+  chainChecks(chain, input.roots, input.revocation, now, add, facts);
 
   // ── what the hardware said about the key ──
   let description: KeyDescription | null = null;
@@ -344,6 +322,262 @@ export function verifyAttestation(input: AttestationInput): AttestationRuling {
   }
 
   return finish();
+}
+
+type Add = (check: AttestationCheckName, passed: boolean | undefined, evidence: string) => void;
+
+/**
+ * The four checks any certificate chain is put to, whoever issued it: each
+ * certificate signed by the next, all in date, ending at a configured root,
+ * and none on a loaded revocation list.
+ */
+function chainChecks(
+  chain: readonly X509Certificate[],
+  roots: readonly X509Certificate[],
+  revocation: ((serialHex: string) => string | undefined) | undefined,
+  now: Date,
+  add: Add,
+  facts: AttestationRuling["facts"],
+): void {
+  const broken: string[] = [];
+  for (let i = 0; i < chain.length - 1; i += 1) {
+    const cert = chain[i]!;
+    const issuer = chain[i + 1]!;
+    if (!cert.checkIssued(issuer) || !cert.verify(issuer.publicKey)) {
+      broken.push(`certificate ${i + 1} is not signed by certificate ${i + 2}`);
+    }
+  }
+  add(
+    "chain_links",
+    broken.length === 0,
+    broken.length === 0 ? "each certificate is signed by the next" : broken.join("; "),
+  );
+
+  const outOfDate = chain
+    .map((c, i) => ({ i, from: new Date(c.validFrom), to: new Date(c.validTo) }))
+    .filter((c) => now < c.from || now > c.to);
+  add(
+    "chain_in_date",
+    outOfDate.length === 0,
+    outOfDate.length === 0
+      ? `every certificate is valid at ${now.toISOString()}`
+      : outOfDate
+          .map((c) => `certificate ${c.i + 1} is valid ${c.from.toISOString()} to ${c.to.toISOString()}`)
+          .join("; "),
+  );
+
+  // ── where the chain ends ──
+  // Compared by public key, not by certificate: a vendor may reissue its root
+  // certificate over the same key, and it is the key that is trusted.
+  const top = chain[chain.length - 1]!;
+  facts.rootSubject = top.subject.replace(/\n/g, ", ");
+  if (roots.length === 0) {
+    add("root_trusted", false, "no trusted root is configured on this ledger, so no chain can be trusted");
+  } else {
+    const anchored = roots.some((r) => {
+      if (spki(r) === spki(top)) return true;
+      try {
+        return top.checkIssued(r) && top.verify(r.publicKey);
+      } catch {
+        return false;
+      }
+    });
+    add(
+      "root_trusted",
+      anchored,
+      anchored
+        ? `the chain ends at a configured root (${facts.rootSubject})`
+        : `the chain ends at ${facts.rootSubject}, which is not one of the ${roots.length} configured root(s)`,
+    );
+  }
+
+  if (!revocation) {
+    add("not_revoked", undefined, "not evaluated: no revocation list is loaded on this ledger");
+  } else {
+    const listed = chain
+      .map((c, i) => ({ i, status: revocation(c.serialNumber.toLowerCase()) }))
+      .filter((c) => c.status !== undefined);
+    add(
+      "not_revoked",
+      listed.length === 0,
+      listed.length === 0
+        ? "no certificate in the chain is on the revocation list"
+        : listed.map((c) => `certificate ${c.i + 1} is listed as ${c.status}`).join("; "),
+    );
+  }
+}
+
+// ── a TPM's statement ──────────────────────────────────────────────────────
+
+/** The label the binding digest starts with, so it can be nothing else's digest. */
+export const TPM_BINDING_LABEL = "MOHAR-TPM-BIND-v1";
+export const TPM_BUNDLE_FORMAT = "tpm2-quote-v1";
+const AIK_CERTIFICATE_EKU = "2.23.133.8.3";
+const TPM_GENERATED_VALUE = 0xff544347;
+const TPM_ST_ATTEST_QUOTE = 0x8018;
+
+/**
+ * What the TPM is asked to sign over: this ledger's challenge and the key
+ * being enrolled, under a label. The quote's `extraData` must equal this.
+ */
+export function tpmBinding(challenge: Uint8Array, pubkeyHex: string): Buffer {
+  return createHash("sha256")
+    .update(TPM_BINDING_LABEL)
+    .update(Buffer.from([0]))
+    .update(challenge)
+    .update(Buffer.from(pubkeyHex, "hex"))
+    .digest();
+}
+
+interface Quote {
+  extraData: Buffer;
+  firmwareVersion: bigint;
+  resetCount: number;
+}
+
+/**
+ * TPMS_ATTEST for a quote (TPM 2.0 Part 2, 10.12.8), big-endian throughout:
+ *
+ *   magic UINT32 | type UINT16 | qualifiedSigner TPM2B | extraData TPM2B |
+ *   clock UINT64 | resetCount UINT32 | restartCount UINT32 | safe BYTE |
+ *   firmwareVersion UINT64 | attested (PCR selection and digest)
+ */
+export function parseQuote(quoted: Uint8Array): Quote {
+  const b = Buffer.from(quoted);
+  let i = 0;
+  const need = (n: number, what: string) => {
+    if (i + n > b.length) throw new DerError(`the quote ends inside ${what}`);
+  };
+  need(6, "its header");
+  if (b.readUInt32BE(0) !== TPM_GENERATED_VALUE) {
+    throw new DerError("the structure does not begin with the mark a TPM puts on what it generates");
+  }
+  if (b.readUInt16BE(4) !== TPM_ST_ATTEST_QUOTE) throw new DerError("the structure is not a quote");
+  i = 6;
+  const sized = (what: string): Buffer => {
+    need(2, what);
+    const n = b.readUInt16BE(i);
+    i += 2;
+    need(n, what);
+    const out = b.subarray(i, i + n);
+    i += n;
+    return out;
+  };
+  sized("the signer's name");
+  const extraData = sized("the extra data");
+  need(25, "the clock and firmware fields");
+  const resetCount = b.readUInt32BE(i + 8);
+  const firmwareVersion = b.readBigUInt64BE(i + 17);
+  return { extraData, firmwareVersion, resetCount };
+}
+
+type Skip = (names: readonly AttestationCheckName[], why: string) => void;
+
+function verifyTpmQuote(
+  input: AttestationInput,
+  now: Date,
+  add: Add,
+  skip: Skip,
+  facts: AttestationRuling["facts"],
+): void {
+  facts.kind = "tpm-quote";
+  // Said on every ruling of this kind, passed or not: this is what the check
+  // can show at most.
+  facts.keyHeldIn = "software on the PC; a TPM signed for it at enrolment and does not hold it";
+
+  // ── the bundle ──
+  let chain: X509Certificate[];
+  let quoted: Buffer;
+  let signature: Buffer;
+  try {
+    const bundle = JSON.parse(Buffer.from(input.attestation!).toString("utf8")) as {
+      format?: unknown; akChain?: unknown; quoted?: unknown; signature?: unknown;
+    };
+    if (bundle.format !== TPM_BUNDLE_FORMAT) throw new Error(`format is not ${TPM_BUNDLE_FORMAT}`);
+    if (!Array.isArray(bundle.akChain) || bundle.akChain.length < 2 || !bundle.akChain.every((c) => typeof c === "string")) {
+      throw new Error("akChain must be the attestation key's certificate and its issuers");
+    }
+    if (typeof bundle.quoted !== "string" || typeof bundle.signature !== "string") {
+      throw new Error("quoted and signature must both be present");
+    }
+    chain = bundle.akChain.map((c) => new X509Certificate(Buffer.from(c as string, "base64")));
+    quoted = Buffer.from(bundle.quoted, "base64");
+    signature = Buffer.from(bundle.signature, "base64");
+  } catch (err) {
+    add("bundle_readable", false, `what was presented is not a TPM quote bundle: ${(err as Error).message}`);
+    skip(TPM_ATTESTATION_CHECKS.slice(1), "the bundle could not be read");
+    return;
+  }
+  facts.certificates = chain.length;
+  facts.leafSerial = chain[0]!.serialNumber.toLowerCase();
+  add("bundle_readable", true, `a quote, its signature and ${chain.length} certificates`);
+
+  chainChecks(chain, input.tpmRoots ?? [], input.revocation, now, add, facts);
+
+  // ── is the signing key a TPM's attestation key ──
+  const ak = chain[0]!;
+  let usages: string[] = [];
+  try {
+    const eku = certificateExtension(new Uint8Array(ak.raw), "2.5.29.37");
+    usages = eku ? sequence(readTlv(eku).tlv, "the key usages").map((u) => oid(u)) : [];
+  } catch {
+    usages = [];
+  }
+  add(
+    "ak_certificate",
+    usages.includes(AIK_CERTIFICATE_EKU),
+    usages.includes(AIK_CERTIFICATE_EKU)
+      ? "the signing certificate is issued as a TPM attestation key certificate"
+      : "the signing certificate is not issued as a TPM attestation key certificate, so its key need not be in a TPM",
+  );
+
+  // ── the quote ──
+  let quote: Quote | null = null;
+  try {
+    quote = parseQuote(quoted);
+    facts.tpmFirmwareVersion = quote.firmwareVersion.toString(16);
+    facts.tpmResetCount = quote.resetCount;
+    add("quote_structure", true, "a quote generated inside a TPM");
+  } catch (err) {
+    add("quote_structure", false, (err as Error).message);
+  }
+
+  let signed = false;
+  try {
+    signed = verifySignature("sha256", quoted, ak.publicKey, signature);
+  } catch {
+    signed = false;
+  }
+  add(
+    "quote_signed",
+    signed,
+    signed
+      ? "the quote is signed by the attestation key in the certificate"
+      : "the signature over the quote does not verify with the attestation key in the certificate",
+  );
+
+  if (!quote) {
+    skip(["binding_fresh"], "the quote could not be read");
+  } else if (input.expectedChallenge === null) {
+    add(
+      "binding_fresh",
+      false,
+      "this ledger has no challenge outstanding for this key, so the quote could have been made at any time",
+    );
+  } else {
+    const bound = quote.extraData.equals(tpmBinding(input.expectedChallenge, input.pubkeyHex));
+    add(
+      "binding_fresh",
+      bound,
+      bound
+        ? "the quote names the key being enrolled and answers the challenge this ledger issued"
+        : "the quote does not name this key together with the challenge this ledger issued",
+    );
+  }
+
+  // The quote carries a digest of the PC's boot measurements. Judging it needs
+  // the values a known-good build of that PC produces, and there are none here.
+  add("boot_measured", undefined, "not evaluated: this ledger holds no reference boot measurements for centre PCs");
 }
 
 // ── configuration ───────────────────────────────────────────────────────────

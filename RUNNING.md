@@ -414,11 +414,29 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   every real enrolment today is `absent` and what hardware holds the key is
   still the enrolling operator's word. No chain from a real handset has been
   put to the verifier; the chains in `attestation.test.ts` and
-  `tools/e2e/attestation.mjs` (23 checks, Oct 2, 2026) are built by a fixture
+  `tools/e2e/attestation.mjs` (28 checks, Oct 3, 2026) are built by a fixture
   in the shape Android produces. Whether `infra/attestation` holds the
-  vendor's real roots has not been checked. A TPM quote from a centre PC is not
-  understood. Outstanding challenges are held in memory and lost on a restart.
-  See `adr/0003`.
+  vendor's real roots has not been checked. Outstanding challenges are held in
+  memory and lost on a restart. See `adr/0003`.
+- **A centre PC can present a TPM quote, and it proves less than it sounds.**
+  A TPM does not hold Ed25519 keys, so the key a PC enrols with is never
+  inside its TPM. What is checked is a quote: the TPM's attestation key,
+  certified by a root in `infra/attestation/tpm` (`ATTESTATION_TPM_ROOTS_DIR`,
+  kept apart from the phone makers' roots), signs a statement naming the key
+  being enrolled and this ledger's challenge. Ten checks: the bundle reads, the
+  chain links, is in date, ends at a configured TPM root and is not revoked,
+  the signing certificate is issued as an attestation key certificate, the
+  quote is one a TPM generated, the signature verifies, and the quote names
+  this key with this challenge. The boot measurements in the quote are
+  reported as not evaluated, because there are no reference values to judge
+  them against. A quote that passes shows a real TPM was at the enrolment and
+  vouched for the key. It does not show the key cannot be copied off the PC,
+  and the ruling says so in `facts.keyHeldIn` whether it passes or not.
+  What this is not: tried against a real TPM. No centre PC client exists to
+  produce the bundle (`format: tpm2-quote-v1`, the attestation key's
+  certificate chain, the quote, a signature in DER or PKCS#1 form); the ones in
+  the tests are built by a fixture with a software key standing in for the
+  attestation key.
 - **The gateway is the only thing that checks who is asking.** The ledger
   checks no credential of its own beyond the signature on an event and the
   operator's role on the three account routes. Started alone

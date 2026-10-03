@@ -68,6 +68,8 @@ const ChallengeBody = z.object({
  */
 export interface AttestationPolicy {
   roots: readonly X509Certificate[];
+  /** Roots that certify TPM attestation keys, for a centre PC's quote. */
+  tpmRoots?: readonly X509Certificate[];
   /** Device kinds that are refused when they present no attestation at all. */
   requiredKinds: ReadonlySet<string>;
   /** Certificate serial to its status in the vendor's list, when one is loaded. */
@@ -83,6 +85,10 @@ function defaultRootsDir(): string {
 function policyFromEnvironment(app: FastifyInstance): AttestationPolicy {
   const dir = process.env["ATTESTATION_ROOTS_DIR"] ?? defaultRootsDir();
   const { roots, problems } = loadRoots(dir);
+  // Kept apart from the phone makers' roots: being trusted to vouch for a
+  // phone's Keystore is not being trusted to vouch for a PC's TPM.
+  const tpmDir = process.env["ATTESTATION_TPM_ROOTS_DIR"] ?? join(dir, "tpm");
+  const tpm = loadRoots(tpmDir);
   const requiredKinds = new Set(
     (process.env["ATTESTATION_REQUIRED_KINDS"] ?? "")
       .split(",")
@@ -90,7 +96,11 @@ function policyFromEnvironment(app: FastifyInstance): AttestationPolicy {
       .filter(Boolean),
   );
   app.log.info(
-    { dir, roots: roots.length, problems, requiredKinds: [...requiredKinds] },
+    {
+      dir, roots: roots.length, problems,
+      tpmDir, tpmRoots: tpm.roots.length, tpmProblems: tpm.problems,
+      requiredKinds: [...requiredKinds],
+    },
     roots.length === 0
       ? "no attestation roots loaded: an enrolment presenting an attestation will be refused"
       : "attestation roots loaded",
@@ -121,6 +131,7 @@ function policyFromEnvironment(app: FastifyInstance): AttestationPolicy {
 
   return {
     roots,
+    tpmRoots: tpm.roots,
     requiredKinds,
     get revocation() {
       const loaded = entries;
@@ -190,7 +201,10 @@ export function registerRegistryRoutes(
    *
    * An attestation, where one is presented, is put to every check in
    * domain/attestation and the ruling is written down with the device, or
-   * instead of it: a chain that fails any check enrols nothing. A device that
+   * instead of it: one that fails any check enrols nothing. A phone presents
+   * an Android Keystore chain; a centre PC presents a TPM quote over the key
+   * and the challenge, which shows a TPM vouched for the key and not that the
+   * key is inside it. A device that
    * presents none is enrolled as before and recorded as `absent`, unless its
    * kind is listed in ATTESTATION_REQUIRED_KINDS.
    *
@@ -214,6 +228,7 @@ export function registerRegistryRoutes(
       // Taken whether or not it then matches: a challenge is answered once.
       expectedChallenge: attestation ? challenges.take(input.pubkeyHex) : null,
       roots: attestationPolicy.roots,
+      tpmRoots: attestationPolicy.tpmRoots,
       revocation: attestationPolicy.revocation,
     });
     const required = attestationPolicy.requiredKinds.has(input.kind);

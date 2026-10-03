@@ -86,8 +86,10 @@ it), and `sealkeys`,
 `unlock`, `notify`, `render` and `trace` as services of their own — what exists
 of the first three runs inside `ledger`. An Android Keystore attestation is
 checked at enrolment when a device presents one, and a chain that fails enrols
-nothing; but nothing here produces one yet (the field app is a web page), no
-chain off a real handset has been put to it, and a TPM quote is not understood.
+nothing; a centre PC can present a TPM quote, which shows a TPM vouched for
+the key and not that the key is inside it. Nothing here produces either yet
+(the field app is a web page, there is no centre PC client), and neither has
+been tried against real hardware.
 The ledger checks no credential itself, so it is only ever run behind the
 gateway.
 

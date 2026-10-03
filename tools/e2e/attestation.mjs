@@ -26,9 +26,10 @@ const pg = require("pg");
 const Fastify = require("fastify");
 const at = (p) => new URL(`../../${p}`, import.meta.url).href;
 const { registerRegistryRoutes } = await import(at("services/ledger/dist/http/registry-routes.js"));
-const { vendor, certificate, keyDescription, ed25519Hex } = await import(
+const { vendor, certificate, keyDescription, ed25519Hex, tpmMaker, tpmQuote, tpmBundle } = await import(
   at("services/ledger/dist/domain/attestation-fixture.js")
 );
+const { tpmBinding } = await import(at("services/ledger/dist/domain/attestation.js"));
 const { generateKeypair } = await import(at("packages/crypto-core/dist/index.js"));
 
 const ownerUrl = process.env.E2E_OWNER_URL;
@@ -62,6 +63,7 @@ const expect = (name, ok, detail = "") => results.push({ name, ok, detail });
 
 const hardware = vendor("E2E hardware");
 const stranger = vendor("Unknown maker");
+const tpm = tpmMaker("E2E TPM");
 const revoked = new Set();
 
 /** One ledger per policy, as two deployments would be configured. */
@@ -70,6 +72,7 @@ const ledger = async (requiredKinds) => {
   registerRegistryRoutes(app, pool, {
     attestation: {
       roots: [hardware.x509],
+      tpmRoots: [tpm.x509],
       requiredKinds: new Set(requiredKinds),
       revocation: (serial) => (revoked.has(parseInt(serial, 16)) ? "REVOKED" : undefined),
     },
@@ -217,6 +220,37 @@ try {
     (await deviceFor(once.pubkeyHex)).length === 1, `${first.status} then ${again.status}`);
   const dup = await strict.post("/devices", { kind: "centre_pc", pubkeyHex: once.pubkeyHex });
   expect("and the same key presented again with nothing is a duplicate key, not a second device", dup.status === 409);
+
+  // ── a centre PC: a TPM vouching for a key it does not hold ──
+  const pc = async ({ challenge = "ask", signerKey, forKey } = {}) => {
+    const key = generateKeyPairSync("ed25519");
+    const pubkeyHex = ed25519Hex(key.publicKey);
+    const answered =
+      challenge === "ask"
+        ? Buffer.from((await strict.post("/devices/challenge", { pubkeyHex })).body.challengeB64, "base64")
+        : randomBytes(32);
+    const quoted = tpmQuote({ extraData: tpmBinding(answered, forKey ?? pubkeyHex) });
+    return {
+      pubkeyHex,
+      attestationB64: Buffer.from(tpmBundle(tpm, quoted, signerKey ? { signerKey } : {})).toString("base64"),
+    };
+  };
+  const goodPc = await pc();
+  const pcEnrolled = await strict.post("/devices", { kind: "centre_pc", ...goodPc });
+  const [pcRow] = await rowsFor(goodPc.pubkeyHex);
+  expect("a centre PC presenting a TPM quote over its key and the challenge is enrolled",
+    pcEnrolled.status === 201 && pcEnrolled.body.attestation.outcome === "verified" &&
+    pcEnrolled.body.attestation.checks.length === 10,
+    JSON.stringify(pcEnrolled.body.attestation?.checks?.filter((c) => c.passed === false) ?? pcEnrolled.body));
+  expect("and the record says the key is in software, with the boot measurement not evaluated",
+    pcRow?.facts.kind === "tpm-quote" && /software.*does not hold it/.test(pcRow.facts.keyHeldIn) &&
+    pcRow.checks.find((c) => c.check === "boot_measured").passed === undefined, JSON.stringify(pcRow?.facts));
+  await refuse("a TPM quote made without this ledger's challenge is refused",
+    await pc({ challenge: "none" }), ["binding_fresh"]);
+  await refuse("a TPM quote naming some other key is refused",
+    await pc({ forKey: "ab".repeat(32) }), ["binding_fresh"]);
+  await refuse("a quote not signed by the certified attestation key is refused",
+    await pc({ signerKey: generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey }), ["quote_signed"]);
 
   // ── reading it back ──
   const listed = await strict.get("/devices/attestations");

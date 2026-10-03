@@ -5,7 +5,8 @@ import { X509Certificate, generateKeyPairSync, randomBytes, sign, type KeyObject
  *
  * node:crypto cannot issue certificates, so these are built byte by byte in the
  * shape Android's Keystore produces: a root, an intermediate, and a leaf over
- * an Ed25519 key carrying the key description extension.
+ * an Ed25519 key carrying the key description extension. For a centre PC, a
+ * TPM attestation key certificate and a quote signed with it.
  *
  * Used by attestation.test.ts and tools/e2e/attestation.mjs. No route imports
  * this file, and nothing made here is trusted by a running ledger unless a
@@ -72,12 +73,17 @@ export interface CertSpec {
   now?: Date;
   ca?: boolean;
   keyDescription?: Buffer;
+  /** Extended key usages, as dotted OIDs. */
+  extendedKeyUsage?: string[];
 }
 
 export function certificate(s: CertSpec): Buffer {
   const at = (s.now ?? new Date()).getTime();
   const extensions: Buffer[] = [];
   if (s.ca) extensions.push(seq(oid("2.5.29.19"), boolean(true), octet(seq(boolean(true)))));
+  if (s.extendedKeyUsage) {
+    extensions.push(seq(oid("2.5.29.37"), octet(seq(...s.extendedKeyUsage.map((u) => oid(u))))));
+  }
   if (s.keyDescription) extensions.push(seq(oid("1.3.6.1.4.1.11129.2.1.17"), octet(s.keyDescription)));
   const tbs = seq(
     explicit(0, int(2)),
@@ -162,4 +168,74 @@ export function attestedKey(
       ...leaf,
     }),
   };
+}
+
+// ── a TPM's quote ──
+
+const be = (n: number | bigint, bytes: 2 | 4 | 8): Buffer => {
+  const b = Buffer.alloc(bytes);
+  if (bytes === 2) b.writeUInt16BE(Number(n));
+  else if (bytes === 4) b.writeUInt32BE(Number(n));
+  else b.writeBigUInt64BE(BigInt(n));
+  return b;
+};
+const sized = (b: Uint8Array) => Buffer.concat([be(b.length, 2), b]);
+
+export interface QuoteSpec {
+  extraData: Uint8Array;
+  magic?: number;
+  type?: number;
+}
+
+/** TPMS_ATTEST for a quote, as a TPM lays it out. */
+export function tpmQuote(q: QuoteSpec): Buffer {
+  return Buffer.concat([
+    be(q.magic ?? 0xff544347, 4),
+    be(q.type ?? 0x8018, 2),
+    sized(randomBytes(34)), // qualifiedSigner: the attestation key's name
+    sized(q.extraData),
+    be(123456789n, 8), // clock
+    be(7, 4), // resetCount
+    be(2, 4), // restartCount
+    Buffer.from([1]), // safe
+    be(0x0007003400120000n, 8), // firmwareVersion
+    be(1, 4), // one PCR selection
+    be(0x000b, 2), // SHA-256 bank
+    Buffer.from([3, 0xff, 0x00, 0x00]), // PCRs 0-7
+    sized(randomBytes(32)), // pcrDigest
+  ]);
+}
+
+/** A TPM maker: a root, an intermediate, and an attestation key it certified. */
+export function tpmMaker(label: string, now: Date = new Date()) {
+  const maker = vendor(label, now);
+  const ak = ec();
+  const akCert = certificate({
+    subject: `${label} attestation key`,
+    issuer: `${label} intermediate`,
+    subjectKey: ak.publicKey,
+    signerKey: maker.mid.privateKey,
+    serial: 880011,
+    extendedKeyUsage: ["2.23.133.8.3"],
+    now,
+  });
+  return { ...maker, ak, akCert };
+}
+
+/** The bundle a centre PC presents: the quote, its signature, and the chain. */
+export function tpmBundle(
+  maker: ReturnType<typeof tpmMaker>,
+  quoted: Buffer,
+  over: { signerKey?: KeyObject; akCert?: Buffer; format?: string } = {},
+): Uint8Array {
+  return new Uint8Array(
+    Buffer.from(
+      JSON.stringify({
+        format: over.format ?? "tpm2-quote-v1",
+        akChain: [over.akCert ?? maker.akCert, maker.midCert, maker.rootCert].map((c) => c.toString("base64")),
+        quoted: quoted.toString("base64"),
+        signature: sign("sha256", quoted, over.signerKey ?? maker.ak.privateKey).toString("base64"),
+      }),
+    ),
+  );
 }

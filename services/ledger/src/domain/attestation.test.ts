@@ -4,6 +4,8 @@ import { X509Certificate, generateKeyPairSync, randomBytes } from "node:crypto";
 import {
   ATTESTATION_CHECKS,
   ChallengeBook,
+  TPM_ATTESTATION_CHECKS,
+  tpmBinding,
   verifyAttestation,
   type AttestationInput,
   type AttestationRuling,
@@ -15,6 +17,9 @@ import {
   ec,
   ed25519Hex,
   keyDescription,
+  tpmBundle,
+  tpmMaker,
+  tpmQuote,
   vendor,
   type CertSpec,
   type DescriptionSpec,
@@ -243,4 +248,99 @@ test("a challenge is answered once and expires", () => {
   assert.equal(book.take("aa", NOW), null);
   book.issue("bb", c, NOW);
   assert.equal(book.take("bb", new Date(NOW.getTime() + 11 * 60_000)), null);
+});
+
+// ── a centre PC: a TPM vouching for a key it does not hold ──
+
+const tpm = tpmMaker("Test TPM", NOW);
+
+function pcEnrolment(over: { quote?: Partial<Parameters<typeof tpmQuote>[0]>; bundle?: Parameters<typeof tpmBundle>[2] } = {}) {
+  const key = generateKeyPairSync("ed25519");
+  const pubkeyHex = ed25519Hex(key.publicKey);
+  const challenge = randomBytes(32);
+  const quoted = tpmQuote({ extraData: tpmBinding(challenge, pubkeyHex), ...over.quote });
+  const input: AttestationInput = {
+    attestation: tpmBundle(tpm, quoted, over.bundle),
+    pubkeyHex,
+    expectedChallenge: challenge,
+    roots: [google.x509],
+    tpmRoots: [tpm.x509],
+    now: NOW,
+  };
+  return { input, pubkeyHex, challenge };
+}
+
+test("a quote from a certified attestation key, naming the enrolled key and the challenge, is verified", () => {
+  const r = verifyAttestation(pcEnrolment().input);
+  assert.equal(r.outcome, "verified", JSON.stringify(failed(r)));
+  assert.deepEqual(r.checks.map((c) => c.check), [...TPM_ATTESTATION_CHECKS]);
+  assert.equal(r.facts.kind, "tpm-quote");
+  assert.equal(r.facts.tpmResetCount, 7);
+});
+
+test("a verified TPM quote still says the key is in software, not in the TPM", () => {
+  const r = verifyAttestation(pcEnrolment().input);
+  assert.match(r.facts.keyHeldIn ?? "", /software.*does not hold it/);
+  assert.equal(r.facts.keyMintSecurityLevel, undefined);
+});
+
+test("the boot measurement is reported as not evaluated, not as passed", () => {
+  const r = verifyAttestation(pcEnrolment().input);
+  assert.equal(check(r, "boot_measured")?.passed, undefined);
+  assert.match(check(r, "boot_measured")?.evidence ?? "", /^not evaluated/);
+});
+
+test("a TPM chain is not trusted because a phone maker's root is configured", () => {
+  const r = verifyAttestation({ ...pcEnrolment().input, tpmRoots: [], roots: [google.x509, tpm.x509] });
+  assert.deepEqual(failed(r), ["root_trusted"]);
+});
+
+test("a quote naming a different key does not enrol this one", () => {
+  const e = pcEnrolment();
+  const r = verifyAttestation({ ...e.input, pubkeyHex: "ab".repeat(32) });
+  assert.deepEqual(failed(r), ["binding_fresh"]);
+});
+
+test("a quote made for another challenge, or with none outstanding, is refused", () => {
+  const e = pcEnrolment();
+  assert.deepEqual(failed(verifyAttestation({ ...e.input, expectedChallenge: randomBytes(32) })), ["binding_fresh"]);
+  assert.deepEqual(failed(verifyAttestation({ ...e.input, expectedChallenge: null })), ["binding_fresh"]);
+});
+
+test("a quote signed by a key other than the certified attestation key is refused", () => {
+  const r = verifyAttestation(pcEnrolment({ bundle: { signerKey: ec().privateKey } }).input);
+  assert.deepEqual(failed(r), ["quote_signed"]);
+});
+
+test("a certificate not issued as an attestation key certificate is refused, however good its chain", () => {
+  const plain = certificate({
+    subject: "Test TPM some other key", issuer: "Test TPM intermediate", subjectKey: tpm.ak.publicKey,
+    signerKey: tpm.mid.privateKey, now: NOW,
+  });
+  const r = verifyAttestation(pcEnrolment({ bundle: { akCert: plain } }).input);
+  assert.deepEqual(failed(r), ["ak_certificate"]);
+});
+
+test("bytes the attestation key signed that a TPM did not generate are refused", () => {
+  const notGenerated = verifyAttestation(pcEnrolment({ quote: { magic: 0x12345678 } }).input);
+  assert.deepEqual(failed(notGenerated), ["quote_structure"]);
+  assert.equal(check(notGenerated, "binding_fresh")?.passed, undefined);
+  const notQuote = verifyAttestation(pcEnrolment({ quote: { type: 0x8017 } }).input);
+  assert.deepEqual(failed(notQuote), ["quote_structure"]);
+});
+
+test("a bundle of an unknown format is refused and every other check says it was not run", () => {
+  const r = verifyAttestation(pcEnrolment({ bundle: { format: "tpm2-quote-v9" } }).input);
+  assert.deepEqual(failed(r), ["bundle_readable"]);
+  assert.equal(r.checks.length, TPM_ATTESTATION_CHECKS.length);
+  assert.ok(r.checks.slice(1).every((c) => c.passed === undefined));
+  assert.match(r.facts.keyHeldIn ?? "", /software/);
+});
+
+test("a truncated quote is refused rather than read past its end", () => {
+  const e = pcEnrolment();
+  const bundle = JSON.parse(Buffer.from(e.input.attestation!).toString()) as { quoted: string };
+  const short = Buffer.from(bundle.quoted, "base64").subarray(0, 20);
+  const r = verifyAttestation({ ...e.input, attestation: tpmBundle(tpm, short) });
+  assert.deepEqual(failed(r), ["quote_structure"]);
 });

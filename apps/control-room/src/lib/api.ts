@@ -376,6 +376,9 @@ export interface DeviceAttestation {
   outcome: "verified" | "refused" | "absent";
   checks: EngineCheck[];
   facts: {
+    kind?: "android-key" | "tpm-quote";
+    /** In the ledger's words, where the key is as far as the statement shows. */
+    keyHeldIn?: string;
     attestationSecurityLevel?: string;
     keyMintSecurityLevel?: string;
     verifiedBootState?: string;

@@ -51,7 +51,10 @@ export default function Devices() {
         answers a challenge issued for it, and that the phone booted a locked, verified system. A
         chain that fails enrols nothing. But the field app is a web page and cannot ask a Keystore
         for one, so every device below that says "none presented" still rests on the operator who
-        enrolled it. A TPM quote from a centre PC is not understood. See{" "}
+        enrolled it. A centre PC can present a TPM quote instead. A TPM does not hold this kind
+        of key, so a quote that passes shows only that a real TPM was at the enrolment and signed
+        for the key; the key itself stays in software and can be copied. No client produces a
+        quote yet either. See{" "}
         <span className="mono">adr/0003</span>.
       </div>
 
@@ -109,8 +112,11 @@ export default function Devices() {
                       </span>
                     ) : ruling.outcome === "verified" ? (
                       <button onClick={() => setOpen(open === d.id ? null : d.id)}>
-                        attested: {ruling.facts.keyMintSecurityLevel ?? "secure hardware"}, boot{" "}
-                        {ruling.facts.verifiedBootState ?? "unknown"}
+                        {ruling.facts.kind === "tpm-quote"
+                          ? `a TPM vouched for it: ${ruling.facts.keyHeldIn ?? "the key is held in software"}`
+                          : `attested: ${ruling.facts.keyMintSecurityLevel ?? "secure hardware"}, boot ${
+                              ruling.facts.verifiedBootState ?? "unknown"
+                            }`}
                       </button>
                     ) : (
                       <span style={{ color: "var(--text-dim)" }}>
