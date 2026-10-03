@@ -390,6 +390,26 @@ it applies, the accompanying `consequence` is an instruction drawn from the
 field-ops runbook ("stop, do not print, escalate"), because that is actionable in
 a way that "critical" is not.
 
+## What does not exist yet
+
+Five sentences in the deck that the code does not yet make true. Each has a
+`TODO(claim-N)` comment at the place in the code where the gap is. None of them
+is worked around: where a check cannot be made it reports "not evaluated", and
+where an input is simulated the page says so.
+
+| Claim | What the deck says | What exists | What is missing |
+| --- | --- | --- | --- |
+| 3 | Two fingerprints on our own ESP32 board are enough to release a key part | The opening engine, and a witness station that reads fingerprints for the older unlock ceremony | The station does not hold envelopes or unwrap shares. At an opening the browser is the station and the fingerprint is a slot and score chosen on the page (`Ceremonies.tsx`). |
+| 16 | Two of three officials from different departments verify | The engine enforces two officials, different institutions, 120 seconds apart, on the locked roster | "Verify" is that same simulated reading, not a fingerprint. |
+| 12 | The strong room door opens only when two people verify fingerprints and faces | The door engine checks a face reading when one is sent (`strongroom.ts`) | No device sends one. There is no door camera and no face matcher, so the check reports "not evaluated" and the fingerprints are simulated too. |
+| 26 | The device locks its own memory | Codes are rate-limited and blocked after repeated failures (gateway, hand-off and ceremony engines) | Flash encryption and secure boot are not enabled; the station's key is compiled into plain flash (`station_config.h`). |
+| 28 | The seal lock opens only when the system says yes; opening its box is recorded | The sketch, which compiles; signed, expiring, one-use commands; migration 010 and `tools/seal-lock-command` | It has never been flashed. Nothing has been seen to hold a lock shut or report a lid. |
+
+Two more are true in the code and have not been seen on the hardware they
+describe: records waiting on the phone and uploading later (claim 24) was
+exercised in a desktop browser, not on a phone; and the override's live video
+(claim 27) was exercised with a drawn canvas for a camera.
+
 ## Remaining limits
 
 Stated plainly, so the endpoints that do exist do not imply more than they should:

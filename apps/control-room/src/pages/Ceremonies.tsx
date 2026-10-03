@@ -420,6 +420,11 @@ function StationConsole({ run, station, onDone }: { run: DemoOpening; station: S
         finger === "wrong"
           ? run.officials.find((o) => o.id !== personId)?.slot ?? person.slot
           : person.slot;
+      // TODO(claim-3): "two fingerprints on our own ESP32 board release a key
+      // part". Here the slot and score are chosen on this page; no reader is
+      // read. The witness station firmware does not hold envelopes or shares.
+      // TODO(claim-16): the two officials are verified by that same simulated
+      // reading, so "verify" at an opening is not yet a fingerprint.
       const res: OfficialResult = await api.ceremonyOfficial(station.deviceId, start.ceremonyId, {
         personId,
         ...(finger === "none" ? {} : { biometricSlot: slot, biometricScore: finger === "weak" ? 40 : 181 }),

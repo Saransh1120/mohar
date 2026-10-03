@@ -9,6 +9,10 @@
  * signature, open tamper loop or unavailable flash spool never energises the coil.
  * The counter is persisted before energising it. Default and reset state is locked.
  *
+ * TODO(claim-28): "the seal lock opens only when the system says yes; opening its
+ * box is recorded". That is what this code is written to do, and it has not been
+ * flashed to a board: nothing here has been seen to hold a lock shut or report a lid.
+ *
  * The coil is switched off by two things that do not depend on each other: the
  * main loop, at SOLENOID_PULSE_MS, and a one-shot hardware timer armed before
  * the coil is energised. If the loop stalls, the timer still cuts the coil.

@@ -12,6 +12,10 @@
  * not tamper-proof". Before a real deployment move it into NVS and enable flash
  * encryption and secure boot. That raises the cost of extraction without
  * changing a line of the firmware.
+ *
+ * TODO(claim-26): "the device locks its own memory". It does not yet: the key
+ * below is compiled into plain flash, and flash encryption and secure boot are
+ * not enabled by any sketch here.
  */
 
 // ── network ────────────────────────────────────────────────────────────────

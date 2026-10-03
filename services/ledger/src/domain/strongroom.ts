@@ -321,6 +321,10 @@ export async function decideEntry(tx: PoolClient, req: EntryRequest): Promise<Do
   }
 
   // ── the faces ──
+  // TODO(claim-12): "the door opens only when two people verify fingerprints
+  // and faces". The check is here and is applied when a reading arrives, but no
+  // device sends one: there is no camera at a door and no face matcher, so in
+  // practice this is reported as not evaluated and the door opens on fingers.
   const faceRead = req.entrants.filter((e) => e.faceMatched !== undefined);
   if (faceRead.length === 0) {
     add(
