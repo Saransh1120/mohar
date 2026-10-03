@@ -546,8 +546,11 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   visits, roster lock, opening on the real drand round and an overdue leg. Every
   signature and chain hash was checked; the transaction rolled back.
   Public seam scans now use the same service-signing identity as those engine
-  events. `LEDGER_SERVICE_KEY` in `.env.example` is the stable 64-hex key to
-  provision in Render; without it the process creates a new identity on boot.
+  events. `LEDGER_SERVICE_KEY` is documented in `.env.example` and was saved as
+  a masked environment value on the Render `mohar` service on Oct 3, 2026.
+  Render deployment `dep-db0aqnpsrm7s73eq9rt0` reached Live and its boot log
+  reported that the service is live. Without that key the ledger creates a new
+  service-signing identity on each boot; the key value is not recorded here.
 - **The live streams do not work through Netlify.** Its `/api` proxy holds back
   small server-sent frames and answers 504 after about thirty seconds, so on
   the deployed site `GET /alerts/stream` never opens (and `/events/stream` goes
