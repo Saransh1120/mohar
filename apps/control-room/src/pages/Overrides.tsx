@@ -6,6 +6,7 @@ import { formatTime, relativeTime, useAsync } from "../lib/hooks";
 import { Card, Empty, ErrorNote } from "../components/ui";
 import { roleText } from "../components/CheckList";
 import { OperatorCallPanel } from "../components/OverrideCall";
+import { checkRelay, type RelayCheck } from "../lib/overrideCall";
 
 /**
  * ── Override approval ────────────────────────────────────────────────────────
@@ -41,6 +42,16 @@ export default function Overrides() {
   const stats = useAsync(() => api.overrideStats(), [], { pollMs: 15_000 });
   const list = overrides.data?.overrides ?? [];
   const pending = list.filter((o) => o.standing.status === "pending").length;
+  const [relay, setRelay] = useState<RelayCheck | "checking" | null>(null);
+
+  async function relayCheck() {
+    setRelay("checking");
+    try {
+      setRelay(await checkRelay());
+    } catch (e) {
+      setRelay({ outcome: "unreachable", detail: (e as Error).message });
+    }
+  }
 
   const refresh = () => {
     void overrides.refresh();
@@ -68,8 +79,20 @@ export default function Overrides() {
           {list.length} request{list.length === 1 ? "" : "s"} · {pending} awaiting a decision
         </span>
         <div className="spacer" />
+        <button onClick={() => void relayCheck()} disabled={relay === "checking"}>
+          {relay === "checking" ? "Checking the relay…" : "Check the call relay"}
+        </button>
         <button onClick={refresh}>Refresh</button>
       </div>
+      {relay && relay !== "checking" && (
+        <div className="note" style={{ marginTop: 0 }}>
+          <strong>
+            {relay.outcome === "reached" ? "Relay reached." : relay.outcome === "none" ? "No relay." : "Relay not reached."}
+          </strong>{" "}
+          {relay.detail}
+          {relay.outcome !== "none" && " This is this browser's path only; the phone's has to be tried from the phone."}
+        </div>
+      )}
 
       <div className="grid main-side">
         <Card title="Requests" hint="newest first" flush>

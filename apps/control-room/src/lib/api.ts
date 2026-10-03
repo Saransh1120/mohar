@@ -1347,6 +1347,7 @@ export const api = {
       body: { state: "connected" | "ended"; framesDecoded?: number; width?: number; height?: number; seconds?: number },
     ) => post<{ recorded: boolean }>(`/overrides/${id}/call/state`, body),
     record: (id: string) => get<CallRecord>(`/overrides/${id}/call`),
+    ice: () => get<{ iceServers: RTCIceServer[]; relay: boolean; problems: string[] }>("/calls/ice"),
     // The phone's end, signed by the device as every other act of its is.
     deviceJoin: (id: string, deviceId: string) =>
       postAsDevice<{ operators: { accountId: string; name: string }[]; iceServers: RTCIceServer[]; relay?: boolean }>(

@@ -339,3 +339,65 @@ export class PhoneCall {
     this.onStatus({ phase: "ended", detail: "Call closed." });
   }
 }
+
+// ── is the relay there ──────────────────────────────────────────────────────
+
+export interface RelayCheck {
+  /** `none`: the ledger offers no relay. `reached`: this browser got an address on it. */
+  outcome: "none" | "reached" | "unreachable";
+  detail: string;
+}
+
+/**
+ * Ask the browser for a relayed address and nothing else.
+ *
+ * With the transport policy set to relay, the only candidates the browser can
+ * produce are ones the relay allocated for it. One arriving means the relay
+ * answered and accepted the credential the ledger just made. None arriving
+ * within a few seconds means it did not, for whatever reason: it is down, it
+ * is unreachable from this network, or its secret is not the ledger's.
+ *
+ * This checks this browser's path to the relay. It says nothing about the
+ * phone's path, which has to be tried from the phone's network.
+ */
+export async function checkRelay(timeoutMs = 8000): Promise<RelayCheck> {
+  const { iceServers, relay, problems } = await api.overrideCall.ice();
+  if (!relay) {
+    return {
+      outcome: "none",
+      detail:
+        "The ledger offers no relay" +
+        (problems.length ? ` (${problems.join("; ")})` : " (TURN_URLS and TURN_SECRET are not set)") +
+        ". Calls connect directly or not at all.",
+    };
+  }
+  const pc = new RTCPeerConnection({ iceServers, iceTransportPolicy: "relay" });
+  try {
+    pc.createDataChannel("relay-check");
+    const found = new Promise<string | null>((resolve) => {
+      const timer = setTimeout(() => resolve(null), timeoutMs);
+      pc.onicecandidate = (e) => {
+        if (e.candidate?.candidate.includes(" typ relay")) {
+          clearTimeout(timer);
+          resolve(e.candidate.address ?? "an address");
+        } else if (e.candidate === null) {
+          // Gathering finished with nothing relayed.
+          clearTimeout(timer);
+          resolve(null);
+        }
+      };
+    });
+    await pc.setLocalDescription(await pc.createOffer());
+    const address = await found;
+    return address
+      ? { outcome: "reached", detail: `The relay answered and gave this browser ${address} to be reached on.` }
+      : {
+          outcome: "unreachable",
+          detail:
+            "A relay is configured and this browser got no address from it. It is down, unreachable " +
+            "from this network, or its secret is not the one the ledger has.",
+        };
+  } finally {
+    pc.close();
+  }
+}

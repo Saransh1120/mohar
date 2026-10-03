@@ -31,6 +31,7 @@ import { bearerToken } from "./auth-routes.js";
  *   POST /overrides/:id/call/state               connected / ended, with frames decoded
  *   GET  /overrides/:id/call                     what is on record, and where each
  *                                                operator's call stands
+ *   GET  /calls/ice                              the servers a call would be given
  *
  * The offer and the answer each carry every network candidate in them, so the
  * whole set-up is one message each way. Both ends poll for theirs: the live
@@ -89,6 +90,21 @@ export function registerCallRoutes(app: FastifyInstance, pool: Pool, rooms: Call
     return rows[0];
   };
   const operator = (req: FastifyRequest) => accountForToken(pool, bearerToken(req));
+
+  /**
+   * The servers an operator's browser would be handed for a call, without
+   * opening one: what the Overrides page uses to check that the relay is there
+   * before a call depends on it.
+   */
+  app.get("/calls/ice", async (req, reply) => {
+    const account = await operator(req);
+    if (!account) return reply.code(401).send({ error: "Sign in to check the relay." });
+    return reply.send({
+      iceServers: ice.serversFor(`account-${account.id}`),
+      relay: ice.relay,
+      problems: ice.problems,
+    });
+  });
 
   // ── the phone ─────────────────────────────────────────────────────────────
 

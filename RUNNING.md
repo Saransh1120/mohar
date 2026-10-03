@@ -689,7 +689,17 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   `1829e0bb-5e22-43a3-ade0-31522ae0de8c`, packet `PKT-JPR-7288`). The
   message appeared in the bot chat, and Neon `led.alert_delivery` recorded
   `channel=telegram`, `outcome=sent`, `detail=null` for that alert. Gmail SMTP
-  has not been configured or tested; the station buzzer is not wired to alerts.
+  has not been configured or tested against Gmail; the station buzzer is not
+  wired to alerts. The email channel itself was run against an SMTP server on
+  loopback (`notify-email.test.ts`): the message arrives with its sender,
+  recipient, subject and text, a username and password in `SMTP_URL` are
+  presented when the server asks, and a wrong password, a refused message and a
+  server that is not there are each a failed send. For Gmail set
+  `SMTP_URL=smtps://<address>:<app password>@smtp.gmail.com:465` (the address
+  URL-encoded, `@` as `%40`), `ALERT_EMAIL_FROM` to that address and
+  `ALERT_EMAIL_TO` to who is told. An app password needs two-step verification
+  on the Google account. Whether Gmail accepts it from Render and where the
+  mail lands has to be seen once.
 - **Device sequence checks are implemented, but coverage is partial.** Migration
   012 was applied on Neon on Oct 2, 2026. A signed event with `deviceSeq` is
   checked against that device's previous number; a gap appends a
@@ -801,7 +811,13 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   encrypted media and holds no key to it. Without one, two networks that both
   block direct connections will not connect. **No relay has been run:** there
   was no Docker host, so the compose file is untried and the credentials have
-  been checked for their form only, not against a coturn. It was clicked through locally through the
+  been checked for their form only, not against a coturn. The Override
+  approval page has a *Check the call relay* button: it asks the browser for a
+  relayed address and nothing else, so an answer means the relay is up and took
+  a credential the ledger made. It was seen to say "no relay" with none
+  configured and "not reached" with an address nothing listens on (Oct 3,
+  2026); it has not been seen to say "reached", because there is no relay to
+  reach. It checks the operator's browser's path only. It was clicked through locally through the
   gateway on Oct 2, 2026 with a drawn canvas standing in for the camera: two
   operators each on their own call, video decoded at the operator's end, an
   approval with no call refused, the second approval approving. It has not been
