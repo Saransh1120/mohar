@@ -628,8 +628,9 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
 - **Enrolment needs migration 014 and an override decision needs 015.**
   Without 014 `POST /devices` returns 503; without 015
   `POST /overrides/:id/decision` returns 503. Both were applied to local
-  Postgres on Oct 2, 2026. Whether they are on Neon has not been checked from
-  here; apply them before deploying a build that includes them.
+  Postgres on Oct 2, 2026 and to production Neon on Oct 3, 2026. The Neon SQL
+  Editor showed both `schema_migrations` SHA-256 records, both new tables and
+  the `led.seam_override_decision.call_evidence` column after applying them.
 - **Alerts need migrations 007 and 008, the four newer pages need 009, and
   Rosters needs 011.**
   Without 007 the Acknowledge button returns 503; without 008 the notifier logs
