@@ -289,9 +289,10 @@ export function registerOverrideRoutes(
             officers_present: boolean;
             display_name: string;
             note: string;
+            call_evidence: { onRecord?: boolean } | null;
           }>(
             `select d.account_id, d.decision, d.video_confirmed, d.officers_present,
-                    d.note, a.display_name
+                    d.note, a.display_name, d.call_evidence
                from led.seam_override_decision d join ref.account a on a.id = d.account_id
               where d.request_id = $1::uuid order by d.decided_at`,
             [req.params.id],
@@ -390,8 +391,8 @@ export function registerOverrideRoutes(
           seamIdTyped: request.seam_id_typed,
           photoSha256: request.photo_sha256,
         }, after.filter((d) => d.decision === "approved").map((d) => ({
-          accountId: d.account_id, note: d.note,
-        })), callRequired);
+          accountId: d.account_id, note: d.note, callOnRecord: d.call_evidence?.onRecord === true,
+        })));
       }
       return { code: 201 as const, body: { standing: now, call: callEvidence,
         ...(chainEvent ? { chainEvent } : {}) } };

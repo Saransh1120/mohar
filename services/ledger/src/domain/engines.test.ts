@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { describeDwell, describeFootfall, dwellLimitSeconds, type DwellFacts } from "./strongroom.js";
 import { overrideStanding, rateAgainstBaseline, type OverrideDecisionRow } from "./override.js";
+import { approvalChannelOf } from "./override-events.js";
 import { describeIncomplete, institutionOf, judgeLead, stateFromSteps } from "./opening.js";
 
 /**
@@ -261,4 +262,11 @@ test("none of these alerts carries a severity word", () => {
   for (const text of texts) {
     for (const word of SEVERITY) assert.equal(text.includes(word), false, `mentions "${word}"`);
   }
+});
+
+test("an override is on the chain as live-video only when both approvals had a call on record", () => {
+  assert.equal(approvalChannelOf([{ callOnRecord: true }, { callOnRecord: true }]), "live-video");
+  assert.equal(approvalChannelOf([{ callOnRecord: true }, { callOnRecord: false }]), "operator-attestation");
+  assert.equal(approvalChannelOf([{ callOnRecord: false }, { callOnRecord: false }]), "operator-attestation");
+  assert.equal(approvalChannelOf([]), "operator-attestation");
 });

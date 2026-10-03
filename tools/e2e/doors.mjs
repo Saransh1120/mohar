@@ -238,6 +238,12 @@ try {
     windowStart: new Date(now - 3600e3).toISOString(), windowEnd: new Date(now + 3600e3).toISOString(),
     expectedBy: new Date(now + 1800e3).toISOString(),
   })).body.legId;
+  const plan = { legNo: 9, fromRole: "courier", toRole: "custodian", fromPlace: "a", toPlace: "b",
+    windowStart: new Date(now).toISOString(), windowEnd: new Date(now + 60e3).toISOString(), expectedBy: new Date(now + 30e3).toISOString() };
+  expect("a leg planned for a packet that does not exist is answered as that, not as a server fault",
+    (await post("/legs", { ...plan, packageId: randomUUID() })).status === 404);
+  expect("and so is a leg naming a strong room that does not exist",
+    (await post("/legs", { ...plan, packageId: pkg.id, roomId: randomUUID() })).status === 404);
   const step = { deviceId: phone, personId: press, biometricSlot: 3, biometricScore: 190 };
   const photo = "cd".repeat(32);
 

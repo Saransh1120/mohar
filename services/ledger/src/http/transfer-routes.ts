@@ -117,6 +117,15 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
       return reply.code(400).send({ error: "invalid leg", detail: parsed.error.issues });
     }
     const b = parsed.data;
+    // A leg is planned for a packet that exists, and may name a strong room
+    // that exists. Said as that, rather than left to a constraint to refuse.
+    const { rows: known } = await pool.query<{ packet: boolean; room: boolean }>(
+      `select exists (select 1 from ref.package where id = $1::uuid) as packet,
+              ($2::uuid is null or exists (select 1 from ref.strong_room where id = $2::uuid)) as room`,
+      [b.packageId, b.roomId ?? null],
+    );
+    if (!known[0]?.packet) return reply.code(404).send({ error: "no such packet" });
+    if (!known[0].room) return reply.code(404).send({ error: "no such strong room" });
     const { rows } = await pool.query<{ id: string }>(
       `insert into ref.route_leg
          (package_id, leg_no, from_role, to_role, from_place, to_place,
