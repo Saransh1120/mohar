@@ -533,10 +533,18 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   bytes to the server. The new hand-off screens sign GET `/legs` and the
   dispatch, receive and confirm requests as an enrolled field device. They
   decode both QR images, show all engine checks and each chain event result,
-  and hold a granted receive's transfer key in memory until confirm. The
-  fingerprint slot and score are explicitly simulated. The hand-off screens
-  have passed a build, but have not yet been clicked through against a planned
-  leg in a desktop browser or on a phone. `centre-client` remains planned.
+  and hold a granted receive's transfer key in memory until confirm. Confirm
+  re-reads both QR images (or the approved override) because the engine checks
+  the seam at every step. The fingerprint slot and score are explicitly
+  simulated. On Oct 3, 2026 two separately enrolled field devices in desktop
+  browser tabs completed dispatch, receive and confirm against local `pnpm
+  start`; the engine recorded `HANDOVER_INITIATED` and `HANDOVER_COMPLETED` and
+  the leg showed completed. A wrong serial produced `packet_serial_mismatch`,
+  all returned check evidence and a signed `HANDOVER_REFUSED`. The first browser
+  attempt exposed a Node `Buffer` dependency in seam QR decoding, and a confirm
+  attempt exposed missing seam evidence; both were fixed before the successful
+  run. No phone camera or real fingerprint reader was used. `centre-client`
+  remains planned.
 - **Sealing registers the seam label and nothing else.** The Opening Key is not
   split at sealing, because no service exists to hold the parts. The label tool
   writes both PDF and SVG. The label comes out 48 x 34 mm at QR version 4, not
@@ -596,7 +604,7 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   seam scanned in a public browser posts only its opaque ID and QR half to
   `POST /public/seam-scan`; the page removes the secret fragment before the
   request. The ledger appends `UNAUTHORIZED_SCAN` and raises an alert. Unknown
-  IDs receive the same public response. `tools/e2e/public-scan.mjs` passed 8
+  IDs receive the same public response. `tools/e2e/public-scan.mjs` passed 9
   checks against local Postgres. A same-tab second QR scan initially left the
   fragment in the address bar; commit `a8d5a50` handles `hashchange`. Both a
   first scan and a second scan stripped a synthetic test fragment in the local

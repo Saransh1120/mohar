@@ -26,7 +26,8 @@ For a hand-off, enter the package ID and load its legs with a device-signed
 `GET /legs`. Choose a leg, capture both QR images, and use Dispatch. The
 receiver selects the leg, captures both codes, types the packet serial and
 uses Receive. A granted receive returns a transfer key once; this page holds
-it only in memory, then sends it with Confirm and clears it. Closing or
+it only in memory, then sends it with both QR halves (or the approved override)
+on Confirm and clears it. The engine checks the seam again. Closing or
 reloading the page loses the key. An approved damaged-label override ID may be
 entered instead of both QR images. Each engine response shows the outcome,
 all checks with their exact evidence, and the signed chain event result. A
@@ -56,5 +57,7 @@ claim of hardware-backed phone identity should be made for this PWA.
 
 What was and was not run is in `RUNNING.md`. The earlier enrolment, scan,
 offline queue, override request and public verify flows were clicked through
-on a desktop browser. The hand-off screens still need a desktop and phone
-click-through with a planned leg and enrolled field devices.
+on a desktop browser. The hand-off screens were clicked through against local
+`pnpm start` on Oct 3, 2026: two separately enrolled field devices completed
+Dispatch → Receive → Confirm on a planned leg; a wrong serial was refused with
+its checks and signed refusal event. A phone and its camera are still untested.

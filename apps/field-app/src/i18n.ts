@@ -45,8 +45,8 @@ const STRINGS = {
   // ── hand-off ──
   h_handoff: { en: "Hand-off", hi: "सुपुर्दगी" },
   p_handoff: {
-    en: "These three steps are signed by this enrolled phone. This browser has no fingerprint reader: the selected slot and score are simulated, not biometric proof.",
-    hi: "ये तीनों कदम इस दर्ज फ़ोन के हस्ताक्षर से जाते हैं। इस ब्राउज़र में फ़िंगरप्रिंट रीडर नहीं है: चुना गया स्लॉट और स्कोर बनावटी हैं, बायोमेट्रिक प्रमाण नहीं।",
+    en: "These three steps are signed by this enrolled phone. Keep both QR images until Confirm; the engine checks the seam again with the key. This browser has no fingerprint reader: the selected slot and score are simulated, not biometric proof.",
+    hi: "ये तीनों कदम इस दर्ज फ़ोन के हस्ताक्षर से जाते हैं। पुष्टि तक दोनों क्यूआर फ़ोटो रखें; इंजन चाबी के साथ सील फिर जाँचता है। इस ब्राउज़र में फ़िंगरप्रिंट रीडर नहीं है: चुना गया स्लॉट और स्कोर बनावटी हैं, बायोमेट्रिक प्रमाण नहीं।",
   },
   p_engine_words: {
     en: "What the ledger answers (each check and its evidence) is shown exactly as it arrived.",

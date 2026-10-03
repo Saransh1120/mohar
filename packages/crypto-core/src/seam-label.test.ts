@@ -68,6 +68,19 @@ test("a QR round trips through encode and parse", () => {
   assert.deepEqual(combineScannedPair(a, b).seamSecret, label.seamSecret);
 });
 
+test("a QR round trips in a browser without Node Buffer", () => {
+  const previous = globalThis.Buffer;
+  try {
+    Object.defineProperty(globalThis, "Buffer", { configurable: true, value: undefined });
+    const label = generateSeamLabel();
+    const a = parseSeamQr(encodeSeamQr(HOST, "A", label.seamId, label.shareA));
+    const b = parseSeamQr(encodeSeamQr(HOST, "B", label.seamId, label.shareB));
+    assert.deepEqual(combineScannedPair(a, b).seamSecret, label.seamSecret);
+  } finally {
+    Object.defineProperty(globalThis, "Buffer", { configurable: true, value: previous });
+  }
+});
+
 test("scanning the two codes in either order gives the same secret", () => {
   const label = generateSeamLabel();
   const a = parseSeamQr(encodeSeamQr(HOST, "A", label.seamId, label.shareA));

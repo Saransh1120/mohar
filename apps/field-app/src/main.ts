@@ -220,19 +220,17 @@ async function handoff(step: "dispatch" | "receive" | "confirm") {
   const legId = document.querySelector<HTMLSelectElement>("#handoff-leg")!.value;
   if (!validId(legId)) throw new Error(t("e_choose_leg"));
   const body: Record<string, unknown> = { personId: identity.personId, occurredAt: new Date().toISOString() };
-  if (step !== "confirm") {
-    const overrideId = input("handoff-override").value.trim();
-    if (overrideId) {
-      if (!validId(overrideId)) throw new Error(t("e_override_uuid"));
-      body.overrideId = overrideId;
-    } else {
-      const a = input("handoff-qr-a").files?.[0];
-      const b = input("handoff-qr-b").files?.[0];
-      if (!a || !b) throw new Error(t("e_need_qr"));
-      const pair = combineScannedPair(parseSeamQr(await decodeQr(a)), parseSeamQr(await decodeQr(b)));
-      body.seamIdRead = pair.seamId;
-      body.seamSecretHex = hex(pair.seamSecret.slice().buffer);
-    }
+  const overrideId = input("handoff-override").value.trim();
+  if (overrideId) {
+    if (!validId(overrideId)) throw new Error(t("e_override_uuid"));
+    body.overrideId = overrideId;
+  } else {
+    const a = input("handoff-qr-a").files?.[0];
+    const b = input("handoff-qr-b").files?.[0];
+    if (!a || !b) throw new Error(t("e_need_qr"));
+    const pair = combineScannedPair(parseSeamQr(await decodeQr(a)), parseSeamQr(await decodeQr(b)));
+    body.seamIdRead = pair.seamId;
+    body.seamSecretHex = hex(pair.seamSecret.slice().buffer);
   }
   const finger = document.querySelector<HTMLSelectElement>("#fingerprint")!.value;
   if (finger !== "none") {

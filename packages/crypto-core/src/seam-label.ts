@@ -82,11 +82,25 @@ function xor(a: Uint8Array, b: Uint8Array): Uint8Array {
 }
 
 function toBase64Url(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("base64url");
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 function fromBase64Url(text: string): Uint8Array {
-  return new Uint8Array(Buffer.from(text, "base64url"));
+  if (!/^[A-Za-z0-9_-]+$/.test(text) || text.length % 4 === 1) {
+    throw new SeamQrFormatError("share is not base64url");
+  }
+  let decoded: string;
+  try {
+    decoded = atob(text.replace(/-/g, "+").replace(/_/g, "/"));
+  } catch {
+    throw new SeamQrFormatError("share is not base64url");
+  }
+  const bytes = Uint8Array.from(decoded, (character) => character.charCodeAt(0));
+  if (toBase64Url(bytes) !== text) throw new SeamQrFormatError("share is not canonical base64url");
+  return bytes;
 }
 
 /** Generate a label: an id, a secret, and the two halves that are printed. */
