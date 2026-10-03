@@ -439,12 +439,37 @@ never a fingerprint, and this is not the R307 reader in the hardware spec.
 Registration asks for a platform authenticator, but attestation type `none`
 does not certify what hardware made the key. `WEBAUTHN_RP_ID` and
 `WEBAUTHN_ORIGIN` must match the actual HTTPS field-app domain on deployment;
-the example values are for localhost. Migration `016_webauthn_challenge.sql`
-was applied to local Postgres on Oct 3, 2026; it has **not** been applied to
-Neon. The verifier passed fixed-vector unit checks and the rollback
-`tools/e2e/webauthn.mjs` passed 11/11 checks: registration, one granted dispatch, replay
-refusal and a missing-assertion refusal with a software-made authenticator.
-No real phone, fingerprint, face unlock or platform PIN has been exercised.
+the defaults are the two local dev servers. `WEBAUTHN_ORIGIN` may list several
+origins separated by commas, but there is one RP ID, and a credential made
+under one RP ID does not work under another: the Netlify deploy preview and the
+production site are different domains, so only one of them can be the field
+app's home at a time. Migration `016_webauthn_challenge.sql` was applied to
+local Postgres on Oct 3, 2026; it has **not** been applied to Neon.
+
+**Until both are done on the deployment, a real phone cannot be enrolled
+there.** Almost every phone has a platform authenticator, so the field app
+will try to register one at enrolment, and the enrolment stops if that fails:
+without migration 016 the challenge cannot be stored, and without
+`WEBAUTHN_RP_ID` and `WEBAUTHN_ORIGIN` set to the deployed domain the phone's
+answer is for the wrong origin. A desktop with no authenticator is unaffected.
+
+A person has one credential. An operator can replace it at enrolment by
+ticking "Replace the phone unlock already registered for this person": for a
+lost phone, cleared storage, or an enrolment that registered the credential and
+then failed before the phone was enrolled. Without that a person with a
+credential could not be enrolled again and could not hand a packet over again,
+since every hand-off of theirs needs the credential. A replacement raises
+`WEBAUTHN_CREDENTIAL_REPLACED` on the Alerts page, naming the operator. There
+is still no way to remove a credential without registering a new one. Used
+challenges are kept in `ref.webauthn_challenge` and nothing clears them. The
+control room's Transfers console sends no assertion, so it is refused for any
+person who has a credential.
+
+The verifier passed fixed-vector unit checks and the rollback
+`tools/e2e/webauthn.mjs` passed 17/17 checks: registration, one granted
+dispatch, replay refusal, a missing-assertion refusal and a recorded
+replacement, with a software-made authenticator. No real phone, fingerprint,
+face unlock or platform PIN has been exercised.
 
 ## Remaining limits
 
@@ -529,8 +554,9 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   hold, so on that route a signed-in account can name any device.
 - **A role decides what an account may change, not what it may see.** Any
   signed-in account reads everything and may drive any engine's console. There
-  is no scoping to a centre or a district, and a session is a password only:
-  the WebAuthn settings in `.env.example` are read by nothing.
+  is no scoping to a centre or a district, and an operator's session is a
+  password only: WebAuthn is used for a courier's hand-off, not for an
+  operator's sign-in.
 - **The gateway's limits and its record of refusals are in memory.** One
   process, so one count. A restart resets both, and a second gateway behind a
   load balancer would keep its own. Refusals are also log lines; they are not

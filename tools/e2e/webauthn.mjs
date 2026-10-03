@@ -139,6 +139,35 @@ try {
   const noProof = await post(`/legs/${leg.id}/dispatch`, common);
   expect("enrolled person cannot fall back to simulation", noProof.body.outcome === "refused" &&
     noProof.body.denyReasons?.includes("webauthn_user_not_verified"));
+  const failure = replay.body.checks?.find((c) => c.check === "webauthn_user_verified")?.evidence ?? "";
+  expect("a refused proof says what was found, not a list of what it might have been",
+    /missing, expired, used/.test(failure), failure);
+
+  // A person whose phone is lost, or whose enrolment stopped half way, still
+  // has a credential on record. Without a way to replace it they could never
+  // hand a packet over again.
+  const second = await post("/webauthn/register/challenge", { personId: person.id }, token);
+  expect("a second credential for the same person is not registered silently", second.status === 409 && /replace/.test(second.body.error));
+  const replaceChallenge = await post("/webauthn/register/challenge", { personId: person.id, replace: true }, token);
+  expect("an operator can ask to replace it", replaceChallenge.status === 201);
+  const unsaid = await post("/webauthn/register/complete", {
+    personId: person.id, challengeId: replaceChallenge.body.challengeId, response: attestation(replaceChallenge.body.options.challenge),
+  }, token);
+  expect("completing without saying it is a replacement is refused", unsaid.status === 409);
+  const again = await post("/webauthn/register/challenge", { personId: person.id, replace: true }, token);
+  const replaced = await post("/webauthn/register/complete", {
+    personId: person.id, challengeId: again.body.challengeId, response: attestation(again.body.options.challenge), replace: true,
+  }, token);
+  const [told] = await q(
+    `select evidence, consequence, requires_decision from led.alert
+      where kind = 'WEBAUTHN_CREDENTIAL_REPLACED' and evidence ->> 'personId' = $1`, [person.id]);
+  expect("a replacement is accepted and the control room is told who did it",
+    replaced.status === 201 && replaced.body.replaced === true &&
+    told?.evidence.replacedByAccountId === account.id && told.evidence.previousCredentialIds.length === 1 &&
+    /WebAuthn Operator/.test(told.consequence) && !/critical|high|medium|severity/i.test(told.consequence),
+    JSON.stringify(replaced.body));
+  const [after] = await q(`select webauthn_cred from ref.person where id=$1`, [person.id]);
+  expect("the person still has exactly one credential", after.webauthn_cred.length === 1);
 } catch (err) {
   expect("the run completed", false, err.stack ?? String(err));
 } finally {

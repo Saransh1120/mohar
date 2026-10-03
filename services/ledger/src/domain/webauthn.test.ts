@@ -81,3 +81,13 @@ test("assertion refuses client data from another origin even when re-signed", as
     ...ASSERTION.response, clientDataJSON, signature: b64(signature),
   } }, stored, CHALLENGE, RP));
 });
+
+test("the field app may be served from more than one origin under one RP ID", async () => {
+  const { relyingParty } = await import("./webauthn.js");
+  assert.deepEqual(relyingParty({}).origin, ["http://localhost:5174", "http://localhost:5173"]);
+  assert.equal(relyingParty({ WEBAUTHN_ORIGIN: "https://field.example.org" }).origin, "https://field.example.org");
+  assert.deepEqual(
+    relyingParty({ WEBAUTHN_ORIGIN: "https://a.example.org, https://b.example.org" }).origin,
+    ["https://a.example.org", "https://b.example.org"],
+  );
+});

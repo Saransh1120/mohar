@@ -37,6 +37,14 @@ const STRINGS = {
   b_enrol: { en: "Enrol this phone", hi: "इस फ़ोन को दर्ज करें" },
   platform_enrolled: { en: "phone unlock registered", hi: "फ़ोन अनलॉक दर्ज है" },
   simulated_only: { en: "simulated fingerprint mode; no platform proof", hi: "बनावटी फ़िंगरप्रिंट मोड; फ़ोन का प्रमाण नहीं" },
+  l_replace_cred: {
+    en: "Replace the phone unlock already registered for this person (lost phone, cleared storage, or an enrolment that stopped half way). The control room is told.",
+    hi: "इस व्यक्ति का पहले से दर्ज फ़ोन अनलॉक बदलें (फ़ोन खो गया, डेटा मिट गया, या पिछली बार दर्ज करना बीच में रुक गया)। कंट्रोल रूम को इसकी सूचना जाती है।",
+  },
+  e_platform_exists: {
+    en: "This person already has a phone unlock registered. If it is to be replaced, the operator ticks the box above and enrols again.",
+    hi: "इस व्यक्ति का फ़ोन अनलॉक पहले से दर्ज है। उसे बदलना हो तो ऑपरेटर ऊपर का बॉक्स टिक करके दोबारा दर्ज करे।",
+  },
   e_platform_register: { en: "Phone unlock registration failed", hi: "फ़ोन अनलॉक दर्ज नहीं हुआ" },
   e_platform_unavailable: { en: "Registered phone unlock is unavailable here", hi: "दर्ज फ़ोन अनलॉक यहाँ उपलब्ध नहीं है" },
   e_platform_challenge: { en: "The ledger could not issue a phone unlock challenge", hi: "लेजर फ़ोन अनलॉक चुनौती नहीं दे सका" },

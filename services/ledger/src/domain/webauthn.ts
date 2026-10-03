@@ -30,11 +30,21 @@ export const AssertionResponse = z.object({
   }),
 });
 
-export interface WebAuthnRelyingParty { rpId: string; origin: string; name: string }
+export interface WebAuthnRelyingParty { rpId: string; origin: string | string[]; name: string }
+
+/**
+ * WEBAUTHN_ORIGIN may list several origins, separated by commas: every address
+ * the field app is served from under the one RP ID. The defaults are the two
+ * local dev servers; the field app's own is :5174.
+ */
 export function relyingParty(env: NodeJS.ProcessEnv = process.env): WebAuthnRelyingParty {
+  const origins = (env["WEBAUTHN_ORIGIN"] ?? "http://localhost:5174,http://localhost:5173")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
   return {
     rpId: env["WEBAUTHN_RP_ID"] ?? "localhost",
-    origin: env["WEBAUTHN_ORIGIN"] ?? "http://localhost:5173",
+    origin: origins.length === 1 ? origins[0]! : origins,
     name: env["WEBAUTHN_RP_NAME"] ?? "Mohar",
   };
 }

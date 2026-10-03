@@ -8,8 +8,17 @@ import { AssertionResponse, RegistrationResponse, credentialsOf, relyingParty, v
 import { bearerToken } from "./auth-routes.js";
 
 const Uuid = z.string().uuid();
-const RegisterBody = z.object({ personId: Uuid });
-const CompleteBody = z.object({ personId: Uuid, challengeId: Uuid, response: RegistrationResponse });
+// `replace` is the operator saying, at the phone, that this person's existing
+// credential is to be replaced: the old phone is lost, its storage was cleared,
+// or an earlier enrolment stopped half way. Without it a person who already has
+// a credential cannot be given another, and since every hand-off of theirs then
+// needs the old one, they could never hand a packet over again.
+const RegisterBody = z.object({ personId: Uuid, replace: z.boolean().optional() });
+const CompleteBody = z.object({
+  personId: Uuid, challengeId: Uuid, response: RegistrationResponse, replace: z.boolean().optional(),
+});
+const ALREADY =
+  "this person already has a platform credential; an operator replaces it by enrolling with `replace`, and that is recorded";
 const TransferChallengeBody = z.object({ personId: Uuid, deviceId: Uuid });
 export const TransferAssertion = z.object({ challengeId: Uuid, response: AssertionResponse });
 export type TransferAssertion = z.infer<typeof TransferAssertion>;
@@ -59,8 +68,13 @@ export async function checkTransferAssertion(
     await tx.query(`update ref.person set webauthn_cred=$2::jsonb where id=$1::uuid`,
       [input.personId, JSON.stringify(credentials)]);
     return { passed: true, evidence: `enrolled WebAuthn credential verified a user for ${input.step}; signature, challenge, origin, RP ID, user-verification flag and counter passed` };
-  } catch {
-    return { passed: false, evidence: "WebAuthn assertion failed signature, challenge, origin, RP ID, user verification or counter check" };
+  } catch (err) {
+    // What the verifier found, in its own words, rather than a list of the
+    // things it might have been.
+    return {
+      passed: false,
+      evidence: `WebAuthn assertion did not verify: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`,
+    };
   }
 }
 
@@ -74,7 +88,10 @@ export function registerWebAuthnRoutes(app: FastifyInstance, pool: Pool): void {
       `select display_name, webauthn_cred from ref.person where id=$1::uuid`, [parsed.data.personId]);
     const person = rows[0];
     if (!person) return reply.code(404).send({ error: "person not found" });
-    if (credentialsOf(person.webauthn_cred).length > 0) return reply.code(409).send({ error: "this person already has a platform credential" });
+    let existing;
+    try { existing = credentialsOf(person.webauthn_cred); }
+    catch { return reply.code(409).send({ error: "the person's stored credential cannot be read" }); }
+    if (existing.length > 0 && !parsed.data.replace) return reply.code(409).send({ error: ALREADY });
     const rp = relyingParty();
     const options = await generateRegistrationOptions({
       rpName: rp.name, rpID: rp.rpId, userName: person.display_name,
@@ -106,14 +123,42 @@ export function registerWebAuthnRoutes(app: FastifyInstance, pool: Pool): void {
       const { rows } = await tx.query<{ webauthn_cred: unknown }>(
         `select webauthn_cred from ref.person where id=$1::uuid for update`, [parsed.data.personId]);
       if (!rows[0]) return { status: 404, error: "person not found" };
-      if (credentialsOf(rows[0].webauthn_cred).length > 0) return { status: 409, error: "this person already has a platform credential" };
+      let previous: { id: string }[] = [];
+      try { previous = credentialsOf(rows[0].webauthn_cred); } catch { previous = []; }
+      if (previous.length > 0 && !parsed.data.replace) return { status: 409, error: ALREADY };
       try {
         const credential = await verifyRegistration(parsed.data.response, challenges[0].challenge, relyingParty());
         await tx.query(`update ref.person set webauthn_cred=$2::jsonb where id=$1::uuid`,
           [parsed.data.personId, JSON.stringify([credential])]);
-        return { status: 201, credentialId: credential.id };
-      } catch {
-        return { status: 400, error: "platform credential registration failed challenge, origin, RP ID or user-verification check" };
+        if (previous.length > 0) {
+          // The credential that vouched for this person's hand-offs has been
+          // swapped for another. That is what an impostor would want too, so it
+          // is said on the Alerts page, with who did it.
+          await tx.query(
+            `insert into led.alert (kind, evidence, requires_decision, consequence)
+             values ('WEBAUTHN_CREDENTIAL_REPLACED', $1::jsonb, false, $2)`,
+            [
+              JSON.stringify({
+                personId: parsed.data.personId,
+                previousCredentialIds: previous.map((c) => c.id),
+                newCredentialId: credential.id,
+                replacedByAccountId: account.id,
+                replacedByUsername: account.username,
+              }),
+              `${account.displayName} replaced the phone-unlock credential registered for a person on ` +
+                `the roster. Hand-offs by that person are now vouched for by the new phone, and the ` +
+                `earlier credential no longer works. If nobody asked for this, the new phone is not theirs.`,
+            ],
+          );
+        }
+        return { status: 201, credentialId: credential.id, replaced: previous.length > 0 };
+      } catch (err) {
+        return {
+          status: 400,
+          error:
+            "platform credential registration failed challenge, origin, RP ID or user-verification check: " +
+            (err instanceof Error ? err.message : String(err)).slice(0, 200),
+        };
       }
     });
     return reply.code(result.status).send(result);
