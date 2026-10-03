@@ -99,6 +99,8 @@ export const DenyReason = z.enum([
   // ── assertion freshness ──
   "assertion_stale",
   "assertion_nonce_mismatch",
+  /** The enrolled person's platform authenticator did not verify this hand-off. */
+  "webauthn_user_not_verified",
   // ── place ──
   "outside_geofence",
   "geo_missing",

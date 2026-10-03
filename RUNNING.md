@@ -419,6 +419,33 @@ files and stayed clean after these commands. Both checked-in Android root PEMs
 had the SHA-256 file hashes recorded above in that clone. None of these
 commands depended on files present only in this working copy.
 
+## Field app phone unlock proof
+
+When an operator enrols a courier on a browser with a user-verifying platform
+authenticator, WebAuthn registers one credential on `ref.person.webauthn_cred`.
+The operator must hold a control-room session during registration. The field
+app asks the platform authenticator for a fresh assertion before each
+dispatch, receive and confirm. The ledger issues a one-use challenge bound to
+the person, enrolled device, leg and step, then checks signature, challenge,
+origin, RP ID hash, user-verification flag and sign counter in the same
+transaction as the hand-off ruling. `webauthn_user_verified` and
+`biometric_presented` are separate recorded checks. Once a person has a
+credential, an omitted or failing assertion refuses the step. A desktop with
+no platform authenticator stays in clearly labelled simulated mode.
+
+This is the phone's own fingerprint or face unlock (or platform PIN) vouching
+that its credential holder was present. The ledger sees a signed assertion,
+never a fingerprint, and this is not the R307 reader in the hardware spec.
+Registration asks for a platform authenticator, but attestation type `none`
+does not certify what hardware made the key. `WEBAUTHN_RP_ID` and
+`WEBAUTHN_ORIGIN` must match the actual HTTPS field-app domain on deployment;
+the example values are for localhost. Migration `016_webauthn_challenge.sql`
+was applied to local Postgres on Oct 3, 2026; it has **not** been applied to
+Neon. The verifier passed fixed-vector unit checks and the rollback
+`tools/e2e/webauthn.mjs` passed 11/11 checks: registration, one granted dispatch, replay
+refusal and a missing-assertion refusal with a software-made authenticator.
+No real phone, fingerprint, face unlock or platform PIN has been exercised.
+
 ## Remaining limits
 
 Stated plainly, so the endpoints that do exist do not imply more than they should:

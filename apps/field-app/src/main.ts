@@ -1,9 +1,10 @@
 import { canonicalBytes, combineScannedPair, parseSeamQr, requestSigningBytes, REQUEST_SIGNATURE_HEADERS } from "@mohar/crypto-core";
 import jsQR from "jsqr";
 import { applyLanguage, languageButton, t } from "./i18n";
+import { createPlatformCredential, getPlatformAssertion, platformAvailable } from "./webauthn";
 import "./style.css";
 
-interface Identity { deviceId: string; examId: string; centreId: string; personId: string; }
+interface Identity { deviceId: string; examId: string; centreId: string; personId: string; webauthnEnrolled?: boolean; }
 interface Queued { id: string; signed: { body: Record<string, unknown>; deviceSig: string }; error?: string; }
 interface Leg { id: string; leg_no: number; from_role: string; to_role: string; dispatched: boolean; completed: boolean; key_issued_at: string | null; refused_attempts: number; overdue: boolean; }
 interface TransferCheck { check: string; passed?: boolean; evidence: string; reason?: string; }
@@ -102,7 +103,9 @@ applyLanguage();
 async function refresh() {
   label("online").textContent = t(navigator.onLine ? "online" : "offline");
   const identity = await get<Identity>("settings", "identity");
-  label("device").textContent = identity ? t("device", { id: identity.deviceId }) : t("not_enrolled");
+  label("device").textContent = identity
+    ? `${t("device", { id: identity.deviceId })} — ${t(identity.webauthnEnrolled ? "platform_enrolled" : "simulated_only")}`
+    : t("not_enrolled");
   const queue = await all<Queued>("queue");
   // A rejected record is not waiting for anything: it stays so that it can be
   // seen, and is counted apart from the ones that will be sent.
@@ -135,7 +138,7 @@ async function enrol() {
   if (!username || !password) throw new Error(t("e_need_operator"));
   const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"]);
   const pubkeyHex = hex(await crypto.subtle.exportKey("raw", pair.publicKey));
-  const deviceId = await withOperator(username, password, async (headers) => {
+  const enrolled = await withOperator(username, password, async (headers) => {
     // Every event this phone signs names these three. One that the ledger does
     // not know would be refused later, in the field, with nobody to fix it: so
     // they are checked now, while the operator is here.
@@ -148,13 +151,31 @@ async function enrol() {
     if (!centres.some((c) => c.id === centreId)) throw new Error(t("e_centre_not_of_exam"));
     const { persons } = await list<{ persons: { id: string }[] }>("/persons");
     if (!persons.some((p) => p.id === personId)) throw new Error(t("e_person_unknown"));
+    const hasPlatform = await platformAvailable();
+    if (hasPlatform) {
+      const challengeResponse = await fetch("/api/webauthn/register/challenge", {
+        method: "POST", headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify({ personId }),
+      });
+      const challenge = await challengeResponse.json() as { challengeId?: string; options?: Parameters<typeof createPlatformCredential>[0]; error?: string };
+      if (!challengeResponse.ok || !challenge.options || !challenge.challengeId) throw new Error(challenge.error ?? t("e_platform_register"));
+      const credential = await createPlatformCredential(challenge.options);
+      const completeResponse = await fetch("/api/webauthn/register/complete", {
+        method: "POST", headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify({ personId, challengeId: challenge.challengeId, response: credential }),
+      });
+      if (!completeResponse.ok) {
+        const detail = await completeResponse.json().catch(() => ({})) as { error?: string };
+        throw new Error(detail.error ?? t("e_platform_register"));
+      }
+    }
     const response = await fetch("/api/devices", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ kind: "field", centreId, pubkeyHex }) });
     const data = await response.json().catch(() => ({})) as { id?: string; error?: string };
     if (!response.ok || !data.id) throw new Error(data.error ?? t("e_enrol", { status: response.status }));
-    return data.id;
+    return { deviceId: data.id, hasPlatform };
   });
   await put("settings", pair.privateKey, "privateKey");
-  await put("settings", { deviceId, examId, centreId, personId } satisfies Identity, "identity");
+  await put("settings", { deviceId: enrolled.deviceId, examId, centreId, personId, webauthnEnrolled: enrolled.hasPlatform } satisfies Identity, "identity");
   input("op-user").value = ""; input("op-pass").value = "";
   label("enrol-status").textContent = t("enrolled");
   await refresh();
@@ -241,6 +262,13 @@ async function handoff(step: "dispatch" | "receive" | "confirm") {
   if (step === "confirm") {
     if (!heldTransferKey || heldLegId !== legId) throw new Error(t("e_no_key"));
     body.transferKey = heldTransferKey;
+  }
+  if (identity.webauthnEnrolled) {
+    if (!await platformAvailable()) throw new Error(t("e_platform_unavailable"));
+    const challengeResponse = await signedPost(`/legs/${legId}/${step}/webauthn/challenge`, { personId: identity.personId });
+    const challenge = await challengeResponse.json() as { challengeId?: string; options?: Parameters<typeof getPlatformAssertion>[0]; error?: string };
+    if (!challengeResponse.ok || !challenge.challengeId || !challenge.options) throw new Error(challenge.error ?? t("e_platform_challenge"));
+    body.webauthn = { challengeId: challenge.challengeId, response: await getPlatformAssertion(challenge.options) };
   }
   const response = await signedPost(`/legs/${legId}/${step}`, body);
   const data = await response.json() as TransferResult & { error?: string; detail?: string };

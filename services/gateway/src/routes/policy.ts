@@ -112,6 +112,8 @@ export const RULES: readonly Rule[] = Object.freeze([
 
   // ── the registers ──
   r("POST", "/devices", "control_room", "enrol"),
+  r("POST", "/webauthn/register/challenge", "control_room", "enrol"),
+  r("POST", "/webauthn/register/complete", "control_room", "enrol"),
   r("POST", "/devices/:id/revoke", "control_room", "write"),
   r("POST", "/fingerprints", "control_room", "write"),
   r("POST", "/fingerprints/:id/revoke", "control_room", "write"),
@@ -127,6 +129,9 @@ export const RULES: readonly Rule[] = Object.freeze([
   r("POST", "/legs/:legId/dispatch", "device", "field"),
   r("POST", "/legs/:legId/receive", "device", "field"),
   r("POST", "/legs/:legId/confirm", "device", "field"),
+  r("POST", "/legs/:legId/dispatch/webauthn/challenge", "device", "field"),
+  r("POST", "/legs/:legId/receive/webauthn/challenge", "device", "field"),
+  r("POST", "/legs/:legId/confirm/webauthn/challenge", "device", "field"),
   r("POST", "/legs/:legId/override", "device", "field"),
   r("POST", "/overrides/:id/decision", "control_room", "write"),
   // The override's video call. The phone's side is the phone's own signature;

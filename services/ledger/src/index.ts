@@ -13,6 +13,7 @@ import {
   trustedProxies,
 } from "./http/gateway-guard.js";
 import { registerTransferRoutes } from "./http/transfer-routes.js";
+import { registerWebAuthnRoutes } from "./http/webauthn-routes.js";
 import { registerDemoRoutes } from "./http/demo-routes.js";
 import { registerAlertRoutes } from "./http/alert-routes.js";
 import { registerSealRoutes } from "./http/seal-routes.js";
@@ -93,6 +94,7 @@ async function main(): Promise<void> {
   registerSealRoutes(app, pool);
   registerPublicScanRoutes(app, pool);
   registerTransferRoutes(app, pool);
+  registerWebAuthnRoutes(app, pool);
   registerOverrideRoutes(app, pool);
   registerStrongroomRoutes(app, pool);
   registerOpeningRoutes(app, pool);

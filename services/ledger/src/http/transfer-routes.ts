@@ -11,6 +11,7 @@ import {
   type TransferStep,
 } from "../domain/transfer.js";
 import { recordHandoverEvent } from "../domain/transfer-events.js";
+import { checkTransferAssertion, TransferAssertion } from "./webauthn-routes.js";
 
 /**
  * ── Hand-off legs over HTTP ──────────────────────────────────────────────────
@@ -57,6 +58,7 @@ const StepBody = z.object({
   packetSerialTyped: z.string().min(1).max(64).optional(),
   biometricSlot: z.number().int().nonnegative().max(1000).optional(),
   biometricScore: z.number().int().nonnegative().max(1000).optional(),
+  webauthn: TransferAssertion.optional(),
   transferKey: z.string().min(1).max(32).optional(),
   geo: Geo.optional(),
   occurredAt: z.string().optional(),
@@ -202,8 +204,9 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
         return reply.code(400).send({ error: "invalid request", detail: parsed.error.issues });
       }
 
+      const { webauthn: assertion, ...stepData } = parsed.data;
       const input: TransferRequest = {
-        ...parsed.data,
+        ...stepData,
         legId: req.params.legId,
         step,
         occurredAt: parsed.data.occurredAt ?? new Date().toISOString(),
@@ -214,7 +217,11 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
         // same key is exactly the situation the key exists to prevent.
         await tx.query("select pg_advisory_xact_lock(hashtext($1))", [`leg:${input.legId}`]);
 
-        const decision = await decideTransfer(tx, input);
+        const webauthn = await checkTransferAssertion(tx, {
+          personId: input.personId, deviceId: input.deviceId, legId: input.legId,
+          step, webauthn: assertion,
+        });
+        const decision = await decideTransfer(tx, { ...input, webauthn });
 
         // Decide, record, then act — in that order, inside one transaction.
         await recordTransferAttempt(tx, input, decision);

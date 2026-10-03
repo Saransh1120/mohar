@@ -55,6 +55,19 @@ test("the planned legs are read by a phone's signature or by a signed-in account
   assert.equal(rule("POST", "/legs").rule.access, "control_room");
 });
 
+test("platform credential enrolment needs an operator and leg challenges need a signed phone", () => {
+  for (const path of ["/webauthn/register/challenge", "/webauthn/register/complete"]) {
+    const result = rule("POST", path);
+    assert.equal(result.listed, true, path);
+    assert.equal(result.rule.access, "control_room", path);
+  }
+  for (const step of ["dispatch", "receive", "confirm"]) {
+    const result = rule("POST", `/legs/4d1e/${step}/webauthn/challenge`);
+    assert.equal(result.listed, true, step);
+    assert.equal(result.rule.access, "device", step);
+  }
+});
+
 test("path parameters are captured by name", () => {
   assert.deepEqual(rule("POST", "/stations/abc/wrap-key").params, { deviceId: "abc" });
   assert.deepEqual(rule("POST", "/rosters/c1/morning/lock").params, {

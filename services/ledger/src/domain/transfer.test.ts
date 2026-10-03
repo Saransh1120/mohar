@@ -200,11 +200,21 @@ test("every check is evaluated, in order, on every decision", async () => {
 });
 
 test("a hand-off in order is granted, and nothing is left unevaluated by accident", async () => {
-  const decision = await run(world());
+  const decision = await run(world(), { webauthn: { passed: true, evidence: "platform assertion verified" } });
   assert.equal(decision.outcome, "granted", JSON.stringify(decision.denyReasons));
   assert.deepEqual(decision.denyReasons, []);
   const notEvaluated = decision.checks.filter((c) => c.passed === undefined).map((c) => c.check);
   assert.deepEqual(notEvaluated, []);
+});
+
+test("platform proof is a separate check from the simulated reader score", async () => {
+  const simulated = await run(world());
+  assert.equal(check(simulated, "biometric_presented").passed, true);
+  assert.equal(check(simulated, "webauthn_user_verified").passed, undefined);
+  const refused = await run(world(), { webauthn: { passed: false, evidence: "bad signature" } });
+  assert.equal(check(refused, "biometric_presented").passed, true);
+  assert.equal(check(refused, "webauthn_user_verified").passed, false);
+  assert.ok(refused.denyReasons.includes("webauthn_user_not_verified"));
 });
 
 test("every check records evidence whether it passed or failed", async () => {

@@ -26,8 +26,8 @@ const STRINGS = {
     hi: "जो देखा गया, उस पर उसी समय इसी फ़ोन से हस्ताक्षर होता है। नेटवर्क न होने पर रिकॉर्ड कतार में रहते हैं और उनका मूल समय और आईडी नहीं बदलती।",
   },
   p_enrol: {
-    en: "A control-room operator enrols this phone by entering their own username and password below. They are used once, for the enrolment, and the session is ended straight away: nothing of the operator's stays on this phone.",
-    hi: "कंट्रोल रूम का ऑपरेटर नीचे अपना यूज़रनेम और पासवर्ड डालकर इस फ़ोन को दर्ज करता है। ये सिर्फ़ एक बार, दर्ज करने के लिए इस्तेमाल होते हैं और सत्र तुरंत बंद कर दिया जाता है: ऑपरेटर का कुछ भी इस फ़ोन पर नहीं रहता।",
+    en: "A control-room operator enrols this phone with their username and password. If the phone has a platform authenticator, its owner registers a fingerprint or face unlock while the operator is present. The ledger stores a public key, never a fingerprint. This is the phone's own unlock, not the R307 reader.",
+    hi: "कंट्रोल रूम का ऑपरेटर अपने यूज़रनेम और पासवर्ड से इस फ़ोन को दर्ज करता है। यदि फ़ोन में प्लेटफ़ॉर्म प्रमाणक है, तो ऑपरेटर की मौजूदगी में मालिक फ़िंगरप्रिंट या फ़ेस अनलॉक दर्ज करता है। लेजर केवल सार्वजनिक कुंजी रखता है, फ़िंगरप्रिंट नहीं। यह फ़ोन का अपना अनलॉक है, R307 रीडर नहीं।",
   },
   l_exam: { en: "Exam ID", hi: "परीक्षा आईडी" },
   l_centre: { en: "Centre ID", hi: "केंद्र आईडी" },
@@ -35,6 +35,11 @@ const STRINGS = {
   l_op_user: { en: "Operator username", hi: "ऑपरेटर का यूज़रनेम" },
   l_op_pass: { en: "Operator password", hi: "ऑपरेटर का पासवर्ड" },
   b_enrol: { en: "Enrol this phone", hi: "इस फ़ोन को दर्ज करें" },
+  platform_enrolled: { en: "phone unlock registered", hi: "फ़ोन अनलॉक दर्ज है" },
+  simulated_only: { en: "simulated fingerprint mode; no platform proof", hi: "बनावटी फ़िंगरप्रिंट मोड; फ़ोन का प्रमाण नहीं" },
+  e_platform_register: { en: "Phone unlock registration failed", hi: "फ़ोन अनलॉक दर्ज नहीं हुआ" },
+  e_platform_unavailable: { en: "Registered phone unlock is unavailable here", hi: "दर्ज फ़ोन अनलॉक यहाँ उपलब्ध नहीं है" },
+  e_platform_challenge: { en: "The ledger could not issue a phone unlock challenge", hi: "लेजर फ़ोन अनलॉक चुनौती नहीं दे सका" },
   l_package: { en: "Package ID", hi: "पैकेट आईडी" },
   l_photo: { en: "Seal photo", hi: "सील की फ़ोटो" },
   l_qr: { en: "QR code", hi: "क्यूआर कोड" },
@@ -45,8 +50,8 @@ const STRINGS = {
   // ── hand-off ──
   h_handoff: { en: "Hand-off", hi: "सुपुर्दगी" },
   p_handoff: {
-    en: "These three steps are signed by this enrolled phone. Keep both QR images until Confirm; the engine checks the seam again with the key. This browser has no fingerprint reader: the selected slot and score are simulated, not biometric proof.",
-    hi: "ये तीनों कदम इस दर्ज फ़ोन के हस्ताक्षर से जाते हैं। पुष्टि तक दोनों क्यूआर फ़ोटो रखें; इंजन चाबी के साथ सील फिर जाँचता है। इस ब्राउज़र में फ़िंगरप्रिंट रीडर नहीं है: चुना गया स्लॉट और स्कोर बनावटी हैं, बायोमेट्रिक प्रमाण नहीं।",
+    en: "These three steps are signed by this enrolled phone. Keep both QR images until Confirm. A registered phone unlock proves the owner was present through WebAuthn. The slot and score below remain simulated and are recorded as a separate check; they are not an R307 reading.",
+    hi: "ये तीनों कदम इस दर्ज फ़ोन के हस्ताक्षर से जाते हैं। पुष्टि तक दोनों क्यूआर फ़ोटो रखें। दर्ज फ़ोन अनलॉक WebAuthn से मालिक की मौजूदगी साबित करता है। नीचे का स्लॉट और स्कोर अब भी बनावटी हैं और अलग जाँच में दर्ज होते हैं; यह R307 की रीडिंग नहीं है।",
   },
   p_engine_words: {
     en: "What the ledger answers (each check and its evidence) is shown exactly as it arrived.",

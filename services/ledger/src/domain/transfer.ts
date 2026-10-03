@@ -47,6 +47,7 @@ export type TransferCheckName =
   | "seam_commitment"
   | "packet_serial"
   | "biometric_presented"
+  | "webauthn_user_verified"
   | "transfer_key"
   | "attempt_rate";
 
@@ -66,6 +67,7 @@ export const TRANSFER_CHECKS: readonly TransferCheckName[] = Object.freeze([
   "geofence",
   "geo_accuracy",
   "biometric_presented",
+  "webauthn_user_verified",
   "transfer_key",
   "attempt_rate",
 ]);
@@ -88,6 +90,8 @@ export interface TransferRequest {
   /** Slot and score from the reader. Never an image, never a template. */
   biometricSlot?: number | undefined;
   biometricScore?: number | undefined;
+  /** The ledger's independent platform-authenticator ruling, if attempted. */
+  webauthn?: { passed: boolean | undefined; evidence: string } | undefined;
   transferKey?: string | undefined;
   geo?: { lat: number; lon: number; accuracyM: number } | undefined;
   /** The device's own clock at the moment of the attempt. */
@@ -529,6 +533,14 @@ export async function decideTransfer(
       "biometric_primary_missing",
     );
   }
+
+  // ── the phone's platform authenticator, independent of the reader slot ──
+  add(
+    "webauthn_user_verified",
+    req.webauthn?.passed,
+    req.webauthn?.evidence ?? "not evaluated: this person has no platform credential",
+    "webauthn_user_not_verified",
+  );
 
   // ── the transfer key, only at the closing step ──
   let attemptNo = 1;
