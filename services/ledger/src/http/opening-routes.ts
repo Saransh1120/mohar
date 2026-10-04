@@ -22,7 +22,7 @@ import {
   type CeremonyState,
 } from "../domain/opening.js";
 import { recordOpenCeremony, recordPacketOpened } from "../domain/opening-events.js";
-import { deviceProof } from "./gateway-guard.js";
+import { deviceProof, stationProof } from "./gateway-guard.js";
 
 /**
  * ── Rosters, stations and the opening ceremony over HTTP ─────────────────────
@@ -577,6 +577,7 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
       await tx.query("select pg_advisory_xact_lock(hashtext($1))", [`ceremony-run:${req.params.id}`]);
       const state = await loadCeremony(tx, req.params.id);
       if (!state) return null;
+      state.stationProof = stationProof(req.headers, process.env, state.stationDeviceId);
       const d = await decideOfficial(tx, state, input);
       await recordStep(
         tx,
@@ -625,6 +626,7 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
       await tx.query("select pg_advisory_xact_lock(hashtext($1))", [`ceremony-run:${req.params.id}`]);
       const state = await loadCeremony(tx, req.params.id);
       if (!state) return null;
+      state.stationProof = stationProof(req.headers, process.env, state.stationDeviceId);
       const d = await decideConfirm(tx, state, parsed.data.packetSerialTyped);
       await recordStep(tx, req.params.id, "confirm", d.decision, {
         serialTyped: parsed.data.packetSerialTyped,
@@ -670,6 +672,7 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
       await tx.query("select pg_advisory_xact_lock(hashtext($1))", [`ceremony-run:${req.params.id}`]);
       const state = await loadCeremony(tx, req.params.id);
       if (!state) return null;
+      state.stationProof = stationProof(req.headers, process.env, state.stationDeviceId);
       const d = await decideRelease(tx, state, parsed.data.openingKeyHex);
       // The key is not written anywhere, on a pass or on a refusal.
       await recordStep(tx, req.params.id, "release", d, {}, state.officials);
@@ -710,7 +713,8 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
       if (!state) return null;
       const released = state.reached === "release";
       const already = state.steps.some((s) => s.step === "opened" && s.outcome === "passed");
-      const passed = released && !already;
+      const station = stationProof(req.headers, process.env, state.stationDeviceId);
+      const passed = released && !already && station.passed !== false;
       await recordStep(
         tx,
         req.params.id,
@@ -732,8 +736,17 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
               evidence: already ? "this ceremony already recorded the opening" : "no opening recorded yet",
               ...(already ? { reason: "package_already_opened" as const } : {}),
             },
+            {
+              check: "station_signature",
+              passed: station.passed,
+              evidence: station.evidence,
+              ...(station.passed === false ? { reason: "device_signature_mismatch" as const } : {}),
+            },
           ],
-          denyReasons: already ? ["package_already_opened"] : released ? [] : ["ceremony_step_out_of_order"],
+          denyReasons: [
+            ...(already ? ["package_already_opened" as const] : released ? [] : ["ceremony_step_out_of_order" as const]),
+            ...(station.passed === false ? ["device_signature_mismatch" as const] : []),
+          ],
         },
         parsed.data.candidateWitnesses === undefined ? {} : { candidateWitnesses: parsed.data.candidateWitnesses },
         state.officials,

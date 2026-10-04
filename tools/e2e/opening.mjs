@@ -318,6 +318,25 @@ try {
   const official = (personId, slot, over = {}) =>
     post(`/ceremonies/${cid}/official`, { personId, biometricSlot: slot, biometricScore: 181, ...over });
 
+  // The later steps name a ceremony, not a device. Here the script plays the
+  // gateway, saying which device's signature it verified: another station must
+  // not be able to carry on a ceremony this one began.
+  process.env.GATEWAY_SECRET = "opening-e2e";
+  const asDevice = async (deviceId, url, payload) => {
+    const res = await app.inject({ method: "POST", url, payload, headers: { "x-mohar-verified-device": deviceId } });
+    return { status: res.statusCode, body: res.body ? JSON.parse(res.body) : null };
+  };
+  const hijack = await asDevice(otherStation, `/ceremonies/${cid}/official`,
+    { personId: superintendent, biometricSlot: 1, biometricScore: 181 });
+  expect("another station cannot carry on a ceremony this station began, and is handed no share",
+    hijack.body.outcome === "refused" && hijack.body.denyReasons.includes("device_signature_mismatch") && !hijack.body.share,
+    JSON.stringify(hijack.body.denyReasons));
+  const own = await asDevice(station, `/ceremonies/${cid}/confirm`, { packetSerialTyped: serial });
+  expect("the station that began it is recognised on a later step",
+    own.body.checks.find((c) => c.check === "station_signature")?.passed === true &&
+    own.body.outcome === "refused" && own.body.denyReasons.includes("ceremony_step_out_of_order"),
+    JSON.stringify(own.body.checks.find((c) => c.check === "station_signature")));
+
   const tooSoon = await post(`/ceremonies/${cid}/confirm`, { packetSerialTyped: serial });
   expect("the serial cannot be confirmed before two officials are identified",
     tooSoon.body.outcome === "refused" && tooSoon.body.denyReasons.includes("ceremony_step_out_of_order") && !tooSoon.body.envelope);

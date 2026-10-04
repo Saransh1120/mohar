@@ -581,9 +581,17 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   default, the header could have been written by any process on the machine,
   and the check reports "not evaluated" saying exactly that; a ledger reached
   directly reports "not evaluated" too. A mismatch between the device verified
-  and the device named refuses the step. The later steps of an opening
-  (identify, confirm, release) do not carry the check. `tools/e2e/gateway.mjs`
-  sees it pass through the real gateway and the real engine (36 checks).
+  and the device named refuses the step. `tools/e2e/gateway.mjs` sees it pass
+  through the real gateway and the real engine (36 checks).
+- **The later steps of an opening are held to the station that began it, where
+  that can be known.** Identify, confirm, release and opened name a ceremony,
+  not a device, and the gateway takes any enrolled device's signature for them.
+  Each now carries `station_signature`: the device the gateway verified against
+  the one the ceremony's scan step recorded. A different device is refused
+  (`device_signature_mismatch`) and handed no share. Like `device_signature`,
+  it is "not evaluated" without `GATEWAY_SECRET`, so on a deployment with no
+  secret a second enrolled device can still carry on another's ceremony.
+  `opening.mjs` plays the gateway for this (77 checks).
 - **`POST /access/request` still takes a session.** The Unlock page asks the
   access engine on behalf of an ESP32 station whose key the browser does not
   hold, so on that route a signed-in account can name any device.
@@ -746,6 +754,12 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   shared ESP32 library persists its counter in NVS but has not been flashed.
   The schema still accepts events without `deviceSeq`; other producers may
   still omit it.
+- **A public scan's answer is held to a floor so its timing does not say
+  whether the label exists.** A real label costs a chain append and an alert,
+  an unknown one a single lookup; both now answer no sooner than
+  `PUBLIC_SCAN_FLOOR_MS` (1200 ms by default), with the record written first.
+  It is a floor: a write slower than that still shows. `public-scan.mjs` checks
+  both are held (10 checks).
 - **Public seam scans have a signed record and a neutral `/s` page.** A known
   seam scanned in a public browser posts only its opaque ID and QR half to
   `POST /public/seam-scan`; the page removes the secret fragment before the

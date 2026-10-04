@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { VERIFIED_DEVICE_HEADER, deviceProof } from "./gateway-guard.js";
+import { VERIFIED_DEVICE_HEADER, deviceProof, stationProof } from "./gateway-guard.js";
 
 /**
  * ── What an engine may say about who signed a request ───────────────────────
@@ -40,4 +40,19 @@ test("from the gateway, for a different device than the request names: refused, 
 test("an empty or repeated header is treated as no header", () => {
   assert.equal(deviceProof({ [VERIFIED_DEVICE_HEADER]: "" }, SECRET, DEVICE).passed, undefined);
   assert.equal(deviceProof({ [VERIFIED_DEVICE_HEADER]: [DEVICE, OTHER] }, SECRET, DEVICE).passed, undefined);
+});
+
+test("a later opening step is held to the station that began the ceremony", () => {
+  const own = stationProof({ [VERIFIED_DEVICE_HEADER]: DEVICE }, SECRET, DEVICE);
+  assert.equal(own.passed, true);
+  assert.match(own.evidence, /began this ceremony/);
+  const other = stationProof({ [VERIFIED_DEVICE_HEADER]: OTHER }, SECRET, DEVICE);
+  assert.equal(other.passed, false);
+  assert.ok(other.evidence.includes(OTHER) && other.evidence.includes(DEVICE));
+});
+
+test("with no station on record, or no way to believe the header, nothing is claimed about a later step", () => {
+  assert.equal(stationProof({ [VERIFIED_DEVICE_HEADER]: DEVICE }, SECRET, null).passed, undefined);
+  assert.equal(stationProof({ [VERIFIED_DEVICE_HEADER]: OTHER }, {}, DEVICE).passed, undefined);
+  assert.equal(stationProof({}, SECRET, DEVICE).passed, undefined);
 });

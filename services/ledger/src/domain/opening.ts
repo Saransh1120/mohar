@@ -869,6 +869,23 @@ export interface CeremonyState {
    * before issues were numbered.
    */
   issueNo: number | null;
+  /** The device its scan step recorded: the station that began it. */
+  stationDeviceId: string | null;
+  /**
+   * What the gateway established about who signed the request now being ruled
+   * on, set by the route. Absent for an account uploaded afterwards.
+   */
+  stationProof?: { passed: boolean | undefined; evidence: string } | undefined;
+}
+
+/** A later step has to come from the station that began the ceremony. */
+function sameStation(c: Checks, ceremony: CeremonyState): void {
+  c.add(
+    "station_signature",
+    ceremony.stationProof?.passed,
+    ceremony.stationProof?.evidence ?? "not evaluated: nothing was reported about who signed this request",
+    "device_signature_mismatch",
+  );
 }
 
 const ORDER: CeremonyStep[] = ["scan", "authorize", "identify", "confirm", "release", "opened"];
@@ -920,6 +937,10 @@ export async function loadCeremony(tx: PoolClient | Pool, id: string): Promise<C
     issueNo: (() => {
       const n = steps.find((x) => x.step === "scan")?.evidence["issueNo"];
       return typeof n === "number" ? n : null;
+    })(),
+    stationDeviceId: (() => {
+      const d = steps.find((x) => x.step === "scan")?.evidence["deviceId"];
+      return typeof d === "string" ? d : null;
     })(),
   };
 }
@@ -1175,6 +1196,7 @@ export async function decideOfficial(
   req: OfficialRequest,
 ): Promise<OfficialDecision> {
   const c = new Checks();
+  sameStation(c, ceremony);
   const key = await loadKey(tx, ceremony.packageId);
 
   const authorized = ceremony.reached !== null && ORDER.indexOf(ceremony.reached) >= ORDER.indexOf("authorize");
@@ -1350,6 +1372,7 @@ export async function decideConfirm(
   packetSerialTyped: string,
 ): Promise<ConfirmDecision> {
   const c = new Checks();
+  sameStation(c, ceremony);
   c.add(
     "two_officials_identified",
     ceremony.officials.length >= 2,
@@ -1439,6 +1462,7 @@ export async function decideRelease(
   now: Date = new Date(),
 ): Promise<StepDecision> {
   const c = new Checks();
+  sameStation(c, ceremony);
   const key = await loadKey(tx, ceremony.packageId);
 
   const confirmed = ceremony.reached !== null && ORDER.indexOf(ceremony.reached) >= ORDER.indexOf("confirm");

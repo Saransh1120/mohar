@@ -129,3 +129,33 @@ export function deviceProof(
     evidence: `the gateway verified this request's signature against device ${deviceId}'s enrolled key`,
   };
 }
+
+/**
+ * Whether a later step of an opening comes from the station that began it.
+ *
+ * The steps after the first do not name a device: they name a ceremony. The
+ * gateway takes a device's signature for each, but any enrolled device's would
+ * do, so without this a second device could carry on a ceremony another one
+ * started. The station that began it is the one its scan step recorded.
+ */
+export function stationProof(
+  headers: Readonly<Record<string, string | string[] | undefined>>,
+  env: Readonly<Record<string, string | undefined>>,
+  stationDeviceId: string | null,
+): DeviceProof {
+  if (!stationDeviceId) {
+    return { passed: undefined, evidence: "not evaluated: this ceremony's first step does not record which station began it" };
+  }
+  const proof = deviceProof(headers, env, stationDeviceId);
+  if (proof.passed === true) {
+    return { passed: true, evidence: `the gateway verified this request's signature against station ${stationDeviceId}, which began this ceremony` };
+  }
+  if (proof.passed === false) {
+    const claimed = headers[VERIFIED_DEVICE_HEADER];
+    return {
+      passed: false,
+      evidence: `the gateway verified a request signed by device ${String(claimed)}; this ceremony was begun by station ${stationDeviceId}`,
+    };
+  }
+  return proof;
+}
