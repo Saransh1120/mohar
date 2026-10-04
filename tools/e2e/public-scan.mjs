@@ -33,7 +33,9 @@ const scoped = {
 };
 const pool = { connect: async () => scoped, query: (sql, args) => client.query(sql, args) };
 const app = Fastify({ logger: false });
-registerPublicScanRoutes(app, pool);
+// A short floor so the run stays quick; the default is over a second.
+const FLOOR_MS = 250;
+registerPublicScanRoutes(app, pool, { floorMs: FLOOR_MS });
 await app.ready();
 let passed = 0;
 const check = (label, condition) => { assert.ok(condition, label); console.log(`ok ${++passed} - ${label}`); };
@@ -102,6 +104,12 @@ try {
     "select count(*)::int as count from led.event where kind = 'UNAUTHORIZED_SCAN' and package_id = $1", [packet.id],
   )).rows;
   check("unknown seam adds no event to this packet", count === 2);
+  const timed = async (seamId) => { const t = Date.now(); await scan(seamId, "A"); return Date.now() - t; };
+  const knownMs = await timed(label.seamId);
+  const unknownMs = await timed(generateSeamLabel().seamId);
+  check("a label that exists and one that does not are both held to the same floor before the answer",
+    knownMs >= FLOOR_MS - 5 && unknownMs >= FLOOR_MS - 5 && Math.abs(knownMs - unknownMs) < 150,
+    `known ${knownMs} ms, unknown ${unknownMs} ms`);
 } finally {
   await client.query("rollback");
   await app.close();
