@@ -136,6 +136,15 @@ importers:
         specifier: ^5.6.0
         version: 5.9.3
 
+  packages/ledger-client:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.7.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
   services/access:
     dependencies:
       '@mohar/contracts':
@@ -240,6 +249,9 @@ importers:
       '@mohar/crypto-core':
         specifier: workspace:*
         version: link:../../packages/crypto-core
+      '@mohar/ledger-client':
+        specifier: workspace:*
+        version: link:../../packages/ledger-client
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -265,6 +277,9 @@ importers:
       '@mohar/crypto-core':
         specifier: workspace:*
         version: link:../../packages/crypto-core
+      '@mohar/ledger-client':
+        specifier: workspace:*
+        version: link:../../packages/ledger-client
       pg:
         specifier: ^8.13.0
         version: 8.23.0

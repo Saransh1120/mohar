@@ -29,6 +29,7 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
+import { openSession } from "@mohar/ledger-client";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -64,7 +65,11 @@ if ((command !== "print" && command !== "seal") || !packageId) {
   );
 }
 
-const api = httpApi(args.get("ledger") ?? process.env["LEDGER_URL"] ?? "http://localhost:8081");
+const ledgerUrl = args.get("ledger") ?? process.env["LEDGER_URL"] ?? "http://localhost:8081";
+// An operator's session where the environment gives one (see RUNNING.md);
+// nothing where the ledger is reached directly on loopback.
+const session = await openSession(ledgerUrl).catch((err: unknown) => fail((err as Error).message));
+const api = httpApi(ledgerUrl, session.headers);
 const outDir = resolve(args.get("out") ?? "labels");
 const pendingPath = join(outDir, `${packageId}.pending.json`);
 
@@ -146,5 +151,7 @@ try {
     console.log(`Chain       seq ${event?.seq ?? "?"}, hash ${event?.hash ?? "?"}`);
   }
 } catch (err) {
+  await session.close();
   fail((err as Error).message);
 }
+await session.close();

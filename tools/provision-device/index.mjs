@@ -24,8 +24,19 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 
 const LEDGER = process.env["LEDGER_URL"] ?? "http://localhost:8081";
-const SESSION_TOKEN = process.env["MOHAR_SESSION_TOKEN"];
-const authHeaders = () => SESSION_TOKEN ? { authorization: `Bearer ${SESSION_TOKEN}` } : {};
+const { openSession } = await import(
+  new URL("../../packages/ledger-client/dist/index.js", import.meta.url).href
+).catch(() => {
+  console.error("Build first: pnpm --filter @mohar/ledger-client build");
+  process.exit(1);
+});
+// MOHAR_SESSION_TOKEN as before, or MOHAR_OPERATOR and MOHAR_OPERATOR_PASSWORD
+// to sign in for this run and out again at the end.
+const session = await openSession(LEDGER).catch((err) => {
+  console.error(`\n${err.message}`);
+  process.exit(1);
+});
+const authHeaders = () => session.headers;
 // The address the control room is opened at. The station grants its browser
 // access to that origin and no other.
 const CONTROL_ROOM_ORIGIN = (process.env["CONTROL_ROOM_ORIGIN"] ?? "http://localhost:5173").replace(/\/+$/, "");
@@ -189,7 +200,9 @@ try {
   const exam = await resolveExam();
   const device = await enrol(keys.publicKeyHex, centre?.id);
   printBlock({ device, keys, centre, exam });
+  await session.close();
 } catch (err) {
+  await session.close();
   console.error(`\n${err.message}`);
   console.error(`Is the ledger running at ${LEDGER}? See RUNNING.md.`);
   process.exit(1);

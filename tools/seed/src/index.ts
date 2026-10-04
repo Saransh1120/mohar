@@ -17,6 +17,7 @@
 import pg from "pg";
 import { randomUUID } from "node:crypto";
 import { generateKeypair, signBody } from "@mohar/crypto-core";
+import { openSession, type LedgerSession } from "@mohar/ledger-client";
 import type { EventBody, PackageState, PersonRole } from "@mohar/contracts";
 
 const API = process.env["LEDGER_URL"] ?? "http://localhost:8081";
@@ -62,7 +63,7 @@ async function enrolDevice(kind: string, centreId?: string): Promise<Device> {
   const kp = generateKeypair();
   const res = await fetch(`${API}/devices`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...session.headers },
     body: JSON.stringify({ kind, pubkeyHex: kp.publicKeyHex, ...(centreId ? { centreId } : {}) }),
   });
   if (!res.ok) throw new Error(`enrol ${kind} failed: ${res.status} ${await res.text()}`);
@@ -96,7 +97,7 @@ async function emit(
   }
   const res = await fetch(`${API}/events`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...session.headers },
     body: JSON.stringify(payload),
   });
   const out = (await res.json()) as EmitResult;
@@ -135,7 +136,7 @@ async function issueKey(
 
   const res = await fetch(`${API}/keys/issue`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...session.headers },
     body: JSON.stringify({ packageId, stage, ...(personId ? { personId } : {}) }),
   });
   if (!res.ok) throw new Error(`key issue failed: ${res.status} ${await res.text()}`);
@@ -199,7 +200,7 @@ async function requestAccess(input: {
 }): Promise<Decision> {
   const res = await fetch(`${API}/access/request`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...session.headers },
     body: JSON.stringify({ ...input, sessionId: randomUUID() }),
   });
   if (!res.ok) throw new Error(`access request failed: ${res.status} ${await res.text()}`);
@@ -347,6 +348,11 @@ async function seedReferenceData(examStart: Date) {
 
 // ── the custody workflow ────────────────────────────────────────────────────
 
+// Who this run is to the gateway: an operator's session where the environment
+// gives one, nothing where the ledger is reached directly. Opened in main(),
+// once the ledger is known to be there.
+let session: LedgerSession = { headers: {}, signedInAs: null, via: "none", close: async () => {} };
+
 async function main() {
   await client.connect();
 
@@ -361,6 +367,10 @@ async function main() {
   if (!health?.ok) {
     console.error(`Cannot reach the ledger at ${API}. Start it first.`);
     process.exit(1);
+  }
+  session = await openSession(API);
+  if (session.via !== "none") {
+    console.log(`Through the gateway as ${session.signedInAs ?? "the holder of MOHAR_SESSION_TOKEN"}.`);
   }
 
   // The exam starts five minutes from now.
@@ -392,7 +402,7 @@ async function main() {
 
   // Which six-hour window we are in. Keys are scoped to it, so a key minted for
   // an earlier epoch is already dead by arithmetic — no expiry job involved.
-  const epochRes = await fetch(`${API}/access/epoch`);
+  const epochRes = await fetch(`${API}/access/epoch`, { headers: session.headers });
   const { epoch: currentEpoch, endsAt } = (await epochRes.json()) as {
     epoch: number;
     endsAt: string;
@@ -812,11 +822,13 @@ async function main() {
   console.log("  JPR-005  refused — unissued key, outside the geofence; overridden anyway\n");
 
   await client.end();
+  await session.close();
 }
 
 main().catch(async (err) => {
   console.error("\nSeeding failed:", err.message);
   await client.query("rollback").catch(() => {});
   await client.end().catch(() => {});
+  await session.close();
   process.exit(1);
 });

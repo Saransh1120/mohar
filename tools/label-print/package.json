@@ -12,6 +12,7 @@
   "dependencies": {
     "@mohar/contracts": "workspace:*",
     "@mohar/crypto-core": "workspace:*",
+    "@mohar/ledger-client": "workspace:*",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {

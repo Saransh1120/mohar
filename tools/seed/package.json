@@ -11,6 +11,7 @@
   "dependencies": {
     "@mohar/contracts": "workspace:*",
     "@mohar/crypto-core": "workspace:*",
+    "@mohar/ledger-client": "workspace:*",
     "pg": "^8.13.0"
   },
   "devDependencies": {

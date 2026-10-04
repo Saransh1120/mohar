@@ -33,19 +33,25 @@ export interface Api {
   post(path: string, body: unknown): Promise<ApiResult>;
 }
 
-export function httpApi(base: string): Api {
+/**
+ * `headers` is what identifies the caller to a gateway, where there is one:
+ * an operator's session, from @mohar/ledger-client. The sealing itself needs
+ * none, because the signed event is its own credential; reading the packet and
+ * enrolling the press device do.
+ */
+export function httpApi(base: string, headers: Readonly<Record<string, string>> = {}): Api {
   const root = base.replace(/\/+$/, "");
   const read = async (res: Response): Promise<ApiResult> => ({
     status: res.status,
     body: await res.json().catch(() => null),
   });
   return {
-    get: async (path) => read(await fetch(`${root}${path}`)),
+    get: async (path) => read(await fetch(`${root}${path}`, { headers })),
     post: async (path, body) =>
       read(
         await fetch(`${root}${path}`, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", ...headers },
           body: JSON.stringify(body),
         }),
       ),

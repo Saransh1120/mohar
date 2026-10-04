@@ -604,10 +604,22 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   process, so one count. A restart resets both, and a second gateway behind a
   load balancer would keep its own. Refusals are also log lines; they are not
   rows in the database, because the gateway has no connection to it.
-- **The tools do not sign in.** `tools/seed`, `label-print`, `demo-setup`,
-  `provision-device` and `monitor-watchdog` speak to the ledger directly on
-  loopback (`LEDGER_URL=http://127.0.0.1:8091`). With `GATEWAY_SECRET` set they
-  are refused, and there is no credential to give them.
+- **The tools go through the gateway as an operator, when told who.**
+  `tools/seed`, `label-print`, `demo-setup` and `provision-device` take an
+  operator's session from the environment (`packages/ledger-client`):
+  `MOHAR_SESSION_TOKEN` for a session already held, which is used and left
+  alone, or `MOHAR_OPERATOR` and `MOHAR_OPERATOR_PASSWORD` to sign in for the
+  run and out again at the end. With neither they send no credential, which is
+  right for a ledger reached directly on loopback
+  (`LEDGER_URL=http://127.0.0.1:8091`) and is refused by the gateway. What a
+  tool does through the gateway is done as that operator. `monitor-watchdog`
+  is unchanged. Seen on Oct 5, 2026 against `pnpm start`: `provision-device`
+  and `label-print print` were refused with 401 and no credential, and worked
+  with a session token; `tools/e2e/tool-session.mjs` signs in and out against
+  the real auth routes (10 checks). `seed` and `demo-setup` were built and not
+  run through the gateway, and nothing was run against the deployed site. A
+  password in an environment variable is visible to whoever can read that
+  process's environment; prefer the token for anything but a one-off.
 - **A field phone is enrolled by an operator standing at it.** The operator
   types their own username and password into the field app. It signs in,
   checks that the centre belongs to the exam and that the person is on the

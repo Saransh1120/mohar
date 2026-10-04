@@ -24,6 +24,17 @@ import pg from "pg";
 import { randomUUID, generateKeyPairSync, createHash } from "node:crypto";
 
 const API = process.env["LEDGER_URL"] ?? "http://localhost:8081";
+const { openSession } = await import(
+  new URL("../../packages/ledger-client/dist/index.js", import.meta.url).href
+).catch(() => {
+  console.error("Build first: pnpm --filter @mohar/ledger-client build");
+  process.exit(1);
+});
+// An operator's session where the environment gives one; nothing otherwise.
+const session = await openSession(API).catch((err) => {
+  console.error(`\n${err.message}\n`);
+  process.exit(1);
+});
 const DB =
   process.env["SEED_DATABASE_URL"] ??
   process.env["DATABASE_URL"] ??
@@ -202,6 +213,7 @@ if (reuseCentre) {
     process.exitCode = 1;
   } finally {
     await client.end();
+    await session.close();
   }
   process.exit(process.exitCode ?? 0);
 }
@@ -266,7 +278,7 @@ try {
   const kp = ed25519Keypair();
   const res = await fetch(`${API}/devices`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...session.headers },
     body: JSON.stringify({ kind: "monitor", pubkeyHex: kp.publicKeyHex, centreId }),
   });
   const device = await res.json();
@@ -275,7 +287,7 @@ try {
   // ── the custody key for the unlock stage ──────────────────────────────────
   const keyRes = await fetch(`${API}/keys/issue`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...session.headers },
     body: JSON.stringify({ packageId, stage: "unlock", personId: people[0].id }),
   });
   const issued = await keyRes.json();
@@ -319,4 +331,5 @@ try {
   process.exitCode = 1;
 } finally {
   await client.end();
+  await session.close();
 }
