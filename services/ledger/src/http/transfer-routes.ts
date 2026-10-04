@@ -11,6 +11,7 @@ import {
   type TransferStep,
 } from "../domain/transfer.js";
 import { recordHandoverEvent } from "../domain/transfer-events.js";
+import { deviceProof } from "./gateway-guard.js";
 import { checkTransferAssertion, TransferAssertion } from "./webauthn-routes.js";
 
 /**
@@ -221,7 +222,11 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
           personId: input.personId, deviceId: input.deviceId, legId: input.legId,
           step, webauthn: assertion,
         });
-        const decision = await decideTransfer(tx, { ...input, webauthn });
+        const decision = await decideTransfer(tx, {
+          ...input,
+          webauthn,
+          deviceSigned: deviceProof(req.headers, process.env, input.deviceId),
+        });
 
         // Decide, record, then act — in that order, inside one transaction.
         await recordTransferAttempt(tx, input, decision);

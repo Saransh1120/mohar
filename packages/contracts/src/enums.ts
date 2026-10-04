@@ -84,6 +84,8 @@ export const DenyReason = z.enum([
   "device_revoked",
   "device_not_bound_to_centre",
   "device_attestation_invalid",
+  /** The gateway verified a request signed by one device; the request names another. */
+  "device_signature_mismatch",
   /** A device's records skipped a sequence number. Something was written that
    *  never arrived, which is a gap in the account rather than a transport hiccup. */
   "device_seq_gap",

@@ -984,6 +984,8 @@ export interface StartRequest {
   deviceId: string;
   seamIdRead?: string | undefined;
   seamSecretHex?: string | undefined;
+  /** What the gateway established about who signed the request. See gateway-guard. */
+  deviceSigned?: { passed: boolean | undefined; evidence: string } | undefined;
 }
 
 export interface StartDecision {
@@ -1085,6 +1087,12 @@ export async function decideStart(
         : `station ${device.id} (${device.kind}) is enrolled`
       : `device ${req.deviceId} is not enrolled`,
     device?.revoked_at ? "device_revoked" : "device_unknown",
+  );
+  auth.add(
+    "station_signature",
+    req.deviceSigned?.passed,
+    req.deviceSigned?.evidence ?? "not evaluated: nothing was reported about who signed this request",
+    "device_signature_mismatch",
   );
   auth.add(
     "station_holds_envelopes",

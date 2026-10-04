@@ -69,6 +69,9 @@ export interface GatewayOptions {
   logger?: boolean | { level: string };
 }
 
+/** Set on a forwarded request whose device signature this gateway verified. */
+export const VERIFIED_DEVICE_HEADER = "x-mohar-verified-device";
+
 const EMPTY = Buffer.alloc(0);
 const ANONYMOUS: Principal = Object.freeze({ kind: "anonymous" });
 const RECENT_REFUSALS = 200;
@@ -419,6 +422,12 @@ export async function buildGateway(opts: GatewayOptions): Promise<FastifyInstanc
     for (const name of FORWARDED_REQUEST_HEADERS) {
       const v = req.headers[name];
       if (typeof v === "string") headers[name] = v;
+    }
+    // What this process established about who sent the request, for the
+    // engine's own record. A caller cannot set it: only the headers listed
+    // above are copied through, and this one is written here or not at all.
+    if (principal.kind === "device" && principal.via === "request_signature") {
+      headers[VERIFIED_DEVICE_HEADER] = principal.device.id;
     }
 
     // From here the response is written by hand, so that it can be piped as it

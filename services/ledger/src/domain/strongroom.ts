@@ -29,6 +29,7 @@ import { recordDwellEvent, recordExitEvent, recordFootfallEvent } from "./strong
 export type DoorCheckName =
   | "room_known"
   | "device_enrolled"
+  | "device_signature"
   | "two_entrants"
   | "persons_registered"
   | "roles_permitted"
@@ -66,6 +67,8 @@ export interface EntryRequest {
   task: string;
   expectedMinutes: number;
   occurredAt: string;
+  /** What the gateway established about who signed the request. See gateway-guard. */
+  deviceSigned?: { passed: boolean | undefined; evidence: string } | undefined;
 }
 
 export interface ExitRequest {
@@ -74,6 +77,7 @@ export interface ExitRequest {
   deviceId: string;
   packagesTouched: number;
   occurredAt: string;
+  deviceSigned?: { passed: boolean | undefined; evidence: string } | undefined;
 }
 
 export interface DoorDecision {
@@ -117,6 +121,17 @@ async function loadDevice(tx: PoolClient, id: string): Promise<DeviceRow | undef
     [id],
   );
   return rows[0];
+}
+
+function signatureCheck(
+  proof: { passed: boolean | undefined; evidence: string } | undefined,
+): DoorCheckResult {
+  return {
+    check: "device_signature",
+    passed: proof?.passed,
+    evidence: proof?.evidence ?? "not evaluated: nothing was reported about who signed this request",
+    ...(proof?.passed === false ? { reason: "device_signature_mismatch" as const } : {}),
+  };
 }
 
 function deviceCheck(device: DeviceRow | undefined, id: string): DoorCheckResult {
@@ -195,6 +210,7 @@ export async function decideEntry(tx: PoolClient, req: EntryRequest): Promise<Do
   // ── the device at the door ──
   const device = await loadDevice(tx, req.deviceId);
   checks.push(deviceCheck(device, req.deviceId));
+  checks.push(signatureCheck(req.deviceSigned));
 
   const skewMs = Math.abs(now.getTime() - new Date(req.occurredAt).getTime());
   context.clockSkewMs = Number.isFinite(skewMs) ? skewMs : Number.MAX_SAFE_INTEGER;
@@ -404,6 +420,7 @@ export async function decideExit(
   context.monitorDeviceId = room?.monitor_device_id ?? null;
 
   checks.push(deviceCheck(await loadDevice(tx, req.deviceId), req.deviceId));
+  checks.push(signatureCheck(req.deviceSigned));
 
   const skewMs = Math.abs(now.getTime() - new Date(req.occurredAt).getTime());
   context.clockSkewMs = Number.isFinite(skewMs) ? skewMs : Number.MAX_SAFE_INTEGER;

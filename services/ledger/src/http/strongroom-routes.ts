@@ -4,6 +4,7 @@ import { z } from "zod";
 import { withTransaction } from "../db.js";
 import type { ChainEventOutcome } from "../domain/service-events.js";
 import { recordEntryEvent } from "../domain/strongroom-events.js";
+import { deviceProof } from "./gateway-guard.js";
 import {
   closeVisit,
   decideEntry,
@@ -156,6 +157,7 @@ export function registerStrongroomRoutes(app: FastifyInstance, pool: Pool): void
       ...parsed.data,
       roomId: req.params.roomId,
       occurredAt: parsed.data.occurredAt ?? new Date().toISOString(),
+      deviceSigned: deviceProof(req.headers, process.env, parsed.data.deviceId),
     };
 
     const result = await withTransaction(pool, async (tx) => {
@@ -231,6 +233,7 @@ export function registerStrongroomRoutes(app: FastifyInstance, pool: Pool): void
       ...parsed.data,
       roomId: req.params.roomId,
       occurredAt: parsed.data.occurredAt ?? new Date().toISOString(),
+      deviceSigned: deviceProof(req.headers, process.env, parsed.data.deviceId),
     };
 
     const result = await withTransaction(pool, async (tx) => {

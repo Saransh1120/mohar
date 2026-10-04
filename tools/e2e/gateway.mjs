@@ -81,6 +81,9 @@ const expect = (name, ok, detail = "") => results.push({ name, ok, detail });
 const show = (r) => `${r.status} ${JSON.stringify(r.body).slice(0, 300)}`;
 
 const SECRET = randomBytes(24).toString("hex");
+// The routes read the secret from the environment when they judge whether a
+// "verified device" header can have come from anyone but the gateway.
+process.env.GATEWAY_SECRET = SECRET;
 const tag = randomBytes(3).toString("hex");
 const PASSWORD = `e2e-${randomBytes(12).toString("hex")}`;
 
@@ -252,6 +255,9 @@ try {
     ruled.status === 200 && ruled.body?.outcome === "refused" &&
       ruled.body?.checks?.some((c) => c.check === "leg_known" && c.passed === false),
     show(ruled));
+  const signature = ruled.body?.checks?.find((c) => c.check === "device_signature");
+  expect("and the engine's own record says the gateway verified that device's signature",
+    signature?.passed === true && signature.evidence.includes(deviceId), JSON.stringify(signature));
   const replayed = await call("POST", legPath, { headers: signed, body: step });
   expect("the same signed request played back is refused",
     replayed.status === 401 && replayed.body?.reason === "nonce_replayed", show(replayed));

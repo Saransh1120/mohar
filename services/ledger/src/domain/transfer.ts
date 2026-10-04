@@ -38,6 +38,7 @@ export type TransferCheckName =
   | "leg_window"
   | "package_state"
   | "device_enrolled"
+  | "device_signature"
   | "device_binding"
   | "person_on_roster"
   | "role_permitted"
@@ -61,6 +62,7 @@ export const TRANSFER_CHECKS: readonly TransferCheckName[] = Object.freeze([
   "seam_commitment",
   "packet_serial",
   "device_enrolled",
+  "device_signature",
   "device_binding",
   "person_on_roster",
   "role_permitted",
@@ -92,6 +94,8 @@ export interface TransferRequest {
   biometricScore?: number | undefined;
   /** The ledger's independent platform-authenticator ruling, if attempted. */
   webauthn?: { passed: boolean | undefined; evidence: string } | undefined;
+  /** What the gateway established about who signed the request. See gateway-guard. */
+  deviceSigned?: { passed: boolean | undefined; evidence: string } | undefined;
   transferKey?: string | undefined;
   geo?: { lat: number; lon: number; accuracyM: number } | undefined;
   /** The device's own clock at the moment of the attempt. */
@@ -426,6 +430,12 @@ export async function decideTransfer(
         : `device ${device.id} (${device.kind}) is enrolled`
       : `device ${req.deviceId} is not enrolled`,
     device?.revoked_at ? "device_revoked" : "device_unknown",
+  );
+  add(
+    "device_signature",
+    req.deviceSigned?.passed,
+    req.deviceSigned?.evidence ?? "not evaluated: nothing was reported about who signed this request",
+    "device_signature_mismatch",
   );
 
   if (!device || !leg) {

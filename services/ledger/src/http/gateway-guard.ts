@@ -70,3 +70,62 @@ export function exposureWarning(env: NodeJS.ProcessEnv): string | null {
     "services/gateway in front, or set GATEWAY_SECRET in both."
   );
 }
+
+// ── what the gateway established about the device ───────────────────────────
+
+/** Written by the gateway on a request whose device signature it verified. */
+export const VERIFIED_DEVICE_HEADER = "x-mohar-verified-device";
+
+export interface DeviceProof {
+  /** Undefined where nothing can be said either way. Not said is not passed. */
+  passed: boolean | undefined;
+  evidence: string;
+}
+
+/**
+ * Whether the request an engine is ruling on was signed by the device it names.
+ *
+ * The gateway checks that signature and refuses the request if it fails, so an
+ * engine behind it only ever sees requests that passed. But the engine's record
+ * is read later by someone who was not there, and "the device is enrolled" is
+ * all it said. This puts the other half on the record: that the request was
+ * signed with that device's key, and who established it.
+ *
+ * It is believed only where the ledger can tell the gateway from anybody else,
+ * which is when the two share GATEWAY_SECRET. On loopback with no secret the
+ * header could have been written by any process on the machine, and the check
+ * says so instead of passing. A ledger reached directly sees no header at all.
+ */
+export function deviceProof(
+  headers: Readonly<Record<string, string | string[] | undefined>>,
+  env: Readonly<Record<string, string | undefined>>,
+  deviceId: string,
+): DeviceProof {
+  const claimed = headers[VERIFIED_DEVICE_HEADER];
+  if (typeof claimed !== "string" || claimed === "") {
+    return {
+      passed: undefined,
+      evidence:
+        "not evaluated: this request did not come through the gateway's device signature check " +
+        "(the ledger was reached directly, or the route took a session)",
+    };
+  }
+  if (!env["GATEWAY_SECRET"]) {
+    return {
+      passed: undefined,
+      evidence:
+        `not evaluated: a caller says the gateway verified device ${claimed}'s signature, but this ` +
+        "ledger shares no secret with its gateway and cannot tell it from another process on this machine",
+    };
+  }
+  if (claimed.toLowerCase() !== deviceId.toLowerCase()) {
+    return {
+      passed: false,
+      evidence: `the gateway verified a request signed by device ${claimed}; this request names device ${deviceId}`,
+    };
+  }
+  return {
+    passed: true,
+    evidence: `the gateway verified this request's signature against device ${deviceId}'s enrolled key`,
+  };
+}

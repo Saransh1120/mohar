@@ -269,6 +269,29 @@ test("a hand-off step signed by an enrolled device is forwarded; once", async ()
   });
 });
 
+test("the ledger is told which device's signature was verified, and a caller cannot say so itself", async () => {
+  await gateway(async (base) => {
+    const path = "/legs/77777777-7777-4777-8777-777777777777/receive";
+    const body = JSON.stringify({ deviceId: DEVICE, packetSerialTyped: "PKT-JPR-0091" });
+    const forged = "x-mohar-verified-device";
+    const ok = await call(base, "POST", path, {
+      ...jsonHeaders,
+      // A device naming some other device as verified: dropped, and replaced by
+      // the one whose signature actually verified.
+      [forged]: "99999999-9999-4999-8999-999999999999",
+      ...signedRequestHeaders(DEVICE, enrolled.privateKeyHex, { method: "POST", path, body }),
+    }, body);
+    assert.equal(ok.status, 200);
+    assert.equal(reached("POST", path)[0]?.headers[forged], DEVICE);
+
+    // A session carries no device signature, so nothing is said about one,
+    // whatever the caller puts in the header.
+    const read = await call(base, "GET", "/packages", { ...bearer(OPERATOR), [forged]: DEVICE });
+    assert.equal(read.status, 200);
+    assert.equal(reached("GET", "/packages")[0]?.headers[forged], undefined);
+  });
+});
+
 test("a signed request is refused with what was found, and never reaches the ledger", async () => {
   await gateway(async (base) => {
     const path = "/rooms/88888888-8888-4888-8888-888888888888/entry";

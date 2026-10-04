@@ -200,7 +200,10 @@ test("every check is evaluated, in order, on every decision", async () => {
 });
 
 test("a hand-off in order is granted, and nothing is left unevaluated by accident", async () => {
-  const decision = await run(world(), { webauthn: { passed: true, evidence: "platform assertion verified" } });
+  const decision = await run(world(), {
+    webauthn: { passed: true, evidence: "platform assertion verified" },
+    deviceSigned: { passed: true, evidence: "the gateway verified this request's signature" },
+  });
   assert.equal(decision.outcome, "granted", JSON.stringify(decision.denyReasons));
   assert.deepEqual(decision.denyReasons, []);
   const notEvaluated = decision.checks.filter((c) => c.passed === undefined).map((c) => c.check);
@@ -215,6 +218,18 @@ test("platform proof is a separate check from the simulated reader score", async
   assert.equal(check(refused, "biometric_presented").passed, true);
   assert.equal(check(refused, "webauthn_user_verified").passed, false);
   assert.ok(refused.denyReasons.includes("webauthn_user_not_verified"));
+});
+
+test("who signed the request is its own check: unsaid is not evaluated, a mismatch refuses", async () => {
+  const unsaid = await run(world());
+  assert.equal(check(unsaid, "device_enrolled").passed, true);
+  assert.equal(check(unsaid, "device_signature").passed, undefined);
+  assert.equal(unsaid.outcome, "granted", "a ledger reached directly still rules, and says what it could not see");
+  const other = await run(world(), {
+    deviceSigned: { passed: false, evidence: "the gateway verified a request signed by another device" },
+  });
+  assert.equal(other.outcome, "refused");
+  assert.ok(other.denyReasons.includes("device_signature_mismatch"));
 });
 
 test("every check records evidence whether it passed or failed", async () => {

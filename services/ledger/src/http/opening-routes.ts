@@ -22,6 +22,7 @@ import {
   type CeremonyState,
 } from "../domain/opening.js";
 import { recordOpenCeremony, recordPacketOpened } from "../domain/opening-events.js";
+import { deviceProof } from "./gateway-guard.js";
 
 /**
  * ── Rosters, stations and the opening ceremony over HTTP ─────────────────────
@@ -470,7 +471,10 @@ export function registerOpeningRoutes(app: FastifyInstance, pool: Pool): void {
     const input = parsed.data;
     const out = await withTransaction(pool, async (tx) => {
       await tx.query("select pg_advisory_xact_lock(hashtext($1))", [`ceremony:${input.packageId}`]);
-      const d = await decideStart(tx, input);
+      const d = await decideStart(tx, {
+        ...input,
+        deviceSigned: deviceProof(req.headers, process.env, input.deviceId),
+      });
       // A ceremony row needs a packet and a centre to hang on. An attempt on a
       // packet that does not exist has neither, and is answered without one.
       if (!d.centreId || !d.scheduledOpenAt) return { d, id: null };

@@ -570,10 +570,20 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   a handheld: a device in the field would hold its key in its own hardware. A
   demonstration device made before this, or in another browser, has a key
   nobody holds and its console can no longer act; make a new one.
-- **The engines are not told that the gateway verified the device.** The
-  gateway refuses a request it cannot tie to the device, so what reaches an
-  engine did come from it, but the engine's own record still shows only
-  `device_enrolled`, as it would for a ledger reached directly.
+- **An engine records that the gateway verified the device's signature only
+  where it can believe it.** The gateway writes the device whose signature it
+  verified onto the forwarded request, and the hand-off, strong room and
+  opening-start rulings carry it as `device_signature` (`station_signature` at
+  an opening) beside `device_enrolled`. A caller cannot set it: the gateway
+  copies through a fixed list of headers and this is not one of them. The
+  ledger believes it only when the two share `GATEWAY_SECRET`. On loopback
+  with no secret, which is what `pnpm start` and the Render service do by
+  default, the header could have been written by any process on the machine,
+  and the check reports "not evaluated" saying exactly that; a ledger reached
+  directly reports "not evaluated" too. A mismatch between the device verified
+  and the device named refuses the step. The later steps of an opening
+  (identify, confirm, release) do not carry the check. `tools/e2e/gateway.mjs`
+  sees it pass through the real gateway and the real engine (36 checks).
 - **`POST /access/request` still takes a session.** The Unlock page asks the
   access engine on behalf of an ESP32 station whose key the browser does not
   hold, so on that route a signed-in account can name any device.
