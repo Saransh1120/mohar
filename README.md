@@ -83,8 +83,9 @@ scans and can report a damaged label; it does not do hand-offs yet.
 
 Not built: the opening on the ESP32 station (a paired browser stands in for
 it), and `sealkeys`,
-`unlock`, `notify`, `render` and `trace` as services of their own — what exists
-of the first three runs inside `ledger`. An Android Keystore attestation is
+`unlock`, `render` and `trace` as services of their own — what exists of the
+first two runs inside `ledger`. `notify` is its own package, run inside the
+ledger by default or alone. An Android Keystore attestation is
 checked at enrolment when a device presents one, and a chain that fails enrols
 nothing; a centre PC can present a TPM quote, which shows a TPM vouched for
 the key and not that the key is inside it. Nothing here produces either yet

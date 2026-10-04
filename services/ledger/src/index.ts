@@ -22,7 +22,7 @@ import { registerStrongroomRoutes } from "./http/strongroom-routes.js";
 import { registerOverrideRoutes } from "./http/override-routes.js";
 import { registerOpeningRoutes } from "./http/opening-routes.js";
 import { startWatchdog } from "./domain/watchdog.js";
-import { channelsFromEnv, startNotifier } from "./domain/notify.js";
+import { channelsFromEnv, startNotifier } from "@mohar/notify";
 import { sweepAnchors } from "./anchor.js";
 
 const PORT = Number(process.env["PORT"] ?? 8081);
@@ -122,9 +122,15 @@ async function main(): Promise<void> {
 
   // With no channel configured the alerts still reach the Alerts page; the log
   // says so once, so "nobody was messaged" is never a surprise found later.
-  const { channels, skipped } = channelsFromEnv(process.env);
+  // NOTIFIER=external hands sending to services/notify running as its own
+  // process, which then holds the bot token and the mail password instead of
+  // this one. Nothing is sent from here in that case, whatever is configured.
+  const external = process.env["NOTIFIER"] === "external";
+  const { channels, skipped } = external ? { channels: [], skipped: [] } : channelsFromEnv(process.env);
   for (const reason of skipped) app.log.warn({ reason }, "notification channel not started");
-  if (NOTIFY_MS > 0 && channels.length > 0) {
+  if (external) {
+    app.log.info("alerts are sent by services/notify, not by this process (NOTIFIER=external)");
+  } else if (NOTIFY_MS > 0 && channels.length > 0) {
     stopNotifier = startNotifier(pool, app.log, channels, NOTIFY_MS);
     app.log.info(
       { intervalMs: NOTIFY_MS, channels: channels.map((c) => c.name) },

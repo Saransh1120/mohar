@@ -646,8 +646,20 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   hourly. An outage leaves the root unnotarised until a later successful retry.
   A real FreeTSA response was requested and verified with OpenSSL on Oct 2,
   2026; that test used a random root and did not create a production anchor.
-- **`sealkeys`, `unlock`, `render`, `trace`, `notify`** remain planned services.
-  The access engine and gateway now have separate packages and processes.
+- **`notify` is a service of its own; `sealkeys`, `unlock`, `render` and
+  `trace` are not.** The notifier lives in `services/notify`. The ledger
+  imports it and runs it in-process by default, exactly as before; it can also
+  run alone (`pnpm --filter @mohar/notify start`) with `NOTIFIER=external` on
+  the ledger, and then the bot token and mail password are out of the process
+  that takes requests. Seen on Oct 5, 2026: the process refuses to start with
+  no channel or no database, and the ledger says it has handed sending off.
+  The standalone process has not been left running against a real channel.
+  `sealkeys` (roster lock and key issue) and `unlock` (the opening) still run
+  inside the ledger as `domain/opening.ts`. Moving them out is a rewrite of how
+  those engines append their signed events, since that path belongs to the
+  ledger, and it changes nothing an operator or a court would see; it has been
+  left. `render` and `trace` are out of scope for this phase. The access engine
+  and gateway have their own packages and processes.
 - **The end-to-end checks are scripts, not part of `pnpm test`.** `pnpm test`
   runs the unit suites (crypto-core, the access engine's checks, the hand-off
   engine, the watchdog and notifier wording, the label tool). The checks that

@@ -14,7 +14,7 @@ ESP32 firmware in `firmware/`, written as Arduino sketches.
 
 | Path | What lives here |
 | --- | --- |
-| `services/` | Backend services. `ledger` hosts the chain, registry and auth routes, sealing, the hand-off, strong room and opening engines, the watchdog and the alert notifier. `gateway` is the one way in: operator sessions, device signatures, rate limits; it forwards to the ledger and holds no database credential. `access` is the access engine as its own package. The rest are placeholders with a README and an empty `src/`. |
+| `services/` | Backend services. `ledger` hosts the chain, registry and auth routes, sealing, the hand-off, strong room and opening engines, the watchdog and the alert notifier. `gateway` is the one way in: operator sessions, device signatures, rate limits; it forwards to the ledger and holds no database credential. `access` is the access engine as its own package. `notify` is the alert notifier as its own package: the ledger runs it in-process by default, or it runs alone with `NOTIFIER=external` on the ledger. The rest are placeholders with a README and an empty `src/`. |
 | `packages/` | `contracts` (shared types/enums/events), `crypto-core` (chain, Merkle, Shamir, custody keys, drand), `ledger-client`, `ui-kit` |
 | `apps/` | `control-room` is the only working UI. `verify-portal`, `centre-client`, `field-app` are not built. |
 | `firmware/` | ESP32 room monitor and related sketches |

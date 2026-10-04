@@ -28,7 +28,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const pg = createRequire(join(root, "services", "ledger", "package.json"))("pg");
 const dist = (f) => new URL(`../../services/ledger/dist/domain/${f}`, import.meta.url).href;
 const { sweepUnopenedPackets, sweepOverdueLegs, PACKET_UNOPENED_OVERDUE } = await import(dist("watchdog.js"));
-const { deliverPending, MAX_ATTEMPTS } = await import(dist("notify.js"));
+const { deliverPending, MAX_ATTEMPTS } = await import(
+  new URL("../../services/notify/dist/exports.js", import.meta.url).href
+);
 
 const ownerUrl = process.env.E2E_OWNER_URL;
 if (!ownerUrl) {

@@ -13,8 +13,8 @@ import { createTransport } from "nodemailer";
  * was restarted in between: an alert with no delivery on record is an alert
  * still to send.
  *
- * It runs inside the ledger process until `services/notify` exists, for the
- * same reason the watchdog does.
+ * The ledger runs this in its own process by default, which is one thing fewer
+ * to start. `index.ts` is the same loop as a process of its own.
  *
  * A message carries what the alert carries: what happened, the packet, the
  * place, and the consequence. It does not rank the alert. Nothing here adds a
