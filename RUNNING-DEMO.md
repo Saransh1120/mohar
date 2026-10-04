@@ -150,6 +150,39 @@ waits for drand. Everything it writes is rolled back.
 - The opening on stage is locked minutes ahead, not a day ahead, so it is
   recorded as a late lock with the reason typed.
 
+## Part A with real phones
+
+Everything above uses the console as the phone. To put real phones in the
+hand-off, on the deployed site (a phone cannot reach `localhost`):
+
+1. Control room → Transfers → *New packet to hand off* → *Hand this over from
+   real phones*. Three enrolment codes and the packet's two label codes appear.
+2. On the sender's phone, point the camera at the press operator's code. The
+   field app opens with the exam, centre, person and packet filled in. An
+   operator types their own username and password on the phone and presses
+   *Enrol this phone*. If the phone has a screen lock it asks for a
+   fingerprint, face or PIN, and the device line then reads *phone unlock
+   registered*. Do the same on the receiver's phone with the courier's code.
+3. Sender's phone: *Load legs for package above*, choose leg 1, use *QR A
+   image* and *QR B image* to photograph the two label codes off the laptop
+   screen, then *Dispatch*. The phone asks for the unlock again. Expect
+   `dispatch: granted`, with `webauthn_user_verified: passed` and
+   `device_enrolled: passed` among the checks.
+4. Receiver's phone: load the legs, photograph both codes, type a wrong serial
+   and press *Receive* (expect `refused`, `packet_serial_mismatch`), then the
+   right serial (expect `granted` and *Transfer key held in memory*), then
+   *Confirm with key held in memory*. Expect the leg to read completed.
+5. Also worth seeing once: cancel the unlock prompt (the step does not go);
+   switch the app to Hindi while the key is held (it survives); aeroplane mode,
+   record a scan, and watch it upload when the link returns.
+
+Do not open the label codes with the phone's ordinary camera app: that lands
+on the public page and raises `UNAUTHORIZED_SCAN`, which is the label working.
+
+**None of this has been run on a phone.** The codes were checked by decoding
+them in a browser, and the field app was seen to fill its boxes from one. Write
+down the phone, its browser, and what each step showed.
+
 ---
 
 # Part B: the unlock ceremony on the witness station

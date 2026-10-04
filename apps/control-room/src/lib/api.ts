@@ -616,6 +616,9 @@ export interface TransferStepResult {
 
 export interface DemoJourney {
   packageId: string;
+  /** Absent on a packet this browser made before these were returned. */
+  examId?: string;
+  centreId?: string;
   serial: string;
   deviceId: string;
   people: Record<"press" | "courier" | "custodian", { id: string; name: string; role: string }>;

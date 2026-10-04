@@ -13,6 +13,7 @@ import { formatTime, relativeTime, useAsync } from "../lib/hooks";
 import { Card, Empty, ErrorNote } from "../components/ui";
 import { sha256OfFile } from "../components/CheckList";
 import { PhoneCallPanel } from "../components/OverrideCall";
+import { PhonePanel } from "../components/PhonePanel";
 
 /**
  * ── Hand-offs ────────────────────────────────────────────────────────────────
@@ -535,6 +536,8 @@ function Console({ leg, journey, onDone }: { leg: Leg; journey: DemoJourney; onD
       )}
 
       {err && <div className="banner" style={{ marginTop: 12 }}>{err}</div>}
+
+      <PhonePanel journey={journey} />
 
       {result && (
         <div style={{ marginTop: 14 }}>

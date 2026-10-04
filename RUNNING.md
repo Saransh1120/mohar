@@ -632,6 +632,16 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   runs the unit suites (crypto-core, the access engine's checks, the hand-off
   engine, the watchdog and notifier wording, the label tool). The checks that
   need Postgres are in `tools/e2e` and are run by hand.
+- **The Transfers page can hand a packet's route to real phones.** *Hand this
+  over from real phones* shows a code per person that opens the field app with
+  the exam, centre, person and packet filled in (after the `#`, so not sent to
+  a server), and the packet's two label codes to photograph from inside the
+  field app. Nothing is enrolled by a code: an operator still types their own
+  password on the phone. The label codes on screen are the seam secret, as a
+  printed label is. Seen on Oct 5, 2026 in a desktop browser: the five codes
+  decode to what they should, and the field app fills its boxes from one,
+  ignores a value that is not an id, and removes it from the address. Not seen:
+  a phone's camera reading them, or a hand-off made that way.
 - **The field app is in English and Hindi.** Every line the app itself says
   is in both, switched from the header without a reload. What the ledger
   answers (check names, evidence, deny reasons) is shown as returned, in

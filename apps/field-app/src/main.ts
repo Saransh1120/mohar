@@ -449,5 +449,19 @@ label("override").addEventListener("click", () => run(requestOverride, "override
 label("sync").addEventListener("click", () => run(sync));
 addEventListener("online", () => { void refresh(); run(sync); });
 addEventListener("offline", () => { void refresh(); });
+// A code shown by the control room opens this page with the ids for one
+// person on one packet's route after the `#`. They are put in the boxes and
+// taken out of the address; nothing is enrolled or sent because of them.
+function fillFromAddress(): void {
+  if (!window.location.hash) return;
+  const given = new URLSearchParams(window.location.hash.slice(1));
+  for (const [param, id] of [["exam", "exam"], ["centre", "centre"], ["person", "person"], ["package", "package"]] as const) {
+    const value = given.get(param);
+    if (value && validId(value)) input(id).value = value;
+  }
+  history.replaceState(null, "", window.location.pathname);
+}
+fillFromAddress();
+window.addEventListener("hashchange", fillFromAddress);
 void refresh();
 if (navigator.serviceWorker) void navigator.serviceWorker.register("/field/sw.js");

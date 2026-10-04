@@ -154,11 +154,17 @@ export function registerDemoRoutes(app: FastifyInstance, pool: Pool): void {
         legs.push(rows[0]!.id);
       }
 
-      return { packageId, people, deviceId: device[0]!.id, legs };
+      return {
+        packageId, people, deviceId: device[0]!.id, legs,
+        examId: exam[0]!.id, centreId: centre[0]!.id,
+      };
     });
 
     return reply.code(201).send({
       packageId: out.packageId,
+      // For a phone that is to be enrolled on this packet's route.
+      examId: out.examId,
+      centreId: out.centreId,
       serial,
       deviceId: out.deviceId,
       people: out.people,
