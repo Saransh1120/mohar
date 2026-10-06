@@ -1,3 +1,4 @@
+import { centreScope } from "./scope-guard.js";
 import { randomBytes, type X509Certificate } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -293,9 +294,11 @@ export function registerRegistryRoutes(
   app.get<{ Querystring: { examId?: string; centreId?: string } }>(
     "/packages",
     async (req, reply) => {
+      const scope = centreScope(req);
       const packages = await listPackages(pool, {
         ...(req.query.examId ? { examId: req.query.examId } : {}),
         ...(req.query.centreId ? { centreId: req.query.centreId } : {}),
+        ...(scope ? { centreIds: scope } : {}),
       });
       return reply.send({ packages });
     },
@@ -303,7 +306,12 @@ export function registerRegistryRoutes(
 
   app.get<{ Params: { id: string } }>("/packages/:id", async (req, reply) => {
     const pkg = await getPackage(pool, req.params.id);
-    if (!pkg) return reply.code(404).send({ error: "unknown package" });
+    // Another centre's packet answers exactly as one that does not exist: a
+    // limited account does not learn which ids are real.
+    const scope = centreScope(req);
+    if (!pkg || (scope && !scope.includes(pkg.centreId))) {
+      return reply.code(404).send({ error: "unknown package" });
+    }
     return reply.send(pkg);
   });
 

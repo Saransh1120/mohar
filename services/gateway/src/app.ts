@@ -7,7 +7,7 @@ import Fastify, {
 import cors from "@fastify/cors";
 import type { GatewayConfig } from "./config.js";
 import { RateLimiter, type Taken } from "./ratelimit/limiter.js";
-import { canonicalPath, matchRule, type LimitName, type Match } from "./routes/policy.js";
+import { canonicalPath, matchRule, openToScoped, type LimitName, type Match } from "./routes/policy.js";
 import { Upstream } from "./upstream.js";
 import { SessionResolver, StreamTickets, bearerOf, type Account } from "./auth/session.js";
 import {
@@ -510,6 +510,19 @@ export async function buildGateway(opts: GatewayOptions): Promise<FastifyInstanc
     }
   }
 
+  function scopedRefusal(req: FastifyRequest, reply: FastifyReply, path: string, principal: Principal) {
+    return refuse(
+      req,
+      reply,
+      path,
+      403,
+      "account_scoped",
+      "This account is limited to its own centres. It can read their packets, hand-offs and alerts, and nothing else.",
+      { centres: principal.kind === "account" ? principal.account.centreIds.length : 0 },
+      principal,
+    );
+  }
+
   // ── the gateway's own routes ──
 
   /** A ticket to open one stream with. See StreamTickets. */
@@ -520,6 +533,7 @@ export async function buildGateway(opts: GatewayOptions): Promise<FastifyInstanc
     const { principal } = signedIn;
     const taken = limiter.take("stream", callerKey(principal, req.ip), config.limits.stream);
     if (!taken.allowed) return tooMany(req, reply, path, "stream", taken, principal);
+    if (principal.account.centreIds.length > 0) return scopedRefusal(req, reply, path, principal);
     return reply.code(201).send(tickets.issue(principal.account));
   });
 
@@ -529,6 +543,7 @@ export async function buildGateway(opts: GatewayOptions): Promise<FastifyInstanc
     const signedIn = await byBearer(req, reply, path);
     if ("refused" in signedIn) return signedIn.refused;
     const { principal } = signedIn;
+    if (principal.account.centreIds.length > 0) return scopedRefusal(req, reply, path, principal);
     if (principal.account.role !== "control_room") {
       return refuse(
         req,
@@ -610,6 +625,16 @@ export async function buildGateway(opts: GatewayOptions): Promise<FastifyInstanc
       if ("refused" in auth) return auth.refused;
       const { principal } = auth;
 
+      // An account limited to named centres reaches the few routes that filter
+      // by centre and no others, whatever its role would otherwise allow.
+      if (
+        principal.kind === "account" &&
+        principal.account.centreIds.length > 0 &&
+        !openToScoped(req.method, canon.segments)
+      ) {
+        return scopedRefusal(req, reply, path, principal);
+      }
+
       // ── how often ──
       const limit = match.rule.limit;
       const who = callerKey(principal, req.ip);
@@ -653,6 +678,15 @@ export async function buildGateway(opts: GatewayOptions): Promise<FastifyInstanc
         seg[1] === "accounts" &&
         seg[3] === "disable"
       ) {
+        onAnswered = (status) => void (status < 300 && sessions.forgetAccount(seg[2] ?? ""));
+      } else if (
+        req.method === "PUT" &&
+        seg.length === 4 &&
+        seg[0] === "auth" &&
+        seg[1] === "accounts" &&
+        seg[3] === "centres"
+      ) {
+        // The account's limit has changed; what was remembered of it is wrong.
         onAnswered = (status) => void (status < 300 && sessions.forgetAccount(seg[2] ?? ""));
       }
 

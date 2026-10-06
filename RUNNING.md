@@ -595,11 +595,25 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
 - **`POST /access/request` still takes a session.** The Unlock page asks the
   access engine on behalf of an ESP32 station whose key the browser does not
   hold, so on that route a signed-in account can name any device.
-- **A role decides what an account may change, not what it may see.** Any
-  signed-in account reads everything and may drive any engine's console. There
-  is no scoping to a centre or a district, and an operator's session is a
-  password only: WebAuthn is used for a courier's hand-off, not for an
-  operator's sign-in.
+- **An account can be limited to named centres; a district is not a thing
+  yet.** An operator with no limit sets it on the Accounts page
+  (`PUT /auth/accounts/:id/centres`, migration `017_account_centre.sql`). A
+  limited account reads its centres' packets, hand-offs and alerts
+  (`GET /packages`, `/packages/:id`, `/legs`, `/alerts`), is refused every
+  other route by the gateway and again by the ledger (`account_scoped`), and
+  changes nothing, whatever its role: it cannot acknowledge an alert, and it
+  gets no live stream, so its Alerts page polls. Each change raises an
+  `ACCOUNT_CENTRES_CHANGED` alert. `tools/e2e/scope.mjs` checks this against
+  the real routes (21 checks). What it does not do: there is no district, so
+  a district officer is given a list of centres by hand; an account with no
+  limit still reads everything, so the limit protects only where somebody set
+  it; it covers accounts, not devices, and a phone's signed `GET /legs` still
+  lists every centre's legs; the Packages page's exam filter is empty for a
+  limited account, because the exam list is not one of its routes. Migration
+  017 has to be applied before this is used; without it sign-in still works
+  and setting a limit answers 503. An operator's session is still a password
+  only: WebAuthn is used for a courier's hand-off, not for an operator's
+  sign-in.
 - **The gateway's limits and its record of refusals are in memory.** One
   process, so one count. A restart resets both, and a second gateway behind a
   load balancer would keep its own. Refusals are also log lines; they are not

@@ -107,10 +107,23 @@ export default function App() {
   const { pathname } = useLocation();
   const { account, signOut } = useAuth();
   const navigate = useNavigate();
+  // An account limited to named centres reads their packets, hand-offs and
+  // alerts and is refused everything else, so it is shown those three pages
+  // and the counts that cover every centre are not asked for.
+  const limitedTo = account?.centreIds?.length ?? 0;
+  const limited = limitedTo > 0;
   const { data: health } = useAsync(() => api.health(), [], { pollMs: 10_000 });
-  const { data: summary } = useAsync(() => api.summary(), [], { pollMs: 10_000 });
-  const { data: epoch } = useAsync(() => api.epoch(), [], { pollMs: 30_000 });
-  const { data: alertSummary } = useAsync(() => api.alertSummary(), [], { pollMs: 10_000 });
+  const { data: summary } = useAsync(() => (limited ? Promise.resolve(null) : api.summary()), [limited], {
+    pollMs: 10_000,
+  });
+  const { data: epoch } = useAsync(() => (limited ? Promise.resolve(null) : api.epoch()), [limited], {
+    pollMs: 30_000,
+  });
+  const { data: alertSummary } = useAsync(
+    () => (limited ? Promise.resolve(null) : api.alertSummary()),
+    [limited],
+    { pollMs: 10_000 },
+  );
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     document.documentElement.dataset["theme"] === "light" ? "light" : "dark",
   );
@@ -142,6 +155,13 @@ export default function App() {
           <div className="tag">Control Room</div>
         </div>
 
+        {limited ? (
+        <nav className="nav">
+          <NavLink to="/packages">Packages</NavLink>
+          <NavLink to="/transfers">Transfers</NavLink>
+          <NavLink to="/alerts">Alerts</NavLink>
+        </nav>
+        ) : (
         <nav className="nav">
           <NavLink to="/overview">Overview</NavLink>
           <NavLink to="/workflow">Workflow</NavLink>
@@ -182,6 +202,7 @@ export default function App() {
             {denials > 0 && <span className="nav-count alert">{denials}</span>}
           </NavLink>
         </nav>
+        )}
 
         {account && (
           <div className="who">
@@ -189,6 +210,11 @@ export default function App() {
             <div className="who-role">
               {account.role.replace(/_/g, " ")} · {account.username}
             </div>
+            {limited && (
+              <div className="who-role">
+                limited to {limitedTo} centre{limitedTo === 1 ? "" : "s"}
+              </div>
+            )}
             <button
               className="who-out"
               onClick={() => void signOut().then(() => navigate("/signin", { replace: true }))}
@@ -249,6 +275,28 @@ export default function App() {
         </header>
 
         <main className="content">
+          {limited ? (
+          <Routes>
+            <Route path="/" element={<Packages />} />
+            <Route path="/overview" element={<Packages />} />
+            <Route path="/packages" element={<Packages />} />
+            <Route path="/packages/:id" element={<PackageDetail />} />
+            <Route path="/workflow/:id" element={<PackageDetail />} />
+            <Route path="/transfers" element={<Transfers />} />
+            <Route path="/alerts" element={<Alerts />} />
+            <Route
+              path="*"
+              element={
+                <div className="note">
+                  <strong>This account is limited to {limitedTo} centre{limitedTo === 1 ? "" : "s"}.</strong>{" "}
+                  It reads their packets, hand-offs and alerts. The gateway refuses it every other
+                  page's requests, and so does the ledger behind it. A control room operator with no
+                  limit can change this on the Accounts page.
+                </div>
+              }
+            />
+          </Routes>
+          ) : (
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/overview" element={<Dashboard />} />
@@ -276,6 +324,7 @@ export default function App() {
                 page that failed to load. */}
             <Route path="*" element={<NoAuth />} />
           </Routes>
+          )}
         </main>
       </div>
       </div>

@@ -22,9 +22,11 @@ import {
   SESSION_TTL_HOURS,
   accountCount,
   accountForToken,
+  centresOf,
   createAccount,
   disableAccount,
   listAccounts,
+  setAccountCentres,
   signIn,
   signOut,
   type Account,
@@ -169,6 +171,9 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
       );
       clearAttempts(`u:${username.toLowerCase()}`);
       clearAttempts(`ip:${ip}`);
+      // Read outside the sign-in's transaction: before migration 017 the table
+      // is not there, and a failed read inside it would undo the sign-in.
+      session.account.centreIds = await centresOf(pool, session.account.id);
       req.log.info({ username: session.account.username }, "signed in");
       return reply.code(200).send(session);
     } catch (err) {
@@ -205,6 +210,10 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
       void reply.code(403).send({ error: "Accounts are kept by a control room operator." });
       return null;
     }
+    if (account.centreIds.length > 0) {
+      void reply.code(403).send({ error: "An operator limited to named centres does not keep accounts." });
+      return null;
+    }
     return account;
   }
 
@@ -234,6 +243,62 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
       return reply.code(201).send({ account });
     } catch (err) {
       if (err instanceof AuthError) return reply.code(err.status).send({ error: err.message });
+      throw err;
+    }
+  });
+
+  /**
+   * Limit an account to named centres, or lift the limit with an empty list.
+   *
+   * A limited account reads those centres' packets, hand-offs and alerts and
+   * nothing else, and changes nothing (see scope-guard). The change is raised
+   * as an alert naming who made it: narrowing what someone can see is ordinary,
+   * and widening it is how an account comes to see what it should not.
+   */
+  app.put<{ Params: { id: string } }>("/auth/accounts/:id/centres", async (req, reply) => {
+    const by = await operator(req, reply);
+    if (!by) return reply;
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ error: "No such account." });
+    const given = ((req.body ?? {}) as { centreIds?: unknown }).centreIds;
+    if (!Array.isArray(given) || given.length > 200 || !given.every((c) => typeof c === "string" && UUID.test(c))) {
+      return reply.code(400).send({ error: "centreIds must be a list of centre ids; an empty list lifts the limit." });
+    }
+    try {
+      const changed = await withTransaction(pool, async (tx) => {
+        const out = await setAccountCentres(tx, req.params.id, given as string[], by.id);
+        if (out.before.join() !== out.after.join()) {
+          await tx.query(
+            `insert into led.alert (kind, evidence, requires_decision, consequence)
+             values ('ACCOUNT_CENTRES_CHANGED', $1::jsonb, false, $2)`,
+            [
+              JSON.stringify({
+                accountId: req.params.id,
+                username: out.username,
+                before: out.before,
+                after: out.after,
+                changedByAccountId: by.id,
+                changedByUsername: by.username,
+              }),
+              out.after.length === 0
+                ? `${by.displayName} lifted the centre limit on the account ${out.username}. It now sees every centre its role allows.`
+                : `${by.displayName} limited the account ${out.username} to ${out.after.length} centre${out.after.length === 1 ? "" : "s"}` +
+                  (out.before.length === 0 ? "; it had no limit before." : `; it was limited to ${out.before.length} before.`) +
+                  " It reads those centres' packets, hand-offs and alerts and nothing else.",
+            ],
+          );
+        }
+        return out;
+      });
+      req.log.warn(
+        { accountId: req.params.id, changedBy: by.username, before: changed.before.length, after: changed.after.length },
+        "account centre limit changed",
+      );
+      return reply.send({ id: req.params.id, centreIds: changed.after });
+    } catch (err) {
+      if (err instanceof AuthError) return reply.code(err.status).send({ error: err.message });
+      if ((err as { code?: string }).code === "42P01") {
+        return reply.code(503).send({ error: "migration 017 has not been applied to this database" });
+      }
       throw err;
     }
   });

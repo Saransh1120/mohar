@@ -89,6 +89,7 @@ export const RULES: readonly Rule[] = Object.freeze([
   r("GET", "/auth/accounts", "control_room", "read"),
   r("POST", "/auth/accounts", "control_room", "account_admin"),
   r("POST", "/auth/accounts/:id/disable", "control_room", "account_admin"),
+  r("PUT", "/auth/accounts/:id/centres", "control_room", "account_admin"),
 
   // ── the transparency surface: what the public verify portal reads ──
   r("GET", "/anchors", "public", "anon"),
@@ -174,6 +175,52 @@ export const RULES: readonly Rule[] = Object.freeze([
   r("GET", "/*", "account", "read"),
   r("*", "/*", "control_room", "write"),
 ]);
+
+/**
+ * ── What an account limited to named centres may reach ───────────────────────
+ *
+ * An account with a centre limit reads its centres' packets, hand-offs and
+ * alerts, and nothing else. This list is the whole of what it can reach with
+ * its session; everything not on it is refused, whatever the table above says
+ * about its role. The ledger keeps the same list (`http/scope-guard`) and does
+ * the filtering by centre. `tools/e2e/scope.mjs` compares the two, so one
+ * cannot grow without the other.
+ *
+ * The streams are not on it. They carry every centre's events, and the ledger
+ * cannot filter them per account: a stream opened with a ticket reaches it
+ * with no account at all.
+ */
+export const SCOPED_ROUTES: readonly string[] = Object.freeze([
+  "GET /packages",
+  "GET /packages/:id",
+  "GET /legs",
+  "GET /alerts",
+  "GET /auth/me",
+  "GET /auth/config",
+  "POST /auth/signout",
+  "GET /health",
+  "GET /ping",
+  "GET /anchors",
+  "GET /counters",
+  "GET /verify/inclusion/:eventId",
+  "POST /public/seam-scan",
+]);
+
+const SCOPED: { method: string; parts: string[] }[] = SCOPED_ROUTES.map((line) => {
+  const [method = "", pattern = ""] = line.split(" ");
+  return { method, parts: pattern.split("/").slice(1) };
+});
+
+/** Whether an account limited to named centres may make this request at all. */
+export function openToScoped(method: string, segments: readonly string[]): boolean {
+  const m = method.toUpperCase();
+  return SCOPED.some(
+    (s) =>
+      s.method === m &&
+      s.parts.length === segments.length &&
+      s.parts.every((want, i) => want.startsWith(":") || want === segments[i]),
+  );
+}
 
 /** How many of the rows above are the catch-alls at the end. */
 const FALLBACK_ROWS = 2;

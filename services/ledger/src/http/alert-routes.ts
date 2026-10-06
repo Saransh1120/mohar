@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { accountForToken } from "../domain/accounts.js";
 import { bearerToken } from "./auth-routes.js";
+import { centreScope } from "./scope-guard.js";
 
 /**
  * ── Alerts over HTTP ─────────────────────────────────────────────────────────
@@ -70,12 +71,15 @@ export function registerAlertRoutes(app: FastifyInstance, pool: Pool): void {
          left join ref.package p on p.id = a.package_id
          left join ref.centre c on c.id = coalesce(a.centre_id, p.centre_id)
          left join ref.route_leg r on r.id = a.leg_id
-        where not $1::boolean
+        where (not $1::boolean
            or (a.requires_decision
-               and not exists (select 1 from led.alert_ack k where k.alert_id = a.id))
+               and not exists (select 1 from led.alert_ack k where k.alert_id = a.id)))
+          -- A limited account sees the alerts about its centres. One that
+          -- names no centre and no packet is not about any of them.
+          and ($3::uuid[] is null or coalesce(a.centre_id, p.centre_id) = any($3::uuid[]))
         order by a.raised_at desc
         limit $2`,
-      [onlyOpen, limit],
+      [onlyOpen, limit, centreScope(req)],
     );
     return reply.send({ alerts: rows });
   });

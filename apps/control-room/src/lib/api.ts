@@ -525,6 +525,11 @@ export interface Account {
   personId: string | null;
   createdAt: string;
   lastSignIn: string | null;
+  /**
+   * The centres this account is limited to. Empty, or absent on a session
+   * stored before the limit existed, means no limit.
+   */
+  centreIds?: string[];
 }
 
 export interface Session {
@@ -1147,6 +1152,9 @@ export const api = {
     post<{ account: Account }>("/auth/accounts", input),
   disableAccount: (id: string, reason: string) =>
     post<{ status: string }>(`/auth/accounts/${id}/disable`, { reason }),
+  /** Limit an account to these centres. An empty list lifts the limit. */
+  setAccountCentres: (id: string, centreIds: string[]) =>
+    put<{ id: string; centreIds: string[] }>(`/auth/accounts/${id}/centres`, { centreIds }),
   /** What the gateway has refused since it started. A 404 means there is no gateway in front. */
   gatewayStatus: () => get<GatewayStatus>("/gateway/status"),
 

@@ -203,7 +203,7 @@ async function loadPackageEvents(pool: Pool, packageId: string) {
 
 export async function listPackages(
   pool: Pool,
-  filter: { examId?: string; centreId?: string } = {},
+  filter: { examId?: string; centreId?: string; centreIds?: readonly string[] } = {},
 ): Promise<PackageSummary[]> {
   const { rows } = await pool.query(
     `select p.id, p.exam_id, p.centre_id, p.copies, p.seal_serial, p.state,
@@ -215,8 +215,9 @@ export async function listPackages(
        join ref.centre c on c.id = p.centre_id
       where ($1::uuid is null or p.exam_id   = $1::uuid)
         and ($2::uuid is null or p.centre_id = $2::uuid)
+        and ($3::uuid[] is null or p.centre_id = any($3::uuid[]))
       order by e.starts_at asc, c.code asc`,
-    [filter.examId ?? null, filter.centreId ?? null],
+    [filter.examId ?? null, filter.centreId ?? null, filter.centreIds ?? null],
   );
 
   // Projecting each package separately keeps the logic identical to the detail

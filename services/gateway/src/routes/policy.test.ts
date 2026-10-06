@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { RULES, canonicalPath, matchRule } from "./policy.js";
+import { RULES, SCOPED_ROUTES, canonicalPath, matchRule, openToScoped } from "./policy.js";
 
 function rule(method: string, path: string) {
   const canon = canonicalPath(path);
@@ -158,4 +158,54 @@ test("paths that cannot be reduced to plain segments are refused", () => {
 test("a segment with a space or a plus is forwarded re-encoded, not raw", () => {
   assert.equal(canonicalPath("/rosters/c1/morning%20shift")?.path, "/rosters/c1/morning%20shift");
   assert.deepEqual(canonicalPath("/rosters/c1/a+b")?.segments, ["rosters", "c1", "a+b"]);
+});
+
+test("an account limited to centres reaches the filtered reads and nothing that writes", () => {
+  const id = "0b9d6c1e-6f0a-4c5e-9a55-1a2b3c4d5e6f";
+  for (const [method, path] of [
+    ["GET", "/packages"],
+    ["GET", `/packages/${id}`],
+    ["GET", "/legs"],
+    ["GET", "/alerts"],
+    ["GET", "/auth/me"],
+    ["POST", "/auth/signout"],
+  ] as const) {
+    assert.equal(openToScoped(method, canonicalPath(path)!.segments), true, `${method} ${path}`);
+  }
+  for (const [method, path] of [
+    ["GET", "/alerts/summary"],
+    ["GET", "/alerts/stream"],
+    ["GET", "/events/stream"],
+    ["GET", "/events"],
+    ["GET", "/devices"],
+    ["GET", "/auth/accounts"],
+    ["GET", `/packages/${id}/events`],
+    ["GET", `/legs/${id}/attempts`],
+    ["POST", "/packages"],
+    ["POST", `/alerts/${id}/ack`],
+    ["POST", `/packages/${id}/seam-test`],
+    ["PUT", `/auth/accounts/${id}/centres`],
+    ["POST", "/keys/issue"],
+    ["POST", "/demo/route"],
+  ] as const) {
+    assert.equal(openToScoped(method, canonicalPath(path)!.segments), false, `${method} ${path}`);
+  }
+});
+
+test("nothing a limited account can reach is a route that changes custody", () => {
+  for (const line of SCOPED_ROUTES) {
+    const [method, pattern] = line.split(" ");
+    if (method === "GET") continue;
+    assert.ok(
+      pattern === "/auth/signout" || pattern === "/public/seam-scan",
+      `${line} writes, and a limited account changes nothing`,
+    );
+  }
+});
+
+test("setting an account's centres is the control room's, counted as account administration", () => {
+  const m = matchRule("PUT", ["auth", "accounts", "x", "centres"]);
+  assert.equal(m.listed, true);
+  assert.equal(m.rule.access, "control_room");
+  assert.equal(m.rule.limit, "account_admin");
 });

@@ -1,3 +1,4 @@
+import { centreScope } from "./scope-guard.js";
 import type { FastifyInstance } from "fastify";
 import type { Pool, PoolClient } from "pg";
 import { z } from "zod";
@@ -164,8 +165,9 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
          join ref.centre c on c.id = p.centre_id
          left join led.transfer_key k on k.leg_id = r.id
         where ($1::uuid is null or r.package_id = $1::uuid)
+          and ($2::uuid[] is null or p.centre_id = any($2::uuid[]))
         order by max(r.created_at) over (partition by r.package_id) desc, r.package_id, r.leg_no`,
-      [req.query.packageId ?? null],
+      [req.query.packageId ?? null, centreScope(req)],
     );
     const now = Date.now();
     return reply.send({

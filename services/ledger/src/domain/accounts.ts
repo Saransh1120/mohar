@@ -67,6 +67,11 @@ export interface Account {
   personId: string | null;
   createdAt: string;
   lastSignIn: string | null;
+  /**
+   * The centres this account is limited to. Empty means no limit: the account
+   * sees what its role lets it see. See http/scope-guard.
+   */
+  centreIds: string[];
 }
 
 interface AccountRow {
@@ -95,7 +100,29 @@ function toAccount(r: AccountRow): Account {
     personId: r.person_id,
     createdAt: r.created_at.toISOString(),
     lastSignIn: r.last_sign_in ? r.last_sign_in.toISOString() : null,
+    // Filled in by whoever loads the account for a request; see centresOf.
+    centreIds: [],
   };
+}
+
+/**
+ * The centres an account is limited to.
+ *
+ * Before migration 017 the table is not there. Then nobody can have been
+ * limited, so the answer is "no limit" and not an error: a deployment that has
+ * not run the migration must still be able to sign in.
+ */
+export async function centresOf(db: Pool | PoolClient, accountId: string): Promise<string[]> {
+  try {
+    const { rows } = await db.query<{ centre_id: string }>(
+      "select centre_id from ref.account_centre where account_id = $1::uuid order by centre_id",
+      [accountId],
+    );
+    return rows.map((r) => r.centre_id);
+  } catch (err) {
+    if ((err as { code?: string }).code === "42P01") return [];
+    throw err;
+  }
 }
 
 async function derive(password: string, salt: Buffer, n = N, r = R, p = P): Promise<Buffer> {
@@ -289,7 +316,7 @@ export async function accountForToken(pool: Pool, token: string | null): Promise
   if (!row) return null;
 
   await pool.query("update ref.session set last_seen_at = now() where token_hash = $1", [tokenHash]);
-  return toAccount(row);
+  return { ...toAccount(row), centreIds: await centresOf(pool, row.id) };
 }
 
 export async function signOut(pool: Pool, token: string | null): Promise<void> {
@@ -320,11 +347,71 @@ export async function listAccounts(pool: Pool): Promise<ListedAccount[]> {
        from ref.account
       order by created_at`,
   );
-  return rows.map((r) => ({
-    ...toAccount(r),
-    disabledAt: r.disabled_at ? r.disabled_at.toISOString() : null,
-    disabledReason: r.disabled_reason,
-  }));
+  const out: ListedAccount[] = [];
+  for (const r of rows) {
+    out.push({
+      ...toAccount(r),
+      centreIds: await centresOf(pool, r.id),
+      disabledAt: r.disabled_at ? r.disabled_at.toISOString() : null,
+      disabledReason: r.disabled_reason,
+    });
+  }
+  return out;
+}
+
+/**
+ * Limit an account to the centres named, or lift the limit with an empty list.
+ *
+ * What is given replaces what was there. The last control room operator with
+ * no limit cannot be given one: a limited account changes nothing, so with all
+ * of them limited there would be nobody left who could lift a limit.
+ */
+export async function setAccountCentres(
+  tx: PoolClient,
+  accountId: string,
+  centreIds: readonly string[],
+  byAccountId: string,
+): Promise<{ before: string[]; after: string[]; username: string }> {
+  const { rows } = await tx.query<{ username: string; role: string; disabled_at: Date | null }>(
+    "select username, role, disabled_at from ref.account where id = $1::uuid for update",
+    [accountId],
+  );
+  const target = rows[0];
+  if (!target) throw new AuthError(404, "No such account.");
+
+  const wanted = [...new Set(centreIds)].sort();
+  if (wanted.length > 0) {
+    const { rows: known } = await tx.query<{ id: string }>(
+      "select id from ref.centre where id = any($1::uuid[])",
+      [wanted],
+    );
+    if (known.length !== wanted.length) throw new AuthError(400, "One of those centres does not exist.");
+
+    if (target.role === "control_room" && !target.disabled_at) {
+      const { rows: free } = await tx.query<{ n: string }>(
+        `select count(*)::text as n from ref.account a
+          where a.role = 'control_room' and a.disabled_at is null and a.id <> $1::uuid
+            and not exists (select 1 from ref.account_centre c where c.account_id = a.id)`,
+        [accountId],
+      );
+      if (Number(free[0]?.n ?? 0) === 0) {
+        throw new AuthError(
+          409,
+          "This is the last control room operator with no limit. Limited, nobody could lift a limit again.",
+        );
+      }
+    }
+  }
+
+  const before = await centresOf(tx, accountId);
+  await tx.query("delete from ref.account_centre where account_id = $1::uuid", [accountId]);
+  for (const centreId of wanted) {
+    await tx.query(
+      "insert into ref.account_centre (account_id, centre_id, granted_by) values ($1::uuid, $2::uuid, $3::uuid)",
+      [accountId, centreId, byAccountId],
+    );
+  }
+  return { before, after: wanted, username: target.username };
 }
 
 /**

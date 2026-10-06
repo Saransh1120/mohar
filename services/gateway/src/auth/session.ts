@@ -15,7 +15,9 @@ import type { Upstream } from "../upstream.js";
  *
  * The cost of the cache is that a session revoked elsewhere stays usable here
  * until its entry expires. Signing out through the gateway drops the entry at
- * once; an account disabled in the database is refused within `ttlMs`.
+ * once; an account disabled in the database is refused within `ttlMs`. The
+ * same goes for an account's centre limit: changed through the gateway it
+ * takes hold at once, changed in the database within `ttlMs`.
  */
 
 export interface Account {
@@ -23,6 +25,8 @@ export interface Account {
   username: string;
   displayName: string;
   role: string;
+  /** The centres the account is limited to. Empty is no limit. */
+  centreIds: string[];
 }
 
 export interface Resolved {
@@ -56,6 +60,9 @@ function asAccount(json: unknown): Account | null {
     username: a["username"],
     displayName: typeof a["displayName"] === "string" ? a["displayName"] : a["username"],
     role: a["role"],
+    centreIds: Array.isArray(a["centreIds"])
+      ? a["centreIds"].filter((c): c is string => typeof c === "string")
+      : [],
   };
 }
 

@@ -27,6 +27,11 @@ import { configFromEnv, type GatewayConfig } from "./config.js";
 const SECRET = "test-gateway-secret";
 const OPERATOR = "token-of-a-control-room-operator";
 const OBSERVER = "token-of-an-observer";
+/** A control room operator limited to one centre. */
+const LIMITED = "token-of-an-operator-limited-to-one-centre";
+const CENTRE = "66666666-6666-4666-8666-666666666666";
+/** What the stand-in ledger says each account is limited to; a test may change it. */
+const limits = new Map<string, string[]>();
 
 const enrolled = generateKeypair();
 const revoked = generateKeypair();
@@ -44,7 +49,7 @@ interface Seen {
 }
 
 const seen: Seen[] = [];
-const liveTokens = new Set([OPERATOR, OBSERVER]);
+const liveTokens = new Set([OPERATOR, OBSERVER, LIMITED]);
 let streamsOpen = 0;
 let ledger: http.Server;
 let ledgerUrl = "";
@@ -72,6 +77,17 @@ before(async () => {
       if (url === "/auth/me") {
         const token = (req.headers.authorization ?? "").slice(7);
         if (!liveTokens.has(token)) return json(401, { error: "Not signed in." });
+        if (token === LIMITED) {
+          return json(200, {
+            account: {
+              id: "acc-lim",
+              username: "lim",
+              displayName: "Limited",
+              role: "control_room",
+              centreIds: limits.get("acc-lim") ?? [CENTRE],
+            },
+          });
+        }
         return json(200, {
           account:
             token === OPERATOR
@@ -628,4 +644,69 @@ test("the status route shows an operator what was refused, with the evidence", a
     assert.deepEqual(recent[1]?.["detail"], { roleHeld: "observer", roleNeeded: "control_room" });
     assert.deepEqual(status.json["refusedByReason"], { not_signed_in: 1, role_not_permitted: 2 });
   });
+});
+
+// ── an account limited to named centres ─────────────────────────────────────
+
+test("a limited account reads its filtered routes and is refused everything else, role or not", async () => {
+  limits.delete("acc-lim");
+  await gateway(async (base) => {
+    for (const path of ["/packages", `/packages/${CENTRE}`, "/legs", "/alerts"]) {
+      const res = await call(base, "GET", path, bearer(LIMITED));
+      assert.equal(res.status, 200, path);
+      assert.equal(reached("GET", path).length, 1, `${path} reached the ledger`);
+    }
+
+    // A control room operator may do every one of these. This one may not.
+    const refused: [string, string][] = [
+      ["GET", "/alerts/summary"],
+      ["GET", "/devices"],
+      ["GET", "/auth/accounts"],
+      ["GET", `/legs/${CENTRE}/attempts`],
+      ["POST", "/keys/issue"],
+      ["POST", `/alerts/${CENTRE}/ack`],
+      ["PUT", "/auth/accounts/acc-op/centres"],
+      ["GET", "/alerts/stream"],
+    ];
+    for (const [method, path] of refused) {
+      const res = await call(base, method, path, { ...jsonHeaders, ...bearer(LIMITED) }, method === "GET" ? undefined : "{}");
+      assert.equal(res.status, 403, `${method} ${path}`);
+      assert.equal(res.json["reason"], "account_scoped", `${method} ${path}`);
+      assert.equal(reached(method, path).length, 0, `${method} ${path} did not reach the ledger`);
+    }
+
+    const ticket = await call(base, "POST", "/gateway/stream-ticket", bearer(LIMITED));
+    assert.equal(ticket.status, 403);
+    assert.equal(ticket.json["reason"], "account_scoped");
+    const status = await call(base, "GET", "/gateway/status", bearer(LIMITED));
+    assert.equal(status.status, 403);
+    assert.equal(status.json["reason"], "account_scoped");
+
+    // The same operator's routes, for an operator with no limit.
+    const free = await call(base, "GET", "/devices", bearer(OPERATOR));
+    assert.equal(free.status, 200);
+  });
+});
+
+test("a centre limit changed through the gateway takes hold at once, not when the cache expires", async () => {
+  limits.set("acc-lim", []);
+  await gateway(async (base) => {
+    const before = await call(base, "GET", "/devices", bearer(LIMITED));
+    assert.equal(before.status, 200, "no limit yet");
+
+    limits.set("acc-lim", [CENTRE]);
+    const set = await call(
+      base,
+      "PUT",
+      "/auth/accounts/acc-lim/centres",
+      { ...jsonHeaders, ...bearer(OPERATOR) },
+      JSON.stringify({ centreIds: [CENTRE] }),
+    );
+    assert.equal(set.status, 200);
+
+    const after = await call(base, "GET", "/devices", bearer(LIMITED));
+    assert.equal(after.status, 403);
+    assert.equal(after.json["reason"], "account_scoped");
+  });
+  limits.delete("acc-lim");
 });

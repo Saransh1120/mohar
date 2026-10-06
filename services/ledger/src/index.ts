@@ -12,6 +12,7 @@ import {
   registerGatewayGuard,
   trustedProxies,
 } from "./http/gateway-guard.js";
+import { registerScopeGuard } from "./http/scope-guard.js";
 import { registerTransferRoutes } from "./http/transfer-routes.js";
 import { registerWebAuthnRoutes } from "./http/webauthn-routes.js";
 import { registerDemoRoutes } from "./http/demo-routes.js";
@@ -85,6 +86,9 @@ async function main(): Promise<void> {
   // After CORS, before every route: with GATEWAY_SECRET set, nothing below
   // answers a request that did not come through services/gateway.
   registerGatewayGuard(app, process.env);
+  // An account limited to named centres reaches only the routes that filter
+  // by centre. Before every route, so one added later is closed to it too.
+  registerScopeGuard(app, pool);
 
   registerAuthRoutes(app, pool);
   registerRoutes(app, pool);

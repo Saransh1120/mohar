@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { api, ApiError, type ListedAccount } from "../lib/api";
+import { api, ApiError, type Centre, type ListedAccount } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useAsync, formatTime, relativeTime } from "../lib/hooks";
 import { Card, Empty } from "../components/ui";
@@ -11,6 +11,10 @@ import { Card, Empty } from "../components/ui";
  * accounts after it come from: a control room operator creates them. An account
  * is disabled, never deleted — an acknowledgement or an override decision it
  * made last week still has to name who made it.
+ *
+ * An account can be limited to named centres. It then reads those centres'
+ * packets, hand-offs and alerts and is refused everything else, whatever its
+ * role. Each change is raised as an alert.
  *
  * The second half is the gateway's own record: requests it refused before they
  * reached an engine. Each row is what was asked, by whom, and what was found —
@@ -50,6 +54,10 @@ export default function Accounts() {
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [created, setCreated] = useState<string | null>(null);
+  const centres = useAsync(() => api.centres(), []);
+  /** The account whose centre limit is being edited, and what is ticked. */
+  const [limiting, setLimiting] = useState<ListedAccount | null>(null);
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
 
   if (!isOperator) {
     return (
@@ -96,6 +104,29 @@ export default function Accounts() {
     }
   }
 
+  function editLimit(a: ListedAccount) {
+    setFormError(null);
+    setLimiting(a);
+    setTicked(new Set(a.centreIds ?? []));
+  }
+
+  async function saveLimit(centreIds: string[]) {
+    if (!limiting) return;
+    setFormError(null);
+    setBusy(true);
+    try {
+      await api.setAccountCentres(limiting.id, centreIds);
+      setLimiting(null);
+      await accounts.refresh();
+    } catch (err) {
+      setFormError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const allCentres: Centre[] = centres.data?.centres ?? [];
+  const codeOf = new Map(allCentres.map((c) => [c.id, c.code]));
   const list = accounts.data?.accounts ?? [];
   const noGateway = gateway.error instanceof ApiError && gateway.error.status === 404;
   const refusedByReason = Object.entries(gateway.data?.refusedByReason ?? {}).sort(
@@ -196,6 +227,7 @@ export default function Accounts() {
                 <th>Name</th>
                 <th>Username</th>
                 <th>Role</th>
+                <th>Centres</th>
                 <th>Created</th>
                 <th>Last sign-in</th>
                 <th>Status</th>
@@ -215,6 +247,15 @@ export default function Accounts() {
                   <td>
                     <span className="badge neutral">{ROLE_LABELS[a.role] ?? a.role}</span>
                   </td>
+                  <td style={{ fontSize: 12 }}>
+                    {(a.centreIds?.length ?? 0) === 0 ? (
+                      <span style={{ color: "var(--text-faint)" }}>no limit</span>
+                    ) : (
+                      <span className="mono" title="Reads these centres' packets, hand-offs and alerts; nothing else">
+                        {(a.centreIds ?? []).map((id) => codeOf.get(id) ?? id.slice(0, 8)).join(", ")}
+                      </span>
+                    )}
+                  </td>
                   <td className="mono" title={formatTime(a.createdAt)}>
                     {relativeTime(a.createdAt)}
                   </td>
@@ -232,9 +273,14 @@ export default function Accounts() {
                   </td>
                   <td>
                     {!a.disabledAt && (
-                      <button className="danger" onClick={() => void disable(a)}>
-                        Disable
-                      </button>
+                      <>
+                        <button onClick={() => editLimit(a)} style={{ marginRight: 6 }}>
+                          Centres
+                        </button>
+                        <button className="danger" onClick={() => void disable(a)}>
+                          Disable
+                        </button>
+                      </>
                     )}
                   </td>
                 </tr>
@@ -243,6 +289,52 @@ export default function Accounts() {
           </table>
         )}
       </Card>
+
+      {limiting && (
+        <Card
+          title={`Centres for ${limiting.displayName} (${limiting.username})`}
+          hint="Ticked centres are all it will see. It will change nothing, whatever its role"
+          actions={<button onClick={() => setLimiting(null)}>Cancel</button>}
+        >
+          {centres.error ? (
+            <Empty>{centres.error.message}</Empty>
+          ) : allCentres.length === 0 ? (
+            <Empty>No centres are registered yet.</Empty>
+          ) : (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px", marginBottom: 12 }}>
+              {allCentres.map((c) => (
+                <label key={c.id} style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={ticked.has(c.id)}
+                    onChange={(e) => {
+                      const next = new Set(ticked);
+                      if (e.target.checked) next.add(c.id);
+                      else next.delete(c.id);
+                      setTicked(next);
+                    }}
+                  />
+                  <span className="mono">{c.code}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          <button
+            className="primary"
+            disabled={busy || ticked.size === 0}
+            onClick={() => void saveLimit([...ticked])}
+            style={{ marginRight: 8 }}
+          >
+            Limit to {ticked.size} centre{ticked.size === 1 ? "" : "s"}
+          </button>
+          <button
+            disabled={busy || (limiting.centreIds?.length ?? 0) === 0}
+            onClick={() => void saveLimit([])}
+          >
+            Lift the limit
+          </button>
+        </Card>
+      )}
 
       <Card
         title="Refused at the gateway"
