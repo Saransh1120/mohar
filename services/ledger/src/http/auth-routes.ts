@@ -187,11 +187,16 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
 
     try {
       const userAgent = req.headers["user-agent"] ?? null;
+      const account = await withTransaction(pool, (tx) =>
+        checkPassword(tx, username, String(body.password ?? "")),
+      );
+      // Asked outside any transaction: before migration 019 the table is not
+      // there, and a failed read inside one would undo the sign-in with it.
+      const holdsPasskey = (await passkeysOf(pool, account.id)).length > 0;
       const step = await withTransaction(pool, async (tx) => {
-        const account = await checkPassword(tx, username, String(body.password ?? ""));
         // An account that holds a passkey is not signed in by its password.
         // The password earns a challenge; the session waits for the passkey.
-        const second = await beginSignIn(tx, account.id, userAgent, relyingParty());
+        const second = holdsPasskey ? await beginSignIn(tx, account.id, userAgent, relyingParty()) : null;
         return second ? { second } : { session: await openSession(tx, account.id, userAgent) };
       });
       if ("second" in step) {
@@ -309,6 +314,11 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
       return reply.code(201).send({ passkey });
     } catch (err) {
       if (err instanceof AuthError) return reply.code(err.status).send({ error: err.message });
+      // 25P02: the table was missing, and the read that found that out spoiled the transaction.
+      const code = (err as { code?: string }).code;
+      if (code === "42P01" || code === "25P02") {
+        return reply.code(503).send({ error: "migration 019 has not been applied to this database" });
+      }
       throw err;
     }
   });
