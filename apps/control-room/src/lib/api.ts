@@ -14,6 +14,12 @@
  */
 
 import { deviceSignatureHeaders, newDeviceKey } from "./deviceKeys";
+import {
+  passkeyAssertion,
+  passkeyCreate,
+  type PasskeyCreationOptions,
+  type PasskeyRequestOptions,
+} from "./passkey";
 
 const BASE = "/api";
 
@@ -532,6 +538,15 @@ export interface Account {
   districts?: string[];
   /** Whether it has a limit at all. Absent on a session stored before limits existed. */
   limited?: boolean;
+  /** How many passkeys it holds. With one or more, its password does not sign it in alone. */
+  passkeys?: number;
+}
+
+/** What `/auth/signin` answers for an account that holds a passkey: no session yet. */
+export interface PasskeyStep {
+  passkeyRequired: true;
+  signInId: string;
+  options: PasskeyRequestOptions;
 }
 
 export interface Session {
@@ -1109,10 +1124,34 @@ export const api = {
   authConfig: () => get<AuthConfig>("/auth/config"),
 
   signIn: async (username: string, password: string) => {
-    const s = await post<Session>("/auth/signin", { username, password });
+    const first = await post<Session | PasskeyStep>("/auth/signin", { username, password });
+    let s: Session;
+    if ("passkeyRequired" in first) {
+      // The password was accepted and is not enough for this account. The
+      // browser asks one of its passkeys to sign the challenge.
+      const response = await passkeyAssertion(first.options);
+      s = await post<Session>("/auth/signin/passkey", { signInId: first.signInId, response });
+    } else {
+      s = first;
+    }
     storeToken(s.token);
     return s;
   },
+
+  /** Enrol a passkey on the signed-in account. The browser shows its own prompt. */
+  addPasskey: async (label: string) => {
+    const begun = await post<{ challengeId: string; options: PasskeyCreationOptions }>(
+      "/auth/passkey/register/challenge",
+    );
+    const response = await passkeyCreate(begun.options);
+    return post<{ passkey: { id: string; label: string | null } }>("/auth/passkey/register/complete", {
+      challengeId: begun.challengeId,
+      response,
+      ...(label.trim() ? { label: label.trim() } : {}),
+    });
+  },
+  removePasskeys: (id: string) =>
+    post<{ id: string; removed: number }>(`/auth/accounts/${id}/passkeys/remove`),
 
   signUp: async (input: {
     username: string;

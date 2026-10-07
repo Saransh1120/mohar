@@ -15,7 +15,17 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Pool } from "pg";
+import { z } from "zod";
 import { withTransaction } from "../db.js";
+import {
+  beginRegistration,
+  beginSignIn,
+  finishRegistration,
+  finishSignIn,
+  passkeysOf,
+  removePasskeys,
+} from "../domain/passkeys.js";
+import { AssertionResponse, RegistrationResponse, relyingParty } from "../domain/webauthn.js";
 import {
   AuthError,
   ACCOUNT_ROLES,
@@ -29,6 +39,8 @@ import {
   setAccountLimit,
   withLimit,
   signIn,
+  checkPassword,
+  openSession,
   signOut,
   type Account,
 } from "../domain/accounts.js";
@@ -90,6 +102,13 @@ interface Body {
   role?: unknown;
   reason?: unknown;
 }
+
+const PasskeySignIn = z.object({ signInId: z.string().uuid(), response: AssertionResponse });
+const PasskeyRegister = z.object({
+  challengeId: z.string().uuid(),
+  response: RegistrationResponse,
+  label: z.string().max(80).optional(),
+});
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -167,9 +186,19 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
     }
 
     try {
-      const session = await withTransaction(pool, (tx) =>
-        signIn(tx, username, String(body.password ?? ""), req.headers["user-agent"] ?? null),
-      );
+      const userAgent = req.headers["user-agent"] ?? null;
+      const step = await withTransaction(pool, async (tx) => {
+        const account = await checkPassword(tx, username, String(body.password ?? ""));
+        // An account that holds a passkey is not signed in by its password.
+        // The password earns a challenge; the session waits for the passkey.
+        const second = await beginSignIn(tx, account.id, userAgent, relyingParty());
+        return second ? { second } : { session: await openSession(tx, account.id, userAgent) };
+      });
+      if ("second" in step) {
+        req.log.info({ username }, "password accepted; waiting for a passkey");
+        return reply.code(200).send({ passkeyRequired: true, ...step.second });
+      }
+      const session = step.session;
       clearAttempts(`u:${username.toLowerCase()}`);
       clearAttempts(`ip:${ip}`);
       // Read outside the sign-in's transaction: before migration 017 the table
@@ -186,6 +215,104 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
     }
   });
 
+  /**
+   * The second step, for an account that holds a passkey: the assertion that
+   * answers the challenge its password was given. This is where its session
+   * opens. A challenge is good once, for five minutes.
+   */
+  app.post("/auth/signin/passkey", async (req, reply) => {
+    const ip = req.ip;
+    if (tooManyAttempts(`ip:${ip}`)) {
+      return reply.code(429).send({ error: "Too many sign-in attempts. Wait five minutes and try again." });
+    }
+    const parsed = PasskeySignIn.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "signInId and the passkey's response are required." });
+    try {
+      const out = await withTransaction(pool, async (tx) => {
+        const checked = await finishSignIn(tx, parsed.data.signInId, parsed.data.response, relyingParty());
+        if ("refused" in checked) return checked;
+        return { session: await openSession(tx, checked.accountId, req.headers["user-agent"] ?? null) };
+      });
+      if ("refused" in out) {
+        // Why is for the log. The caller is told only that it did not hold.
+        req.log.warn({ signInId: parsed.data.signInId, found: out.refused }, "passkey sign-in refused");
+        return reply.code(401).send({ error: "The passkey did not sign this in. Start again with your password." });
+      }
+      clearAttempts(`ip:${ip}`);
+      clearAttempts(`u:${out.session.account.username.toLowerCase()}`);
+      const account = withLimit(out.session.account, await limitOf(pool, out.session.account.id));
+      req.log.info({ username: account.username }, "signed in with a passkey");
+      return reply.code(200).send({
+        ...out.session,
+        account: { ...account, passkeys: (await passkeysOf(pool, account.id)).length },
+      });
+    } catch (err) {
+      if (err instanceof AuthError) return reply.code(err.status).send({ error: err.message });
+      throw err;
+    }
+  });
+
+  // ── an account's own passkey ──────────────────────────────────────────────
+
+  app.post("/auth/passkey/register/challenge", async (req, reply) => {
+    const account = await accountForToken(pool, bearerToken(req));
+    if (!account) return reply.code(401).send({ error: "Not signed in." });
+    try {
+      return reply.code(201).send(await beginRegistration(pool, account, relyingParty()));
+    } catch (err) {
+      if ((err as { code?: string }).code === "42P01") {
+        return reply.code(503).send({ error: "migration 019 has not been applied to this database" });
+      }
+      throw err;
+    }
+  });
+
+  /**
+   * Enrol the passkey. From here on this account's password does not sign it
+   * in alone, which is a change to how an account is opened and is raised.
+   */
+  app.post("/auth/passkey/register/complete", async (req, reply) => {
+    const account = await accountForToken(pool, bearerToken(req));
+    if (!account) return reply.code(401).send({ error: "Not signed in." });
+    const parsed = PasskeyRegister.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "challengeId and the passkey's response are required." });
+    try {
+      const passkey = await withTransaction(pool, async (tx) => {
+        const had = (await passkeysOf(tx, account.id)).length;
+        const made = await finishRegistration(
+          tx,
+          account.id,
+          parsed.data.challengeId,
+          parsed.data.response,
+          parsed.data.label?.trim() || null,
+          relyingParty(),
+        );
+        await tx.query(
+          `insert into led.alert (kind, evidence, requires_decision, consequence)
+           values ('ACCOUNT_PASSKEY_ADDED', $1::jsonb, false, $2)`,
+          [
+            JSON.stringify({
+              accountId: account.id,
+              username: account.username,
+              passkeyId: made.id,
+              label: made.label,
+              passkeysBefore: had,
+            }),
+            had === 0
+              ? `${account.displayName} (${account.username}) enrolled a passkey. That account's password no longer signs it in alone.`
+              : `${account.displayName} (${account.username}) enrolled another passkey; the account now holds ${had + 1}. Any one of them completes its sign-in.`,
+          ],
+        );
+        return made;
+      });
+      req.log.warn({ username: account.username, passkeyId: passkey.id }, "passkey enrolled");
+      return reply.code(201).send({ passkey });
+    } catch (err) {
+      if (err instanceof AuthError) return reply.code(err.status).send({ error: err.message });
+      throw err;
+    }
+  });
+
   app.post("/auth/signout", async (req, reply) => {
     await signOut(pool, bearerToken(req));
     return reply.code(200).send({ ok: true });
@@ -195,7 +322,8 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
   app.get("/auth/me", async (req, reply) => {
     const account = await accountForToken(pool, bearerToken(req));
     if (!account) return reply.code(401).send({ error: "Not signed in." });
-    return reply.code(200).send({ account });
+    // How many passkeys it holds, so the page can say how this account is opened.
+    return reply.code(200).send({ account: { ...account, passkeys: (await passkeysOf(pool, account.id)).length } });
   });
 
   // ── accounts, kept by a control room operator ─────────────────────────────
@@ -220,7 +348,11 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
 
   app.get("/auth/accounts", async (req, reply) => {
     if (!(await operator(req, reply))) return reply;
-    return reply.send({ accounts: await listAccounts(pool) });
+    const accounts = [];
+    for (const a of await listAccounts(pool)) {
+      accounts.push({ ...a, passkeys: (await passkeysOf(pool, a.id)).length });
+    }
+    return reply.send({ accounts });
   });
 
   /** Create an account for someone else. It does not sign them in. */
@@ -325,6 +457,57 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
       const code = (err as { code?: string }).code;
       if (code === "42P01" || code === "42703") {
         return reply.code(503).send({ error: "migrations 017 and 018 have not both been applied to this database" });
+      }
+      throw err;
+    }
+  });
+
+  /**
+   * Remove every passkey an account holds: the way back in when a phone or a
+   * key is lost. Afterwards the account's password signs it in alone, so this
+   * is also a way to weaken an account, and it is raised as an alert that
+   * needs acknowledging.
+   */
+  app.post<{ Params: { id: string } }>("/auth/accounts/:id/passkeys/remove", async (req, reply) => {
+    const by = await operator(req, reply);
+    if (!by) return reply;
+    if (!UUID.test(req.params.id)) return reply.code(404).send({ error: "No such account." });
+    try {
+      const out = await withTransaction(pool, async (tx) => {
+        const { rows } = await tx.query<{ username: string; display_name: string }>(
+          "select username, display_name from ref.account where id = $1::uuid",
+          [req.params.id],
+        );
+        if (!rows[0]) return null;
+        const removed = await removePasskeys(tx, req.params.id, by.id);
+        if (removed > 0) {
+          await tx.query(
+            `insert into led.alert (kind, evidence, requires_decision, consequence)
+             values ('ACCOUNT_PASSKEYS_REMOVED', $1::jsonb, true, $2)`,
+            [
+              JSON.stringify({
+                accountId: req.params.id,
+                username: rows[0].username,
+                removed,
+                removedByAccountId: by.id,
+                removedByUsername: by.username,
+              }),
+              `${by.displayName} removed ${removed} passkey${removed === 1 ? "" : "s"} from the account ${rows[0].username}. ` +
+                "Its password now signs it in alone until a passkey is enrolled again. " +
+                (by.id === req.params.id
+                  ? "The operator did this to their own account."
+                  : "If the account's holder did not ask for this, the account should be disabled."),
+            ],
+          );
+        }
+        return removed;
+      });
+      if (out === null) return reply.code(404).send({ error: "No such account." });
+      req.log.warn({ accountId: req.params.id, removedBy: by.username, removed: out }, "passkeys removed");
+      return reply.send({ id: req.params.id, removed: out });
+    } catch (err) {
+      if ((err as { code?: string }).code === "42P01") {
+        return reply.code(503).send({ error: "migration 019 has not been applied to this database" });
       }
       throw err;
     }

@@ -81,6 +81,12 @@ export const RULES: readonly Rule[] = Object.freeze([
   r("GET", "/health", "public", "anon"),
   r("GET", "/auth/config", "public", "anon"),
   r("POST", "/auth/signin", "public", "signin"),
+  // The second step for an account that holds a passkey. Counted with the first.
+  r("POST", "/auth/signin/passkey", "public", "signin"),
+  // An account enrols its own passkey; another operator can remove them.
+  r("POST", "/auth/passkey/register/challenge", "account", "account_admin"),
+  r("POST", "/auth/passkey/register/complete", "account", "account_admin"),
+  r("POST", "/auth/accounts/:id/passkeys/remove", "control_room", "account_admin"),
   // Whether sign-up is open is the ledger's decision (ALLOW_SIGNUP, or no
   // account existing yet); the gateway only bounds how often it can be tried.
   r("POST", "/auth/signup", "public", "signup"),

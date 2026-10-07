@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { api, ApiError, type Centre, type ListedAccount } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useAsync, formatTime, relativeTime } from "../lib/hooks";
+import { passkeysSupported } from "../lib/passkey";
 import { Card, Empty } from "../components/ui";
 
 /**
@@ -40,7 +41,7 @@ function detailText(detail: Record<string, unknown>): string {
 }
 
 export default function Accounts() {
-  const { account } = useAuth();
+  const { account, setAccount } = useAuth();
   const isOperator = account?.role === "control_room";
 
   const config = useAsync(() => api.authConfig(), []);
@@ -63,6 +64,8 @@ export default function Accounts() {
   const [districtName, setDistrictName] = useState("");
   const [districtCentres, setDistrictCentres] = useState<Set<string>>(new Set());
   const [districtSaid, setDistrictSaid] = useState<string | null>(null);
+  const [passkeyLabel, setPasskeyLabel] = useState("");
+  const [passkeySaid, setPasskeySaid] = useState<string | null>(null);
 
   if (!isOperator) {
     return (
@@ -103,6 +106,52 @@ export default function Accounts() {
     setFormError(null);
     try {
       await api.disableAccount(a.id, reason.trim());
+      await accounts.refresh();
+    } catch (err) {
+      setFormError((err as Error).message);
+    }
+  }
+
+  async function addPasskey() {
+    setFormError(null);
+    setPasskeySaid(null);
+    setBusy(true);
+    try {
+      await api.addPasskey(passkeyLabel);
+      setPasskeyLabel("");
+      setPasskeySaid("Passkey enrolled. From now on your password does not sign this account in alone.");
+      const me = await api.me();
+      if (me) setAccount(me);
+      await accounts.refresh();
+    } catch (err) {
+      setFormError(
+        err instanceof DOMException
+          ? "No passkey was created: the browser's prompt was dismissed or timed out, or this authenticator is already enrolled."
+          : (err as Error).message,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removePasskeys(a: ListedAccount) {
+    const own = a.id === account?.id;
+    if (
+      !window.confirm(
+        `Remove every passkey from ${a.displayName} (${a.username})?\n\n` +
+          "Its password will sign it in alone until a passkey is enrolled again. This is raised as an alert" +
+          (own ? "." : ", and is what you do when its holder has lost the phone or key."),
+      )
+    ) {
+      return;
+    }
+    setFormError(null);
+    try {
+      await api.removePasskeys(a.id);
+      if (own) {
+        const me = await api.me();
+        if (me) setAccount(me);
+      }
       await accounts.refresh();
     } catch (err) {
       setFormError((err as Error).message);
@@ -248,6 +297,42 @@ export default function Accounts() {
       </Card>
 
       <Card
+        title="Your passkey"
+        hint={
+          (account?.passkeys ?? 0) > 0
+            ? `This account holds ${account?.passkeys}. Its password does not sign it in alone`
+            : "This account signs in with its password alone"
+        }
+      >
+        <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 10, maxWidth: 720 }}>
+          A passkey is a key held by this device or by a security key, unlocked by your fingerprint,
+          face or PIN. Once you enrol one, signing in takes your password and then the passkey. If
+          you lose it, another operator removes it from this page and your password works alone
+          again; with one operator and one lost passkey there is no way back in from here.
+        </div>
+        {passkeysSupported() ? (
+          <>
+            <input
+              className="wit-select"
+              style={{ maxWidth: 240, marginRight: 8 }}
+              placeholder="A name for it, e.g. office laptop"
+              maxLength={80}
+              value={passkeyLabel}
+              onChange={(e) => setPasskeyLabel(e.target.value)}
+            />
+            <button className="primary" disabled={busy} onClick={() => void addPasskey()}>
+              {(account?.passkeys ?? 0) > 0 ? "Add another passkey" : "Add a passkey"}
+            </button>
+          </>
+        ) : (
+          <Empty>This browser has no WebAuthn, so it cannot enrol a passkey.</Empty>
+        )}
+        {passkeySaid && (
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 10 }}>{passkeySaid}</div>
+        )}
+      </Card>
+
+      <Card
         title="Accounts"
         hint={`${list.filter((a) => !a.disabledAt).length} can sign in`}
         flush
@@ -265,6 +350,7 @@ export default function Accounts() {
                 <th>Username</th>
                 <th>Role</th>
                 <th>Centres</th>
+                <th>Signs in with</th>
                 <th>Created</th>
                 <th>Last sign-in</th>
                 <th>Status</th>
@@ -296,6 +382,15 @@ export default function Accounts() {
                       </span>
                     )}
                   </td>
+                  <td style={{ fontSize: 12 }}>
+                    {(a.passkeys ?? 0) > 0 ? (
+                      <span title="The password earns a challenge; a passkey has to sign it">
+                        password and passkey{(a.passkeys ?? 0) > 1 ? ` (${a.passkeys})` : ""}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--text-faint)" }}>password only</span>
+                    )}
+                  </td>
                   <td className="mono" title={formatTime(a.createdAt)}>
                     {relativeTime(a.createdAt)}
                   </td>
@@ -317,6 +412,11 @@ export default function Accounts() {
                         <button onClick={() => editLimit(a)} style={{ marginRight: 6 }}>
                           Centres
                         </button>
+                        {(a.passkeys ?? 0) > 0 && (
+                          <button onClick={() => void removePasskeys(a)} style={{ marginRight: 6 }}>
+                            Remove passkeys
+                          </button>
+                        )}
                         <button className="danger" onClick={() => void disable(a)}>
                           Disable
                         </button>

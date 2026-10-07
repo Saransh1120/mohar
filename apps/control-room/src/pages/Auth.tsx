@@ -87,10 +87,17 @@ export default function Auth({ mode }: { mode: "signin" | "signup" }) {
       // proxy answering for a ledger service that is not running. Saying "500"
       // sends someone to look at their password; saying this sends them to the
       // terminal, which is where the problem actually is.
+      // The browser's own passkey prompt failing is neither of those: the
+      // password was accepted and the second step did not happen.
+      const passkey = err instanceof DOMException || (err instanceof Error && /passkey|WebAuthn/i.test(err.message));
       const unreachable =
-        !(err instanceof ApiError) || err.status >= 500 || err.status === 0;
+        !passkey && (!(err instanceof ApiError) || err.status >= 500 || err.status === 0);
       setError(
-        unreachable
+        passkey && !(err instanceof ApiError)
+          ? err instanceof DOMException
+            ? "Your password was accepted, but no passkey answered: the prompt was dismissed or timed out, or this device does not hold one of this account's passkeys. Sign in again."
+            : (err as Error).message
+          : unreachable
           ? "The control room cannot reach its API on :8081. Start it (pnpm start: the gateway, with the ledger behind it) and try again."
           : err.message,
       );

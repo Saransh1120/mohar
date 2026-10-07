@@ -621,9 +621,33 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
   put in its district twice, and the page shows both under one code; which
   hand-off step a device may attempt is still the hand-off engine's ruling,
   not this. Both migrations have to be applied before this is used; without
-  them sign-in still works and setting a limit answers 503. An operator's
-  session is still a password only: WebAuthn is used for a courier's hand-off,
-  not for an operator's sign-in.
+  them sign-in still works and setting a limit answers 503.
+- **An account can hold a passkey, and then its password does not sign it in
+  alone.** It is enrolled from the Accounts page ("Your passkey", migration
+  `019_account_passkey.sql`). From then on `POST /auth/signin` answers a right
+  password with a challenge and no session, and `POST /auth/signin/passkey`
+  opens the session when one of the account's passkeys signs that challenge
+  with its user verified. A challenge is good once, for five minutes, and is
+  spent by a failed attempt as well as a good one. `tools/e2e/passkey.mjs`
+  checks the ledger's side with a software key (25 checks): a different key,
+  another origin, no user verification, another challenge, a replay and a
+  counter that went backwards are each refused. What it is not: it is taken
+  up one account at a time, and an account that has not enrolled one is still
+  a password only; nothing forces an operator to enrol. The attestation asked
+  for is "none", so this shows the holder of an enrolled key was present, not
+  what kind of device holds it. A lost passkey is removed by another operator
+  (`POST /auth/accounts/:id/passkeys/remove`), after which the password works
+  alone again; that is a way in for two people acting together, and it raises
+  `ACCOUNT_PASSKEYS_REMOVED` for somebody to acknowledge. With one operator
+  and one lost passkey there is no way back in short of the database. A
+  command-line tool cannot present a passkey: for such an account it needs
+  `MOHAR_SESSION_TOKEN` from a browser sign-in, and says so. An account limited
+  to named centres cannot enrol one yet, because the enrolment routes are not
+  among the ones it reaches. The browser's prompt has not been completed on a
+  real authenticator here: the pages were loaded and the challenge issued, and
+  the rest is the software key's. `WEBAUTHN_RP_ID` and `WEBAUTHN_ORIGIN` are
+  the same two the courier's credential uses, so a passkey enrolled on one
+  domain does not sign in on another.
 - **The gateway's limits and its record of refusals are in memory.** One
   process, so one count. A restart resets both, and a second gateway behind a
   load balancer would keep its own. Refusals are also log lines; they are not

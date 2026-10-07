@@ -80,6 +80,14 @@ export async function openSession(
   const body = (await res.json().catch(() => null)) as
     | { token?: string; account?: { username?: string; role?: string }; error?: string }
     | null;
+  if (res.ok && (body as { passkeyRequired?: boolean } | null)?.passkeyRequired) {
+    // The password was right and is not enough: this account's sign-in is
+    // finished by a passkey, which a command-line tool does not hold.
+    throw new LedgerSignInError(
+      `${username} signs in with a passkey, which this tool cannot present. ` +
+        "Sign in from a browser and pass that session as MOHAR_SESSION_TOKEN, or use an account kept for tools.",
+    );
+  }
   if (!res.ok || !body?.token) {
     // The server's own words, which never include the password.
     throw new LedgerSignInError(`Sign-in as ${username} was refused (${res.status}): ${body?.error ?? "no reason given"}`);

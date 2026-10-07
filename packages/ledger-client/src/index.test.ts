@@ -103,3 +103,15 @@ test("a supplied token takes precedence over a username and password", async () 
   assert.equal(session.via, "token");
   assert.equal(s.calls.length, 0);
 });
+
+test("an account that signs in with a passkey is refused by name, not as a wrong password", async () => {
+  const s = server({
+    "/auth/signin": { status: 200, body: { passkeyRequired: true, signInId: "x", options: { challenge: "c" } } },
+  });
+  await assert.rejects(
+    openSession(BASE, { MOHAR_OPERATOR: "asha", MOHAR_OPERATOR_PASSWORD: "a-long-enough-password" }, s.fetchImpl),
+    (err: unknown) =>
+      err instanceof LedgerSignInError && /passkey/.test(err.message) && /MOHAR_SESSION_TOKEN/.test(err.message),
+  );
+  assert.equal(s.calls.length, 1, "the second step is not attempted: the tool holds no passkey");
+});

@@ -268,12 +268,14 @@ export interface SignedInSession {
   account: Account;
 }
 
-export async function signIn(
-  tx: PoolClient,
-  username: string,
-  password: string,
-  userAgent: string | null,
-): Promise<SignedInSession> {
+/**
+ * Check a username and password, and nothing more: no session is opened.
+ *
+ * Apart from `signIn` so that an account holding a passkey can have its
+ * password checked first and its session opened only after the passkey has
+ * answered (domain/passkeys).
+ */
+export async function checkPassword(tx: PoolClient, username: string, password: string): Promise<Account> {
   const { rows } = await tx.query<AccountRow>(
     "select * from ref.account where lower(username) = lower($1)",
     [String(username ?? "").trim()],
@@ -319,6 +321,19 @@ export async function signIn(
       [row.id, rehashed, salt, N, R, P],
     );
   }
+  return toAccount(row);
+}
+
+/** Open a session for an account whose credentials have already been checked. */
+export async function openSession(
+  tx: PoolClient,
+  accountId: string,
+  userAgent: string | null,
+): Promise<SignedInSession> {
+  const { rows } = await tx.query<AccountRow>("select * from ref.account where id = $1::uuid", [accountId]);
+  const row = rows[0];
+  // Disabled between the password and the passkey: the second step does not get in.
+  if (!row || row.disabled_at) throw new AuthError(403, "This account is disabled.");
 
   const token = randomBytes(32).toString("base64url");
   const tokenHash = createHash("sha256").update(token).digest();
@@ -336,6 +351,17 @@ export async function signIn(
     expiresAt: expiresAt.toISOString(),
     account: { ...toAccount(row), lastSignIn: new Date().toISOString() },
   };
+}
+
+/** A password sign-in in one step, for an account that holds no passkey. */
+export async function signIn(
+  tx: PoolClient,
+  username: string,
+  password: string,
+  userAgent: string | null,
+): Promise<SignedInSession> {
+  const account = await checkPassword(tx, username, password);
+  return openSession(tx, account.id, userAgent);
 }
 
 /**

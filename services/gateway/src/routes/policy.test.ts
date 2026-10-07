@@ -87,6 +87,7 @@ test("only liveness, sign-in and the transparency surface are public", () => {
     "GET /ping",
     "GET /verify/inclusion/:eventId",
     "POST /auth/signin",
+    "POST /auth/signin/passkey",
     "POST /auth/signout",
     "POST /auth/signup",
     "POST /public/seam-scan",
@@ -210,4 +211,19 @@ test("setting an account's centres is the control room's, counted as account adm
   assert.equal(m.listed, true);
   assert.equal(m.rule.access, "control_room");
   assert.equal(m.rule.limit, "account_admin");
+});
+
+test("a passkey is enrolled by its own account and removed by the control room", () => {
+  const second = matchRule("POST", ["auth", "signin", "passkey"]);
+  assert.equal(second.rule.access, "public");
+  assert.equal(second.rule.limit, "signin", "the second step of a sign-in is counted with the first");
+
+  for (const step of ["challenge", "complete"]) {
+    const m = matchRule("POST", ["auth", "passkey", "register", step]);
+    assert.equal(m.listed, true);
+    assert.equal(m.rule.access, "account");
+  }
+  const remove = matchRule("POST", ["auth", "accounts", "x", "passkeys", "remove"]);
+  assert.equal(remove.rule.access, "control_room");
+  assert.equal(remove.rule.limit, "account_admin");
 });
