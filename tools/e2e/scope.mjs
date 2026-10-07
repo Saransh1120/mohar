@@ -4,7 +4,9 @@
  *
  * Two centres, a packet, a hand-off and an alert at each. An operator limits an
  * account to the first centre; that account then reads the first centre's rows
- * and is refused everything else. Everything is rolled back.
+ * and is refused everything else. Then the same by district: a centre moved
+ * into the district is seen at once, one moved out is not seen again.
+ * Everything is rolled back.
  */
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -127,11 +129,13 @@ try {
   )).rows;
   check("the change is raised as an alert naming who made it and what it was before and after",
     raised?.evidence?.changedByAccountId === operator.id &&
-    raised.evidence.before.length === 0 && raised.evidence.after[0] === mine.centre);
+    raised.evidence.before.centreIds.length === 0 && raised.evidence.before.districts.length === 0 &&
+    raised.evidence.after.centreIds[0] === mine.centre);
   check("the alert does not rank itself", !/critical|high|medium|low|severe|urgent/i.test(raised.consequence));
 
   const me = await get("/auth/me", second);
-  check("the account is told its own limit", me.statusCode === 200 && me.json().account.centreIds[0] === mine.centre);
+  check("the account is told its own limit", me.statusCode === 200 &&
+    me.json().account.limited === true && me.json().account.centreIds[0] === mine.centre);
 
   const packets = (await get(`/packages?examId=${exam.id}`, second)).json().packages;
   check("its packet list holds its centre's packet and not the other's",
@@ -219,6 +223,58 @@ try {
     [second.id],
   )).rows;
   check("lifting it is raised as well", n === 2);
+
+  // ── by district ──
+  const district = `Zila ${tag}`;
+  const put = (centreIds, name) =>
+    app.inject({ method: "POST", url: "/centres/district", headers: operator.headers, payload: { centreIds, district: name } });
+  const districtAlerts = async () => (await client.query(
+    "select evidence, consequence from led.alert where kind = 'CENTRE_DISTRICT_CHANGED' and evidence ->> 'district' is not distinct from $1 order by raised_at",
+    [district],
+  )).rows;
+
+  const noSuch = await app.inject({ method: "PUT", url: `/auth/accounts/${second.id}/centres`,
+    headers: operator.headers, payload: { centreIds: [], districts: [district] } });
+  check("a limit to a district no centre is in is refused as a likely misspelling", noSuch.statusCode === 400);
+
+  const placed = await put([mine.centre], district);
+  check("an operator puts a centre in a district", placed.statusCode === 200 && placed.json().changed === 1);
+  check("with no account limited to it, that changes nobody's view and raises nothing",
+    placed.json().accountsAffected === 0 && (await districtAlerts()).length === 0);
+
+  const byDistrict = await app.inject({ method: "PUT", url: `/auth/accounts/${second.id}/centres`,
+    headers: operator.headers, payload: { centreIds: [], districts: [district.toUpperCase()] } });
+  check("an account is limited to the district, however the name was capitalised",
+    byDistrict.statusCode === 200 && byDistrict.json().limited === true &&
+    byDistrict.json().districts.length === 1 && byDistrict.json().districts[0] === district);
+
+  const inDistrict = (await get(`/packages?examId=${exam.id}`, second)).json().packages;
+  check("it sees the district's one centre", inDistrict.length === 1 && inDistrict[0].id === mine.packet);
+
+  const joined = await put([theirs.centre], district);
+  check("a second centre joins the district, and the move is raised because an account's view changed",
+    joined.statusCode === 200 && joined.json().accountsAffected === 1 && (await districtAlerts()).length === 1);
+  const [moved] = await districtAlerts();
+  check("the alert names the centre, the account and who moved it, and does not rank itself",
+    moved.evidence.centres[0].id === theirs.centre &&
+    moved.evidence.accountsAffected[0].id === second.id &&
+    moved.evidence.changedByAccountId === operator.id &&
+    !/critical|high|medium|low|severe|urgent/i.test(moved.consequence));
+  const both = (await get(`/packages?examId=${exam.id}`, second)).json().packages;
+  check("the account sees the new centre at once, with nobody touching the account", both.length === 2);
+
+  await put([mine.centre, theirs.centre], null);
+  const none = (await get(`/packages?examId=${exam.id}`, second)).json().packages;
+  const stillLimited = (await get("/auth/me", second)).json().account;
+  const stillRefused = await get("/devices", second);
+  check("with both centres taken out, it sees nothing, and is still limited rather than set free",
+    none.length === 0 && stillLimited.limited === true &&
+    stillRefused.statusCode === 403 && stillRefused.json().reason === "account_scoped");
+
+  const limitedMove = await app.inject({ method: "POST", url: "/centres/district", headers: second.headers,
+    payload: { centreIds: [theirs.centre], district } });
+  check("a limited account cannot put a centre in its own district",
+    limitedMove.statusCode === 403 && limitedMove.json().reason === "account_scoped");
 } finally {
   await client.query("rollback");
   await app.close();

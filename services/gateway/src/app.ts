@@ -518,7 +518,7 @@ export async function buildGateway(opts: GatewayOptions): Promise<FastifyInstanc
       403,
       "account_scoped",
       "This account is limited to its own centres. It can read their packets, hand-offs and alerts, and nothing else.",
-      { centres: principal.kind === "account" ? principal.account.centreIds.length : 0 },
+      {},
       principal,
     );
   }
@@ -533,7 +533,7 @@ export async function buildGateway(opts: GatewayOptions): Promise<FastifyInstanc
     const { principal } = signedIn;
     const taken = limiter.take("stream", callerKey(principal, req.ip), config.limits.stream);
     if (!taken.allowed) return tooMany(req, reply, path, "stream", taken, principal);
-    if (principal.account.centreIds.length > 0) return scopedRefusal(req, reply, path, principal);
+    if (principal.account.limited) return scopedRefusal(req, reply, path, principal);
     return reply.code(201).send(tickets.issue(principal.account));
   });
 
@@ -543,7 +543,7 @@ export async function buildGateway(opts: GatewayOptions): Promise<FastifyInstanc
     const signedIn = await byBearer(req, reply, path);
     if ("refused" in signedIn) return signedIn.refused;
     const { principal } = signedIn;
-    if (principal.account.centreIds.length > 0) return scopedRefusal(req, reply, path, principal);
+    if (principal.account.limited) return scopedRefusal(req, reply, path, principal);
     if (principal.account.role !== "control_room") {
       return refuse(
         req,
@@ -629,7 +629,7 @@ export async function buildGateway(opts: GatewayOptions): Promise<FastifyInstanc
       // by centre and no others, whatever its role would otherwise allow.
       if (
         principal.kind === "account" &&
-        principal.account.centreIds.length > 0 &&
+        principal.account.limited &&
         !openToScoped(req.method, canon.segments)
       ) {
         return scopedRefusal(req, reply, path, principal);

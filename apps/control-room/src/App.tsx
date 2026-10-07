@@ -110,8 +110,15 @@ export default function App() {
   // An account limited to named centres reads their packets, hand-offs and
   // alerts and is refused everything else, so it is shown those three pages
   // and the counts that cover every centre are not asked for.
-  const limitedTo = account?.centreIds?.length ?? 0;
-  const limited = limitedTo > 0;
+  const limited = account?.limited ?? (account?.centreIds?.length ?? 0) > 0;
+  const limitText = [
+    (account?.centreIds?.length ?? 0) > 0
+      ? `${account?.centreIds?.length} centre${account?.centreIds?.length === 1 ? "" : "s"}`
+      : "",
+    ...(account?.districts ?? []).map((d) => `${d} district`),
+  ]
+    .filter(Boolean)
+    .join(", ");
   const { data: health } = useAsync(() => api.health(), [], { pollMs: 10_000 });
   const { data: summary } = useAsync(() => (limited ? Promise.resolve(null) : api.summary()), [limited], {
     pollMs: 10_000,
@@ -213,7 +220,7 @@ export default function App() {
             </div>
             {limited && (
               <div className="who-role">
-                limited to {limitedTo} centre{limitedTo === 1 ? "" : "s"}
+                limited to {limitText}
               </div>
             )}
             <button
@@ -289,7 +296,7 @@ export default function App() {
               path="*"
               element={
                 <div className="note">
-                  <strong>This account is limited to {limitedTo} centre{limitedTo === 1 ? "" : "s"}.</strong>{" "}
+                  <strong>This account is limited to {limitText}.</strong>{" "}
                   It reads their packets, hand-offs and alerts. The gateway refuses it every other
                   page's requests, and so does the ledger behind it. A control room operator with no
                   limit can change this on the Accounts page.

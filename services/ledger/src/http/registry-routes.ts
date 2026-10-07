@@ -20,6 +20,7 @@ import {
   testSeamToken,
   listExams,
   listCentres,
+  setCentreDistrict,
   listPersons,
   listEnrolments,
   enrolFingerprint,
@@ -28,6 +29,8 @@ import {
 import { listActivity, operationalSummary } from "../domain/activity.js";
 import { ChallengeBook, loadRoots, verifyAttestation } from "../domain/attestation.js";
 import { withTransaction } from "../db.js";
+import { accountForToken, districtName } from "../domain/accounts.js";
+import { bearerToken } from "./auth-routes.js";
 
 /**
  * Registry and operations endpoints.
@@ -48,6 +51,11 @@ const EnrolBody = z.object({
   pubkeyHex: z.string().regex(/^[0-9a-f]{64}$/, "expected a 32-byte hex Ed25519 public key"),
   centreId: z.string().uuid().optional(),
   attestationB64: z.string().optional(),
+});
+
+const DistrictBody = z.object({
+  district: z.string().max(200).nullable(),
+  centreIds: z.array(z.string().uuid()).min(1).max(500),
 });
 
 const EnrolFingerprintBody = z.object({
@@ -473,6 +481,62 @@ export function registerRegistryRoutes(
 
   app.get<{ Querystring: { examId?: string } }>("/centres", async (req, reply) => {
     return reply.send({ centres: await listCentres(pool, req.query.examId) });
+  });
+
+  /**
+   * Put centres in a district, or take them out of theirs with `district: null`.
+   *
+   * A district is only a name on a centre. It matters because an account can
+   * be limited to one, and then sees whichever centres carry that name. So
+   * moving a centre changes what such an account sees, and when it does the
+   * move is raised as an alert naming the accounts. With no account limited to
+   * either district the move changes nobody's view and raises nothing.
+   */
+  app.post("/centres/district", async (req, reply) => {
+    const parsed = DistrictBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid body", details: parsed.error.flatten() });
+    }
+    const district = parsed.data.district === null ? null : districtName(parsed.data.district);
+    if (district !== null && (district.length < 2 || district.length > 80)) {
+      return reply.code(400).send({ error: "A district's name is 2 to 80 characters." });
+    }
+    const by = await accountForToken(pool, bearerToken(req));
+    try {
+      const out = await withTransaction(pool, async (tx) => {
+        const moved = await setCentreDistrict(tx, parsed.data.centreIds, district);
+        if (moved && moved.accounts.length > 0) {
+          await tx.query(
+            `insert into led.alert (kind, evidence, requires_decision, consequence)
+             values ('CENTRE_DISTRICT_CHANGED', $1::jsonb, false, $2)`,
+            [
+              JSON.stringify({
+                centres: moved.centres,
+                district,
+                accountsAffected: moved.accounts,
+                changedByAccountId: by?.id ?? null,
+                changedByUsername: by?.username ?? null,
+              }),
+              `${by?.displayName ?? "Somebody not known to the ledger (no session reached it)"} ` +
+                (district ? `put ${moved.centres.length} centre${moved.centres.length === 1 ? "" : "s"} in the district ${district}` : `took ${moved.centres.length} centre${moved.centres.length === 1 ? "" : "s"} out of a district`) +
+                `: ${moved.centres.map((c) => c.code).join(", ")}. ` +
+                `${moved.accounts.length} account${moved.accounts.length === 1 ? " is" : "s are"} limited to a district this changes, ` +
+                `and now see${moved.accounts.length === 1 ? "s" : ""} a different set of centres: ` +
+                `${[...new Set(moved.accounts.map((a) => a.username))].join(", ")}.`,
+            ],
+          );
+        }
+        return moved;
+      });
+      if (!out) return reply.code(404).send({ error: "One of those centres does not exist." });
+      return reply.send({ district, changed: out.centres.length, accountsAffected: out.accounts.length });
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === "42703" || code === "42P01") {
+        return reply.code(503).send({ error: "migration 018 has not been applied to this database" });
+      }
+      throw err;
+    }
   });
 
   app.get("/persons", async (_req, reply) => {

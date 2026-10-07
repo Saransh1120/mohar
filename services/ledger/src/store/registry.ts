@@ -508,8 +508,10 @@ export async function listExams(pool: Pool, centreIds: readonly string[] | null 
 export async function listCentres(pool: Pool, examId?: string) {
   const { rows } = await pool.query(
     `select id, exam_id, code, lat, lon, geofence_m, capacity, printers,
-            has_genset, accredited_at
-       from ref.centre
+            has_genset, accredited_at,
+            -- through to_jsonb so the list still loads before migration 018 runs
+            to_jsonb(c) ->> 'district' as district
+       from ref.centre c
       where ($1::uuid is null or exam_id = $1::uuid)
       order by code asc`,
     [examId ?? null],
@@ -525,7 +527,45 @@ export async function listCentres(pool: Pool, examId?: string) {
     printers: r.printers,
     hasGenset: r.has_genset,
     accredited: r.accredited_at !== null,
+    district: (r.district as string | null) ?? null,
   }));
+}
+
+/**
+ * Put centres in a district, or with null take them out of theirs.
+ *
+ * Returns what each was in before, and the accounts whose view this changes:
+ * those limited to a district a centre left or joined.
+ */
+export async function setCentreDistrict(
+  tx: PoolClient,
+  centreIds: readonly string[],
+  district: string | null,
+): Promise<{
+  centres: { id: string; code: string; before: string | null }[];
+  accounts: { id: string; username: string; district: string }[];
+} | null> {
+  const { rows } = await tx.query<{ id: string; code: string; district: string | null }>(
+    "select id, code, district from ref.centre where id = any($1::uuid[]) order by code for update",
+    [centreIds],
+  );
+  if (rows.length !== new Set(centreIds).size) return null;
+  const changed = rows.filter((r) => (r.district ?? "").toLowerCase() !== (district ?? "").toLowerCase());
+  if (changed.length === 0) return { centres: [], accounts: [] };
+
+  await tx.query("update ref.centre set district = $2 where id = any($1::uuid[])", [
+    changed.map((r) => r.id),
+    district,
+  ]);
+  const touched = [...new Set([...changed.map((r) => r.district), district].filter((d): d is string => !!d))];
+  const { rows: accounts } = await tx.query<{ id: string; username: string; district: string }>(
+    `select a.id, a.username, d.district
+       from ref.account_district d join ref.account a on a.id = d.account_id
+      where lower(d.district) = any($1::text[]) and a.disabled_at is null
+      order by a.username`,
+    [touched.map((d) => d.toLowerCase())],
+  );
+  return { centres: changed.map((r) => ({ id: r.id, code: r.code, before: r.district })), accounts };
 }
 
 // ── fingerprint enrolments ──────────────────────────────────────────────────

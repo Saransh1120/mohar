@@ -116,6 +116,7 @@ export const RULES: readonly Rule[] = Object.freeze([
   r("POST", "/webauthn/register/challenge", "control_room", "enrol"),
   r("POST", "/webauthn/register/complete", "control_room", "enrol"),
   r("POST", "/devices/:id/revoke", "control_room", "write"),
+  r("POST", "/centres/district", "control_room", "write"),
   r("POST", "/fingerprints", "control_room", "write"),
   r("POST", "/fingerprints/:id/revoke", "control_room", "write"),
   r("POST", "/packages/:id/declared-state", "control_room", "write"),

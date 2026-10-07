@@ -32,6 +32,8 @@ const LIMITED = "token-of-an-operator-limited-to-one-centre";
 const CENTRE = "66666666-6666-4666-8666-666666666666";
 /** What the stand-in ledger says each account is limited to; a test may change it. */
 const limits = new Map<string, string[]>();
+/** When set, what the stand-in ledger says `limited` is, whatever the centre list holds. */
+let limitedFlag: boolean | null = null;
 
 const enrolled = generateKeypair();
 const revoked = generateKeypair();
@@ -85,6 +87,8 @@ before(async () => {
               displayName: "Limited",
               role: "control_room",
               centreIds: limits.get("acc-lim") ?? [CENTRE],
+              // Limited to a district that has no centre left is limited all the same.
+              limited: limitedFlag ?? (limits.get("acc-lim") ?? [CENTRE]).length > 0,
             },
           });
         }
@@ -709,4 +713,21 @@ test("a centre limit changed through the gateway takes hold at once, not when th
     assert.equal(after.json["reason"], "account_scoped");
   });
   limits.delete("acc-lim");
+});
+
+test("an account limited to a district with no centre in it is still limited", async () => {
+  limits.set("acc-lim", []);
+  limitedFlag = true;
+  try {
+    await gateway(async (base) => {
+      const res = await call(base, "GET", "/devices", bearer(LIMITED));
+      assert.equal(res.status, 403);
+      assert.equal(res.json["reason"], "account_scoped");
+      const own = await call(base, "GET", "/packages", bearer(LIMITED));
+      assert.equal(own.status, 200, "its own routes still answer, with whatever the ledger filters to");
+    });
+  } finally {
+    limitedFlag = null;
+    limits.delete("acc-lim");
+  }
 });

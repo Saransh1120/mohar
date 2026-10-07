@@ -1,13 +1,14 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Pool } from "pg";
-import { accountForToken } from "../domain/accounts.js";
+import { accountForToken, centresInLimit } from "../domain/accounts.js";
 import { bearerToken } from "./auth-routes.js";
 import { VERIFIED_DEVICE_HEADER } from "./gateway-guard.js";
 
 /**
  * ── An account limited to named centres ──────────────────────────────────────
  *
- * An account with rows in `ref.account_centre` sees only those centres. That
+ * An account with rows in `ref.account_centre` or `ref.account_district` sees
+ * only those centres, and the centres in those districts. That
  * is easy to say and easy to get half right: filter the three pages someone
  * thought of and leave the fourth showing everything. So the rule here is the
  * other way round. A limited account can reach only the routes listed below,
@@ -88,7 +89,7 @@ export function registerScopeGuard(app: FastifyInstance, pool: Pool): void {
     const token = bearerToken(req);
     if (!token) return;
     const account = await accountForToken(pool, token);
-    if (!account || account.centreIds.length === 0) return;
+    if (!account || !account.limited) return;
 
     const route = `${req.method} ${req.routeOptions.url ?? ""}`;
     if (!OPEN_TO_SCOPED.has(route)) {
@@ -100,6 +101,8 @@ export function registerScopeGuard(app: FastifyInstance, pool: Pool): void {
         reason: "account_scoped",
       });
     }
-    req.centreScope = account.centreIds;
+    // The centres named, and whichever are in its districts as of this request.
+    // An empty list is a limit too: it matches nothing.
+    req.centreScope = await centresInLimit(pool, account);
   });
 }

@@ -412,6 +412,7 @@ export interface Centre {
   printers: number;
   hasGenset: boolean;
   accredited: boolean;
+  district?: string | null;
 }
 
 export interface Person {
@@ -525,11 +526,12 @@ export interface Account {
   personId: string | null;
   createdAt: string;
   lastSignIn: string | null;
-  /**
-   * The centres this account is limited to. Empty, or absent on a session
-   * stored before the limit existed, means no limit.
-   */
+  /** The centres this account is limited to by name. */
   centreIds?: string[];
+  /** The districts it is limited to: whichever centres are in them. */
+  districts?: string[];
+  /** Whether it has a limit at all. Absent on a session stored before limits existed. */
+  limited?: boolean;
 }
 
 export interface Session {
@@ -1153,8 +1155,17 @@ export const api = {
   disableAccount: (id: string, reason: string) =>
     post<{ status: string }>(`/auth/accounts/${id}/disable`, { reason }),
   /** Limit an account to these centres. An empty list lifts the limit. */
-  setAccountCentres: (id: string, centreIds: string[]) =>
-    put<{ id: string; centreIds: string[] }>(`/auth/accounts/${id}/centres`, { centreIds }),
+  setAccountLimit: (id: string, centreIds: string[], districts: string[]) =>
+    put<{ id: string; centreIds: string[]; districts: string[]; limited: boolean }>(
+      `/auth/accounts/${id}/centres`,
+      { centreIds, districts },
+    ),
+  /** Put centres in a district, or take them out of theirs with null. */
+  setCentreDistrict: (centreIds: string[], district: string | null) =>
+    post<{ district: string | null; changed: number; accountsAffected: number }>("/centres/district", {
+      centreIds,
+      district,
+    }),
   /** What the gateway has refused since it started. A 404 means there is no gateway in front. */
   gatewayStatus: () => get<GatewayStatus>("/gateway/status"),
 

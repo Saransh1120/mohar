@@ -25,8 +25,11 @@ export interface Account {
   username: string;
   displayName: string;
   role: string;
-  /** The centres the account is limited to. Empty is no limit. */
-  centreIds: string[];
+  /**
+   * Whether the account is limited to named centres or districts. Which ones
+   * is the ledger's to know; the gateway only needs to know that it is.
+   */
+  limited: boolean;
 }
 
 export interface Resolved {
@@ -60,9 +63,8 @@ function asAccount(json: unknown): Account | null {
     username: a["username"],
     displayName: typeof a["displayName"] === "string" ? a["displayName"] : a["username"],
     role: a["role"],
-    centreIds: Array.isArray(a["centreIds"])
-      ? a["centreIds"].filter((c): c is string => typeof c === "string")
-      : [],
+    // Either sign says limited. A ledger that says nothing has no limits yet.
+    limited: a["limited"] === true || (Array.isArray(a["centreIds"]) && a["centreIds"].length > 0),
   };
 }
 

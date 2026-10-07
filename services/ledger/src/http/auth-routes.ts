@@ -22,11 +22,12 @@ import {
   SESSION_TTL_HOURS,
   accountCount,
   accountForToken,
-  centresOf,
+  limitOf,
   createAccount,
   disableAccount,
   listAccounts,
-  setAccountCentres,
+  setAccountLimit,
+  withLimit,
   signIn,
   signOut,
   type Account,
@@ -173,7 +174,7 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
       clearAttempts(`ip:${ip}`);
       // Read outside the sign-in's transaction: before migration 017 the table
       // is not there, and a failed read inside it would undo the sign-in.
-      session.account.centreIds = await centresOf(pool, session.account.id);
+      session.account = withLimit(session.account, await limitOf(pool, session.account.id));
       req.log.info({ username: session.account.username }, "signed in");
       return reply.code(200).send(session);
     } catch (err) {
@@ -210,7 +211,7 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
       void reply.code(403).send({ error: "Accounts are kept by a control room operator." });
       return null;
     }
-    if (account.centreIds.length > 0) {
+    if (account.limited) {
       void reply.code(403).send({ error: "An operator limited to named centres does not keep accounts." });
       return null;
     }
@@ -248,7 +249,8 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
   });
 
   /**
-   * Limit an account to named centres, or lift the limit with an empty list.
+   * Limit an account to named centres and districts, or lift the limit with
+   * both lists empty.
    *
    * A limited account reads those centres' packets, hand-offs and alerts and
    * nothing else, and changes nothing (see scope-guard). The change is raised
@@ -259,14 +261,33 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
     const by = await operator(req, reply);
     if (!by) return reply;
     if (!UUID.test(req.params.id)) return reply.code(404).send({ error: "No such account." });
-    const given = ((req.body ?? {}) as { centreIds?: unknown }).centreIds;
-    if (!Array.isArray(given) || given.length > 200 || !given.every((c) => typeof c === "string" && UUID.test(c))) {
-      return reply.code(400).send({ error: "centreIds must be a list of centre ids; an empty list lifts the limit." });
+    const body = (req.body ?? {}) as { centreIds?: unknown; districts?: unknown };
+    const centreIds = body.centreIds;
+    const districts = body.districts ?? [];
+    if (!Array.isArray(centreIds) || centreIds.length > 200 || !centreIds.every((c) => typeof c === "string" && UUID.test(c))) {
+      return reply.code(400).send({ error: "centreIds must be a list of centre ids. With districts empty too, an empty list lifts the limit." });
     }
+    if (!Array.isArray(districts) || districts.length > 50 || !districts.every((d) => typeof d === "string")) {
+      return reply.code(400).send({ error: "districts must be a list of district names." });
+    }
+    const said = (l: { centreIds: string[]; districts: string[] }) =>
+      [
+        l.centreIds.length > 0 ? `${l.centreIds.length} centre${l.centreIds.length === 1 ? "" : "s"}` : "",
+        l.districts.length > 0 ? `the district${l.districts.length === 1 ? "" : "s"} ${l.districts.join(", ")}` : "",
+      ]
+        .filter(Boolean)
+        .join(" and ");
     try {
       const changed = await withTransaction(pool, async (tx) => {
-        const out = await setAccountCentres(tx, req.params.id, given as string[], by.id);
-        if (out.before.join() !== out.after.join()) {
+        const out = await setAccountLimit(
+          tx,
+          req.params.id,
+          { centreIds: centreIds as string[], districts: districts as string[] },
+          by.id,
+        );
+        if (JSON.stringify(out.before) !== JSON.stringify(out.after)) {
+          const lifted = out.after.centreIds.length === 0 && out.after.districts.length === 0;
+          const had = out.before.centreIds.length > 0 || out.before.districts.length > 0;
           await tx.query(
             `insert into led.alert (kind, evidence, requires_decision, consequence)
              values ('ACCOUNT_CENTRES_CHANGED', $1::jsonb, false, $2)`,
@@ -279,10 +300,10 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
                 changedByAccountId: by.id,
                 changedByUsername: by.username,
               }),
-              out.after.length === 0
-                ? `${by.displayName} lifted the centre limit on the account ${out.username}. It now sees every centre its role allows.`
-                : `${by.displayName} limited the account ${out.username} to ${out.after.length} centre${out.after.length === 1 ? "" : "s"}` +
-                  (out.before.length === 0 ? "; it had no limit before." : `; it was limited to ${out.before.length} before.`) +
+              lifted
+                ? `${by.displayName} lifted the limit on the account ${out.username}. It now sees every centre its role allows.`
+                : `${by.displayName} limited the account ${out.username} to ${said(out.after)}` +
+                  (had ? `; it was limited to ${said(out.before)} before.` : "; it had no limit before.") +
                   " It reads those centres' packets, hand-offs and alerts and nothing else.",
             ],
           );
@@ -290,14 +311,20 @@ export function registerAuthRoutes(app: FastifyInstance, pool: Pool): void {
         return out;
       });
       req.log.warn(
-        { accountId: req.params.id, changedBy: by.username, before: changed.before.length, after: changed.after.length },
-        "account centre limit changed",
+        { accountId: req.params.id, changedBy: by.username, before: changed.before, after: changed.after },
+        "account limit changed",
       );
-      return reply.send({ id: req.params.id, centreIds: changed.after });
+      return reply.send({
+        id: req.params.id,
+        centreIds: changed.after.centreIds,
+        districts: changed.after.districts,
+        limited: changed.after.centreIds.length > 0 || changed.after.districts.length > 0,
+      });
     } catch (err) {
       if (err instanceof AuthError) return reply.code(err.status).send({ error: err.message });
-      if ((err as { code?: string }).code === "42P01") {
-        return reply.code(503).send({ error: "migration 017 has not been applied to this database" });
+      const code = (err as { code?: string }).code;
+      if (code === "42P01" || code === "42703") {
+        return reply.code(503).send({ error: "migrations 017 and 018 have not both been applied to this database" });
       }
       throw err;
     }

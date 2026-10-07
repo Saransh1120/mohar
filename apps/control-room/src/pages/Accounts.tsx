@@ -58,6 +58,11 @@ export default function Accounts() {
   /** The account whose centre limit is being edited, and what is ticked. */
   const [limiting, setLimiting] = useState<ListedAccount | null>(null);
   const [ticked, setTicked] = useState<Set<string>>(new Set());
+  const [tickedDistricts, setTickedDistricts] = useState<Set<string>>(new Set());
+  /** Putting centres in a district: the name typed and the centres ticked. */
+  const [districtName, setDistrictName] = useState("");
+  const [districtCentres, setDistrictCentres] = useState<Set<string>>(new Set());
+  const [districtSaid, setDistrictSaid] = useState<string | null>(null);
 
   if (!isOperator) {
     return (
@@ -108,14 +113,15 @@ export default function Accounts() {
     setFormError(null);
     setLimiting(a);
     setTicked(new Set(a.centreIds ?? []));
+    setTickedDistricts(new Set(a.districts ?? []));
   }
 
-  async function saveLimit(centreIds: string[]) {
+  async function saveLimit(centreIds: string[], districts: string[]) {
     if (!limiting) return;
     setFormError(null);
     setBusy(true);
     try {
-      await api.setAccountCentres(limiting.id, centreIds);
+      await api.setAccountLimit(limiting.id, centreIds, districts);
       setLimiting(null);
       await accounts.refresh();
     } catch (err) {
@@ -125,8 +131,39 @@ export default function Accounts() {
     }
   }
 
+  async function saveDistrict(district: string | null) {
+    setFormError(null);
+    setDistrictSaid(null);
+    setBusy(true);
+    try {
+      const r = await api.setCentreDistrict([...districtCentres], district);
+      setDistrictSaid(
+        `${r.changed} centre${r.changed === 1 ? "" : "s"} ${district ? `now in ${r.district}` : "taken out of a district"}` +
+          (r.accountsAffected > 0
+            ? `. ${r.accountsAffected} account${r.accountsAffected === 1 ? " sees" : "s see"} a different set of centres; an alert was raised.`
+            : ". No account is limited to a district this changes."),
+      );
+      setDistrictCentres(new Set());
+      await centres.refresh();
+    } catch (err) {
+      setFormError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggle(set: Set<string>, put: (s: Set<string>) => void, id: string, on: boolean) {
+    const next = new Set(set);
+    if (on) next.add(id);
+    else next.delete(id);
+    put(next);
+  }
+
   const allCentres: Centre[] = centres.data?.centres ?? [];
   const codeOf = new Map(allCentres.map((c) => [c.id, c.code]));
+  const allDistricts = [...new Set(allCentres.map((c) => c.district).filter((d): d is string => !!d))].sort(
+    (a, b) => a.localeCompare(b),
+  );
   const list = accounts.data?.accounts ?? [];
   const noGateway = gateway.error instanceof ApiError && gateway.error.status === 404;
   const refusedByReason = Object.entries(gateway.data?.refusedByReason ?? {}).sort(
@@ -248,11 +285,14 @@ export default function Accounts() {
                     <span className="badge neutral">{ROLE_LABELS[a.role] ?? a.role}</span>
                   </td>
                   <td style={{ fontSize: 12 }}>
-                    {(a.centreIds?.length ?? 0) === 0 ? (
+                    {(a.centreIds?.length ?? 0) + (a.districts?.length ?? 0) === 0 ? (
                       <span style={{ color: "var(--text-faint)" }}>no limit</span>
                     ) : (
                       <span className="mono" title="Reads these centres' packets, hand-offs and alerts; nothing else">
-                        {(a.centreIds ?? []).map((id) => codeOf.get(id) ?? id.slice(0, 8)).join(", ")}
+                        {[
+                          ...(a.districts ?? []).map((d) => `${d} (district)`),
+                          ...(a.centreIds ?? []).map((id) => codeOf.get(id) ?? id.slice(0, 8)),
+                        ].join(", ")}
                       </span>
                     )}
                   </td>
@@ -293,7 +333,7 @@ export default function Accounts() {
       {limiting && (
         <Card
           title={`Centres for ${limiting.displayName} (${limiting.username})`}
-          hint="Ticked centres are all it will see. It will change nothing, whatever its role"
+          hint="What is ticked is all it will see. It will change nothing, whatever its role"
           actions={<button onClick={() => setLimiting(null)}>Cancel</button>}
         >
           {centres.error ? (
@@ -301,40 +341,108 @@ export default function Accounts() {
           ) : allCentres.length === 0 ? (
             <Empty>No centres are registered yet.</Empty>
           ) : (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px", marginBottom: 12 }}>
-              {allCentres.map((c) => (
-                <label key={c.id} style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}>
-                  <input
-                    type="checkbox"
-                    checked={ticked.has(c.id)}
-                    onChange={(e) => {
-                      const next = new Set(ticked);
-                      if (e.target.checked) next.add(c.id);
-                      else next.delete(c.id);
-                      setTicked(next);
-                    }}
-                  />
-                  <span className="mono">{c.code}</span>
-                </label>
-              ))}
-            </div>
+            <>
+              {allDistricts.length > 0 && (
+                <>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 6 }}>
+                    Districts: whichever centres are in one when the account asks
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px", marginBottom: 12 }}>
+                    {allDistricts.map((d) => (
+                      <label key={d} style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={tickedDistricts.has(d)}
+                          onChange={(e) => toggle(tickedDistricts, setTickedDistricts, d, e.target.checked)}
+                        />
+                        <span>
+                          {d}{" "}
+                          <span style={{ color: "var(--text-faint)" }}>
+                            ({allCentres.filter((c) => c.district === d).length})
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 6 }}>Centres, by name</div>
+                </>
+              )}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px", marginBottom: 12 }}>
+                {allCentres.map((c) => (
+                  <label key={c.id} style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={ticked.has(c.id)}
+                      onChange={(e) => toggle(ticked, setTicked, c.id, e.target.checked)}
+                    />
+                    <span className="mono">{c.code}</span>
+                  </label>
+                ))}
+              </div>
+            </>
           )}
           <button
             className="primary"
-            disabled={busy || ticked.size === 0}
-            onClick={() => void saveLimit([...ticked])}
+            disabled={busy || ticked.size + tickedDistricts.size === 0}
+            onClick={() => void saveLimit([...ticked], [...tickedDistricts])}
             style={{ marginRight: 8 }}
           >
-            Limit to {ticked.size} centre{ticked.size === 1 ? "" : "s"}
+            Limit to what is ticked
           </button>
           <button
-            disabled={busy || (limiting.centreIds?.length ?? 0) === 0}
-            onClick={() => void saveLimit([])}
+            disabled={busy || (limiting.centreIds?.length ?? 0) + (limiting.districts?.length ?? 0) === 0}
+            onClick={() => void saveLimit([], [])}
           >
             Lift the limit
           </button>
         </Card>
       )}
+
+      <Card
+        title="Districts"
+        hint="A name on a centre. An account limited to a district sees whichever centres carry it"
+      >
+        {allCentres.length === 0 ? (
+          <Empty>No centres are registered yet.</Empty>
+        ) : (
+          <>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px", marginBottom: 12 }}>
+              {allCentres.map((c) => (
+                <label key={c.id} style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={districtCentres.has(c.id)}
+                    onChange={(e) => toggle(districtCentres, setDistrictCentres, c.id, e.target.checked)}
+                  />
+                  <span className="mono">{c.code}</span>
+                  <span style={{ color: "var(--text-faint)" }}>{c.district ?? "no district"}</span>
+                </label>
+              ))}
+            </div>
+            <input
+              className="wit-select"
+              style={{ maxWidth: 240, marginRight: 8 }}
+              placeholder="District name, e.g. Jaipur"
+              value={districtName}
+              onChange={(e) => setDistrictName(e.target.value)}
+            />
+            <button
+              className="primary"
+              disabled={busy || districtCentres.size === 0 || districtName.trim().length < 2}
+              onClick={() => void saveDistrict(districtName.trim())}
+              style={{ marginRight: 8 }}
+            >
+              Put {districtCentres.size} in this district
+            </button>
+            <button disabled={busy || districtCentres.size === 0} onClick={() => void saveDistrict(null)}>
+              Take out of their district
+            </button>
+            {districtSaid && (
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 10 }}>{districtSaid}</div>
+            )}
+          </>
+        )}
+      </Card>
 
       <Card
         title="Refused at the gateway"
