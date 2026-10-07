@@ -119,11 +119,7 @@ export default function App() {
   const { data: epoch } = useAsync(() => (limited ? Promise.resolve(null) : api.epoch()), [limited], {
     pollMs: 30_000,
   });
-  const { data: alertSummary } = useAsync(
-    () => (limited ? Promise.resolve(null) : api.alertSummary()),
-    [limited],
-    { pollMs: 10_000 },
-  );
+  const { data: alertSummary } = useAsync(() => api.alertSummary(), [], { pollMs: 10_000 });
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     document.documentElement.dataset["theme"] === "light" ? "light" : "dark",
   );
@@ -159,7 +155,12 @@ export default function App() {
         <nav className="nav">
           <NavLink to="/packages">Packages</NavLink>
           <NavLink to="/transfers">Transfers</NavLink>
-          <NavLink to="/alerts">Alerts</NavLink>
+          <NavLink to="/alerts">
+            Alerts
+            {(alertSummary?.unacknowledged ?? 0) > 0 && (
+              <span className="nav-count alert">{alertSummary?.unacknowledged}</span>
+            )}
+          </NavLink>
         </nav>
         ) : (
         <nav className="nav">

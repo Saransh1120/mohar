@@ -471,15 +471,25 @@ export async function testSeamToken(
 }
 
 /** Exams and centres, for populating selectors and the map. */
-export async function listExams(pool: Pool) {
+/**
+ * The exams, or with `centreIds` the exams those centres sit, counted over
+ * those centres only: an account limited to two centres is not told how many
+ * others an exam has.
+ */
+export async function listExams(pool: Pool, centreIds: readonly string[] | null = null) {
   const { rows } = await pool.query(
     `select e.id, e.name, e.mode, e.starts_at, e.drand_round, e.sides_per_copy,
             e.suspended_at, a.name as authority,
-            (select count(*) from ref.centre c where c.exam_id = e.id) as centre_count,
-            (select count(*) from ref.package p where p.exam_id = e.id) as package_count
+            (select count(*) from ref.centre c where c.exam_id = e.id
+                and ($1::uuid[] is null or c.id = any($1::uuid[]))) as centre_count,
+            (select count(*) from ref.package p where p.exam_id = e.id
+                and ($1::uuid[] is null or p.centre_id = any($1::uuid[]))) as package_count
        from ref.exam e
        join ref.authority a on a.id = e.authority_id
+      where $1::uuid[] is null
+         or exists (select 1 from ref.centre c where c.exam_id = e.id and c.id = any($1::uuid[]))
       order by e.starts_at desc`,
+    [centreIds],
   );
   return rows.map((r) => ({
     id: r.id,

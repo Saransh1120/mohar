@@ -84,14 +84,17 @@ export function registerAlertRoutes(app: FastifyInstance, pool: Pool): void {
     return reply.send({ alerts: rows });
   });
 
-  app.get("/alerts/summary", async (_req, reply) => {
+  app.get("/alerts/summary", async (req, reply) => {
     const { rows } = await pool.query<{ total: number; unacknowledged: number }>(
       `select count(*)::int as total,
               count(*) filter (
                 where a.requires_decision
                   and not exists (select 1 from led.alert_ack k where k.alert_id = a.id)
               )::int as unacknowledged
-         from led.alert a`,
+         from led.alert a
+         left join ref.package p on p.id = a.package_id
+        where $1::uuid[] is null or coalesce(a.centre_id, p.centre_id) = any($1::uuid[])`,
+      [centreScope(req)],
     );
     return reply.send(rows[0] ?? { total: 0, unacknowledged: 0 });
   });

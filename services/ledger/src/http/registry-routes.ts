@@ -467,8 +467,8 @@ export function registerRegistryRoutes(
 
   // ── reference data ────────────────────────────────────────────────────────
 
-  app.get("/exams", async (_req, reply) => {
-    return reply.send({ exams: await listExams(pool) });
+  app.get("/exams", async (req, reply) => {
+    return reply.send({ exams: await listExams(pool, centreScope(req)) });
   });
 
   app.get<{ Querystring: { examId?: string } }>("/centres", async (req, reply) => {

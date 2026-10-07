@@ -167,13 +167,15 @@ test("an account limited to centres reaches the filtered reads and nothing that 
     ["GET", `/packages/${id}`],
     ["GET", "/legs"],
     ["GET", "/alerts"],
+    ["GET", "/alerts/summary"],
+    ["GET", "/exams"],
     ["GET", "/auth/me"],
     ["POST", "/auth/signout"],
   ] as const) {
     assert.equal(openToScoped(method, canonicalPath(path)!.segments), true, `${method} ${path}`);
   }
   for (const [method, path] of [
-    ["GET", "/alerts/summary"],
+    ["GET", "/centres"],
     ["GET", "/alerts/stream"],
     ["GET", "/events/stream"],
     ["GET", "/events"],

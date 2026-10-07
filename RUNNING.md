@@ -598,18 +598,21 @@ Stated plainly, so the endpoints that do exist do not imply more than they shoul
 - **An account can be limited to named centres; a district is not a thing
   yet.** An operator with no limit sets it on the Accounts page
   (`PUT /auth/accounts/:id/centres`, migration `017_account_centre.sql`). A
-  limited account reads its centres' packets, hand-offs and alerts
-  (`GET /packages`, `/packages/:id`, `/legs`, `/alerts`), is refused every
+  limited account reads its centres' packets, hand-offs and alerts, and the
+  exams those centres sit (`GET /packages`, `/packages/:id`, `/legs`,
+  `/alerts`, `/alerts/summary`, `/exams`), is refused every
   other route by the gateway and again by the ledger (`account_scoped`), and
   changes nothing, whatever its role: it cannot acknowledge an alert, and it
   gets no live stream, so its Alerts page polls. Each change raises an
   `ACCOUNT_CENTRES_CHANGED` alert. `tools/e2e/scope.mjs` checks this against
-  the real routes (21 checks). What it does not do: there is no district, so
-  a district officer is given a list of centres by hand; an account with no
-  limit still reads everything, so the limit protects only where somebody set
-  it; it covers accounts, not devices, and a phone's signed `GET /legs` still
-  lists every centre's legs; the Packages page's exam filter is empty for a
-  limited account, because the exam list is not one of its routes. Migration
+  the real routes (26 checks). A phone enrolled at a centre is held to the
+  same line on the one list it reads: its signed `GET /legs` returns that
+  centre's legs only. A device enrolled with no centre is not limited, which
+  is how a courier's phone that travels is enrolled. What it does not do:
+  there is no district, so a district officer is given a list of centres by
+  hand; an account with no limit still reads everything, so the limit
+  protects only where somebody set it; which hand-off step a device may
+  attempt is still the hand-off engine's ruling, not this. Migration
   017 has to be applied before this is used; without it sign-in still works
   and setting a limit answers 503. An operator's session is still a password
   only: WebAuthn is used for a courier's hand-off, not for an operator's

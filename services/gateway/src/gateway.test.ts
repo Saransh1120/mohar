@@ -659,7 +659,7 @@ test("a limited account reads its filtered routes and is refused everything else
 
     // A control room operator may do every one of these. This one may not.
     const refused: [string, string][] = [
-      ["GET", "/alerts/summary"],
+      ["GET", "/centres"],
       ["GET", "/devices"],
       ["GET", "/auth/accounts"],
       ["GET", `/legs/${CENTRE}/attempts`],

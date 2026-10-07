@@ -161,8 +161,33 @@ try {
     all.some((a) => a.id === mine.alert) && all.some((a) => a.id === theirs.alert) &&
     all.some((a) => a.kind === "ACCOUNT_CENTRES_CHANGED"));
 
+  const summary = (await get("/alerts/summary", second)).json();
+  check("its alert count is its centre's alerts, not everybody's",
+    summary.total === 1 && summary.unacknowledged === 1);
+  const exams = (await get("/exams", second)).json().exams;
+  check("it is offered its centre's exam, counted over its own centre only",
+    exams.length === 1 && exams[0].id === exam.id && exams[0].centreCount === 1 && exams[0].packageCount === 1);
+
+  // A phone enrolled at the first centre, and one enrolled at none. What the
+  // ledger is told is which device the gateway verified.
+  const device = async (centreId) => (await client.query(
+    "insert into ref.device (kind,pubkey,centre_id) values ('field',$1,$2) returning id",
+    [randomBytes(32), centreId],
+  )).rows[0].id;
+  const asDevice = async (id, path) =>
+    (await app.inject({ method: "GET", url: path, headers: { "x-mohar-verified-device": id } })).json().legs;
+  const atCentre = await device(mine.centre);
+  const roaming = await device(null);
+  const phoneLegs = await asDevice(atCentre, "/legs");
+  check("a phone enrolled at a centre reads that centre's hand-offs and no other's",
+    phoneLegs.some((l) => l.id === mine.leg) && phoneLegs.every((l) => l.package_id === mine.packet));
+  check("and gets nothing by naming another centre's packet",
+    (await asDevice(atCentre, `/legs?packageId=${theirs.packet}`)).length === 0);
+  check("a phone enrolled at no centre still reads the leg it was sent for",
+    (await asDevice(roaming, `/legs?packageId=${theirs.packet}`)).some((l) => l.id === theirs.leg));
+
   const closed = [
-    ["GET", "/alerts/summary"],
+    ["GET", "/centres"],
     ["GET", "/devices"],
     ["GET", "/auth/accounts"],
     ["GET", `/legs/${mine.leg}/attempts`],

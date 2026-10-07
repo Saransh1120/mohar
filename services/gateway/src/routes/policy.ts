@@ -195,6 +195,8 @@ export const SCOPED_ROUTES: readonly string[] = Object.freeze([
   "GET /packages/:id",
   "GET /legs",
   "GET /alerts",
+  "GET /alerts/summary",
+  "GET /exams",
   "GET /auth/me",
   "GET /auth/config",
   "POST /auth/signout",

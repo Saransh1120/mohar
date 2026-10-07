@@ -79,7 +79,8 @@ accepts whatever the engine rules, rather than asserting outcomes.
 
 Written and not yet run on hardware: the seal lock firmware, and the witness
 station's token check. A courier phone app (`apps/field-app`) records signed
-scans and can report a damaged label; it does not do hand-offs yet.
+scans, does the three hand-off steps with the phone's own signature, and can
+report a damaged label; it has not been run on a real phone.
 
 Not built: the opening on the ESP32 station (a paired browser stands in for
 it), and `sealkeys`,

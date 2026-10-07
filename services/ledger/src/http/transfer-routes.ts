@@ -1,4 +1,4 @@
-import { centreScope } from "./scope-guard.js";
+import { centreScope, deviceCentreScope } from "./scope-guard.js";
 import type { FastifyInstance } from "fastify";
 import type { Pool, PoolClient } from "pg";
 import { z } from "zod";
@@ -167,7 +167,9 @@ export function registerTransferRoutes(app: FastifyInstance, pool: Pool): void {
         where ($1::uuid is null or r.package_id = $1::uuid)
           and ($2::uuid[] is null or p.centre_id = any($2::uuid[]))
         order by max(r.created_at) over (partition by r.package_id) desc, r.package_id, r.leg_no`,
-      [req.query.packageId ?? null, centreScope(req)],
+      // An account's limit, or failing that the centre the signing device is
+      // enrolled at. A phone at one centre does not read another's plan.
+      [req.query.packageId ?? null, centreScope(req) ?? (await deviceCentreScope(req, pool))],
     );
     const now = Date.now();
     return reply.send({
